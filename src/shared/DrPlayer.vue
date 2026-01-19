@@ -325,6 +325,7 @@ let cleanupNoCorsEnforcer = null;
 
 let timeUpdateRaf = 0;
 let timeUpdatePending = 0;
+let desktopClickTimer = 0;
 
 const playing = ref(false);
 const currentTime = ref(0);
@@ -740,9 +741,18 @@ const detectVideoFormat = (url) => {
       // Desktop double-click fullscreen: prevent the browser's default <video> double-click fullscreen
       // from fighting with Artplayer (which can cause enter+exit immediately).
       if (typeof playerEl.addEventListener === 'function') {
+        const clearDesktopClickTimer = () => {
+          if (!desktopClickTimer) return;
+          try {
+            window.clearTimeout(desktopClickTimer);
+          } catch (_e) {}
+          desktopClickTimer = 0;
+        };
+
         const onDblClickCapture = (evt) => {
           if (isMobile.value) return;
           if (isUiControlTarget(evt && evt.target ? evt.target : null)) return;
+          clearDesktopClickTimer();
           try {
             evt.preventDefault();
           } catch (_e) {}
@@ -754,13 +764,37 @@ const detectVideoFormat = (url) => {
           } catch (_e) {}
           toggleFullscreen();
         };
+
+        const onClickCapture = (evt) => {
+          if (isMobile.value) return;
+          if (isUiControlTarget(evt && evt.target ? evt.target : null)) return;
+          clearDesktopClickTimer();
+          // Delay to avoid firing on double-click (dblclick will cancel this).
+          desktopClickTimer = window.setTimeout(() => {
+            desktopClickTimer = 0;
+            togglePlay();
+            showUiTemporarily();
+          }, 220);
+          try {
+            evt.preventDefault();
+          } catch (_e) {}
+          try {
+            if (typeof evt.stopImmediatePropagation === 'function') evt.stopImmediatePropagation();
+          } catch (_e) {}
+          try {
+            evt.stopPropagation();
+          } catch (_e) {}
+        };
         playerEl.addEventListener('dblclick', onDblClickCapture, { capture: true });
+        playerEl.addEventListener('click', onClickCapture, { capture: true });
         playerEl.addEventListener('mousemove', onDesktopMouseMove, { passive: true });
         playerEl.addEventListener('mouseenter', onDesktopMouseMove, { passive: true });
         playerEl.addEventListener('mouseleave', onDesktopMouseLeave, { passive: true });
         cleanupPlayerElListeners = () => {
           try {
+            clearDesktopClickTimer();
             playerEl.removeEventListener('dblclick', onDblClickCapture, true);
+            playerEl.removeEventListener('click', onClickCapture, true);
             playerEl.removeEventListener('mousemove', onDesktopMouseMove);
             playerEl.removeEventListener('mouseenter', onDesktopMouseMove);
             playerEl.removeEventListener('mouseleave', onDesktopMouseLeave);
@@ -988,6 +1022,14 @@ const togglePlay = () => {
   art.toggle();
 };
 
+const seekBySeconds = (deltaSeconds) => {
+  if (!art) return;
+  const d = Number.isFinite(duration.value) && duration.value > 0 ? duration.value : (art.duration || 0);
+  const cur = Number.isFinite(art.currentTime) ? art.currentTime : currentTime.value || 0;
+  const next = Math.max(0, Math.min(d || 0, cur + Number(deltaSeconds || 0)));
+  art.currentTime = next;
+};
+
 const emitEpisodeDelta = (delta) => {
   try {
     window.dispatchEvent(new CustomEvent('tvplayer:episode', { detail: { delta } }));
@@ -1154,6 +1196,42 @@ onMounted(() => {
       };
       el.addEventListener('click', onBlankClickCapture, { capture: true });
 
+      const onKeyDown = (evt) => {
+        if (!evt) return;
+        if (isMobile.value) return;
+        if (!art) return;
+        if (evt.defaultPrevented) return;
+        if (evt.ctrlKey || evt.metaKey || evt.altKey) return;
+        if (isUiControlTarget(evt.target)) return;
+        const tag = evt.target && evt.target.tagName ? String(evt.target.tagName).toLowerCase() : '';
+        const editable =
+          (evt.target && evt.target.isContentEditable) ||
+          tag === 'input' ||
+          tag === 'textarea' ||
+          tag === 'select';
+        if (editable) return;
+        const key = String(evt.key || '');
+        if (key === ' ' || key === 'Spacebar') {
+          evt.preventDefault();
+          togglePlay();
+          showUiTemporarily();
+          return;
+        }
+        if (key === 'ArrowLeft') {
+          evt.preventDefault();
+          seekBySeconds(-5);
+          showUiTemporarily();
+          return;
+        }
+        if (key === 'ArrowRight') {
+          evt.preventDefault();
+          seekBySeconds(5);
+          showUiTemporarily();
+          return;
+        }
+      };
+      window.addEventListener('keydown', onKeyDown, true);
+
       const onFsChange = () => {
         // Some browsers (and some fullscreen implementations) may re-parent elements,
         // making containment checks unreliable. For our UI, "any fullscreen" is enough.
@@ -1169,6 +1247,9 @@ onMounted(() => {
       el.__tvCleanupPlayerUi = () => {
         el.removeEventListener('touchmove', onTouchMove);
         el.removeEventListener('click', onBlankClickCapture, true);
+        try {
+          window.removeEventListener('keydown', onKeyDown, true);
+        } catch (_e) {}
         document.removeEventListener('fullscreenchange', onFsChange, true);
         delete el.__tvCleanupPlayerUi;
       };
