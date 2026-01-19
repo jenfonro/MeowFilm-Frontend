@@ -1311,6 +1311,7 @@ defineExpose({ destroy: destroyNow });
 .yt-ui.yt-ui--show {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
 }
 
 .yt-progress__range {
@@ -1587,7 +1588,7 @@ defineExpose({ destroy: destroyNow });
 .m-bar {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .tv-drplayer.tv-drplayer--mobile .m-progress {
