@@ -32,10 +32,6 @@
 	          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-film h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M7 3v18"></path><path d="M3 7.5h4"></path><path d="M3 12h18"></path><path d="M3 16.5h4"></path><path d="M17 3v18"></path><path d="M17 7.5h4"></path><path d="M17 16.5h4"></path></svg>
 	          <span class="nav-label">视频源管理</span>
 	        </a>
-        <a data-admin="search" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-          <span class="nav-label">站点搜索结果设置</span>
-        </a>
         <a data-admin="magic" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>
           <span class="nav-label">魔法匹配设置</span>
@@ -211,129 +207,108 @@
             </div>
           </div>
         </section>
-        <section v-if="bootstrap.user.role === 'admin'" id="adminVideo" class="admin-panel hidden space-y-6">
-          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
+	        <section v-if="bootstrap.user.role === 'admin'" id="adminVideo" class="admin-panel hidden space-y-6">
+	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-film h-5 w-5 text-gray-600 dark:text-gray-300"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M7 3v18"></path><path d="M3 7.5h4"></path><path d="M3 12h18"></path><path d="M3 16.5h4"></path><path d="M17 3v18"></path><path d="M17 7.5h4"></path><path d="M17 16.5h4"></path></svg>
-            视频源管理
-          </div>
-	          <div class="admin-card space-y-4">
-	            <form id="videoSourceForm" method="post" action="/dashboard/video/source/save" class="space-y-3">
-	              <div>
-		                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">视频源地址</label>
-		                <input id="videoSourceUrl" name="videoSourceUrl" type="url" class="tv-field" placeholder="http://example.com/config.js" :value="bootstrap.settings.videoSourceUrl">
+	            视频源管理
+	          </div>
+		          <div class="admin-card space-y-4">
+		            <div class="flex justify-start">
+		              <div class="flex flex-col gap-2">
+		                <div class="flex items-center gap-2">
+		                  <button
+		                    id="videoSourceImportFromCatPawOpen"
+		                    type="button"
+		                    class="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-sm text-gray-700 dark:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-white/10 transition-colors duration-150"
+		                  >从 CatPawOpen 导入站源</button>
+		                </div>
+		                <div id="videoSourceSaveStatus" class="text-sm hidden"></div>
 		              </div>
-	              <div class="flex justify-start">
-	                <div class="flex flex-col gap-2">
-	                  <div class="flex items-center gap-2">
-	                    <button type="submit" class="btn-green">保存</button>
-	                    <button
-	                      id="videoSourceImportFromCatPawOpen"
-	                      type="button"
-	                      class="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-sm text-gray-700 dark:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-white/10 transition-colors duration-150"
-	                    >从 CatPawOpen 导入站源</button>
-	                  </div>
-	                  <div id="videoSourceSaveStatus" class="text-sm hidden"></div>
-	                </div>
-	              </div>
-	            </form>
-		          </div>
+		            </div>
+			          </div>
 
-	          <div class="space-y-3">
-	            <div class="tv-panel overflow-x-auto">
-	              <div
-	                class="tv-row mb-2"
-	              >
-	                <span
-	                  id="panHeaderName"
-	                  class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate"
-	                >网盘名称</span>
-	                <span
-	                  id="panHeaderEnable"
-	                  class="text-sm font-medium text-gray-600 dark:text-gray-300"
-	                >是否启用</span>
-	                <span
-	                  id="panHeaderSort"
-	                  class="text-sm font-medium text-gray-600 dark:text-gray-300"
-	                >排序</span>
+	          <div class="tv-us-acc-item">
+	            <button id="videoSourceSitesToggle" class="tv-us-acc-head" type="button">
+	              <span>站点列表</span>
+	              <span id="videoSourceSitesToggleIcon" class="tv-us-acc-icon" data-open="false">
+	                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+	                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
+	                </svg>
+	              </span>
+	            </button>
+	            <div id="videoSourceSitesPanel" class="tv-us-acc-body hidden">
+	              <div class="max-h-[60vh] overflow-y-auto tv-panel">
 	                <div
-	                  id="panListSaveStatus"
-	                  class="text-xs hidden whitespace-nowrap ml-2 text-gray-500 dark:text-gray-400"
-	                ></div>
+	                  class="video-source-header tv-row sticky top-0 z-[2] mb-2"
+	                >
+	                  <input
+	                    id="videoSourceHeaderCheckbox"
+	                    type="checkbox"
+	                    class="h-4 w-4 rounded border-gray-300 dark:border-white/20 text-green-600 focus:ring-green-500"
+	                  />
+	                  <span
+	                    id="videoSourceHeaderName"
+	                    class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate"
+	                  >站源名称</span>
+	                  <span
+	                    id="videoSourceHeaderApi"
+	                    class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate"
+	                  >路由/API</span>
+	                  <span
+	                    id="videoSourceHeaderAvailability"
+	                    class="text-sm font-medium text-gray-600 dark:text-gray-300"
+	                  >站点可用性</span>
+	                  <span
+	                    id="videoSourceHeaderStatus"
+	                    class="text-sm font-medium text-gray-600 dark:text-gray-300"
+	                  >是否启用</span>
+		                  <span
+		                    id="videoSourceHeaderHome"
+		                    class="text-sm font-medium text-gray-600 dark:text-gray-300"
+		                  >首页显示</span>
+		                  <span
+		                    id="videoSourceHeaderCover"
+		                    class="text-sm font-medium text-gray-600 dark:text-gray-300"
+		                  >聚合图片显示</span>
+		                  <span
+		                    id="videoSourceHeaderSort"
+		                    class="text-sm font-medium text-gray-600 dark:text-gray-300"
+		                  >排序</span>
+	                  <div id="videoSourceBulkActions" class="hidden flex items-center gap-2 ml-2">
+	                    <button
+	                      id="videoSourceBulkCheckDisable"
+	                      type="button"
+	                      class="px-2 py-1 rounded-full border border-gray-400 text-xs font-medium text-gray-700 hover:bg-gray-500/10 dark:border-white/20 dark:text-gray-100 dark:hover:bg-white/10 transition-colors duration-150"
+	                    >
+	                      检测并禁用失效源
+	                    </button>
+	                    <button
+	                      id="videoSourceBulkEnable"
+	                      type="button"
+	                      class="px-2 py-1 rounded-full border border-green-500 text-xs font-medium text-green-600 hover:bg-green-500/10 transition-colors duration-150"
+	                    >
+	                      批量启用
+	                    </button>
+	                    <button
+	                      id="videoSourceBulkDisable"
+	                      type="button"
+	                      class="px-2 py-1 rounded-full border border-red-500 text-xs font-medium text-red-600 hover:bg-red-500/10 transition-colors duration-150"
+	                    >
+	                      批量禁用
+	                    </button>
+	                  </div>
+	                  <div
+	                    id="videoSourceListSaveStatus"
+	                    class="text-xs hidden whitespace-nowrap ml-2 text-gray-500 dark:text-gray-400"
+	                  ></div>
+	                </div>
+	                <ul id="videoSourceList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+	                  <li class="text-gray-500 dark:text-gray-400">暂无站源，解析完成后会在这里展示。</li>
+	                </ul>
 	              </div>
-	              <ul id="panList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
-	                <li class="text-gray-500 dark:text-gray-400">无数据</li>
-	              </ul>
 	            </div>
 	          </div>
-
-	          <div class="space-y-3">
-	            <div class="max-h-[60vh] overflow-y-auto tv-panel">
-	              <div
-	                class="video-source-header tv-row sticky top-0 z-[2] mb-2"
-              >
-                <input
-                  id="videoSourceHeaderCheckbox"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 dark:border-white/20 text-green-600 focus:ring-green-500"
-                />
-                <span
-                  id="videoSourceHeaderName"
-                  class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate"
-                >站源名称</span>
-                <span
-                  id="videoSourceHeaderApi"
-                  class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate"
-                >路由/API</span>
-                <span
-                  id="videoSourceHeaderAvailability"
-                  class="text-sm font-medium text-gray-600 dark:text-gray-300"
-                >站点可用性</span>
-                <span
-                  id="videoSourceHeaderStatus"
-                  class="text-sm font-medium text-gray-600 dark:text-gray-300"
-                >是否启用</span>
-                <span
-                  id="videoSourceHeaderHome"
-                  class="text-sm font-medium text-gray-600 dark:text-gray-300"
-                >首页显示</span>
-                <span
-                  id="videoSourceHeaderSort"
-                  class="text-sm font-medium text-gray-600 dark:text-gray-300"
-                >排序</span>
-                <div id="videoSourceBulkActions" class="hidden flex items-center gap-2 ml-2">
-                  <button
-                    id="videoSourceBulkCheckDisable"
-                    type="button"
-                    class="px-2 py-1 rounded-full border border-gray-400 text-xs font-medium text-gray-700 hover:bg-gray-500/10 dark:border-white/20 dark:text-gray-100 dark:hover:bg-white/10 transition-colors duration-150"
-                  >
-                    检测并禁用失效源
-                  </button>
-                  <button
-                    id="videoSourceBulkEnable"
-                    type="button"
-                    class="px-2 py-1 rounded-full border border-green-500 text-xs font-medium text-green-600 hover:bg-green-500/10 transition-colors duration-150"
-                  >
-                    批量启用
-                  </button>
-                  <button
-                    id="videoSourceBulkDisable"
-                    type="button"
-                    class="px-2 py-1 rounded-full border border-red-500 text-xs font-medium text-red-600 hover:bg-red-500/10 transition-colors duration-150"
-                  >
-                    批量禁用
-                  </button>
-                </div>
-                <div
-                  id="videoSourceListSaveStatus"
-                  class="text-xs hidden whitespace-nowrap ml-2 text-gray-500 dark:text-gray-400"
-                ></div>
-              </div>
-	              <ul id="videoSourceList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
-	                <li class="text-gray-500 dark:text-gray-400">暂无站源，解析完成后会在这里展示。</li>
-	              </ul>
-	            </div>
-          </div>
-        </section>
+	        </section>
 	        <section v-if="bootstrap.user.role === 'admin'" id="adminPan" class="admin-panel hidden space-y-6">
 	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
 	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-cloud h-5 w-5 text-gray-600 dark:text-gray-300"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h.79a4.5 4.5 0 1 1 1 9Z"></path></svg>
@@ -371,30 +346,40 @@
 	            <div id="panSettingsStatus" class="text-sm hidden"></div>
 	          </div>
 	        </section>
-	        <section v-if="bootstrap.user.role === 'admin'" id="adminInterface" class="admin-panel hidden space-y-6">
-	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
+		        <section v-if="bootstrap.user.role === 'admin'" id="adminInterface" class="admin-panel hidden space-y-6">
+		          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
 	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-link-2 h-5 w-5 text-gray-600 dark:text-gray-300"><path d="M15 7h3a5 5 0 0 1 0 10h-3"></path><path d="M9 17H6a5 5 0 0 1 0-10h3"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
 	            接口设置
 	          </div>
-	          <div class="admin-card space-y-4">
-	            <form id="catPawOpenSettingsForm" method="post" action="/dashboard/catpawopen/save" class="space-y-4">
-	              <div class="flex items-center gap-3">
-	                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">CatPawOpen 设置</div>
-	                <div id="catPawOpenSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
-	              </div>
-		              <div>
-		                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawOpen 接口地址</label>
-		                <input
-		                  name="catPawOpenApiBase"
-		                  class="tv-field"
-		                  placeholder="http://127.0.0.1:3006/"
-		                  :value="bootstrap.settings.catPawOpenApiBase"
-		                >
+		          <div class="admin-card space-y-4">
+		            <form id="catPawOpenSettingsForm" method="post" action="/dashboard/catpawopen/save" class="space-y-4">
+		              <div class="flex items-center gap-3">
+		                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">CatPawOpen 设置</div>
+		                <div id="catPawOpenSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
 		              </div>
-		              <div id="catPawOpenRemoteError" class="hidden rounded-lg border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/10 px-3 py-2 text-xs text-red-700 dark:text-red-300"></div>
-		              <div id="catPawOpenRemoteSettings" class="hidden space-y-4">
-		              <div>
-		                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawOpen 全局代理</label>
+			              <div>
+			                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawOpen 接口地址</label>
+			                <input
+			                  name="catPawOpenApiBase"
+			                  class="tv-field"
+			                  placeholder="http://127.0.0.1:3006/"
+			                  :value="bootstrap.settings.catPawOpenApiBase"
+			                >
+			              </div>
+			              <div>
+			                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">视频源地址</label>
+			                <input
+			                  id="catPawOpenVideoSourceUrl"
+			                  type="url"
+			                  class="tv-field"
+			                  placeholder="http://127.0.0.1:3006/config"
+			                  readonly
+			                >
+			              </div>
+			              <div id="catPawOpenRemoteError" class="hidden rounded-lg border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/10 px-3 py-2 text-xs text-red-700 dark:text-red-300"></div>
+			              <div id="catPawOpenRemoteSettings" class="hidden space-y-4">
+			              <div>
+			                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawOpen 全局代理</label>
 		                <input
 		                  name="catPawOpenProxy"
 		                  class="tv-field"
@@ -402,21 +387,56 @@
 		                >
 		                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">保存后将同步到 CatPawOpen 并立即生效（留空关闭）。</p>
 		              </div>
-		              <div class="space-y-1 pt-1">
-		                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">直链模式</div>
-		                <div>
-		                  <label class="enable-switch" title="直链模式">
-		                    <input id="catPawOpenDirectLinkEnabled" name="catPawOpenDirectLinkEnabled" type="checkbox" />
-		                    <span class="enable-slider"></span>
-		                  </label>
-		                </div>
-		                <div class="text-xs text-gray-500 dark:text-gray-400">开启后 CatPawOpen 始终返回直链。</div>
-		              </div>
-		              </div>
-		              <div class="pt-1 flex justify-start">
-		                <button type="submit" class="btn-green">保存</button>
-		              </div>
-		            </form>
+			              <div class="space-y-1 pt-1">
+			                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">直链模式</div>
+			                <div>
+			                  <label class="enable-switch" title="直链模式">
+			                    <input id="catPawOpenDirectLinkEnabled" name="catPawOpenDirectLinkEnabled" type="checkbox" />
+			                    <span class="enable-slider"></span>
+			                  </label>
+			                </div>
+			                <div class="text-xs text-gray-500 dark:text-gray-400">开启后 CatPawOpen 始终返回直链。</div>
+			              </div>
+			              <div class="tv-us-acc-item">
+			                <button id="catPawOpenPansToggle" class="tv-us-acc-head" type="button">
+			                  <span>网盘列表</span>
+			                  <span id="catPawOpenPansToggleIcon" class="tv-us-acc-icon" data-open="false">
+			                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+			                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
+			                    </svg>
+			                  </span>
+			                </button>
+			                <div id="catPawOpenPansPanel" class="tv-us-acc-body hidden">
+			                  <div class="tv-panel overflow-x-auto">
+			                    <div class="tv-row mb-2">
+			                      <span
+			                        id="panHeaderName"
+			                        class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate"
+			                      >网盘名称</span>
+			                      <span
+			                        id="panHeaderEnable"
+			                        class="text-sm font-medium text-gray-600 dark:text-gray-300"
+			                      >是否启用</span>
+			                      <span
+			                        id="panHeaderSort"
+			                        class="text-sm font-medium text-gray-600 dark:text-gray-300"
+			                      >排序</span>
+			                      <div
+			                        id="panListSaveStatus"
+			                        class="text-xs hidden whitespace-nowrap ml-2 text-gray-500 dark:text-gray-400"
+			                      ></div>
+			                    </div>
+			                    <ul id="panList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+			                      <li class="text-gray-500 dark:text-gray-400">点击展开后加载</li>
+			                    </ul>
+			                  </div>
+			                </div>
+			              </div>
+			              </div>
+			              <div class="pt-1 flex justify-start">
+			                <button type="submit" class="btn-green">保存</button>
+			              </div>
+			            </form>
 		          </div>
 
 	          <div class="admin-card space-y-4">
@@ -526,28 +546,11 @@
 	            </form>
 	          </div>
 	        </section>
-	        <section v-if="bootstrap.user.role === 'admin'" id="adminSearch" class="admin-panel hidden space-y-6">
+	        <section v-if="bootstrap.user.role === 'admin'" id="adminMagic" class="admin-panel hidden space-y-6">
 	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
-	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search h-5 w-5 text-gray-600 dark:text-gray-300"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
-	            站点搜索结果设置
+	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-600 dark:text-gray-300"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>
+	            魔法匹配设置
 	          </div>
-          <div class="tv-panel overflow-x-auto">
-            <div class="tv-row mb-2">
-              <span id="searchHeaderName" class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate">站点名称</span>
-              <span id="searchHeaderCover" class="text-sm font-medium text-gray-600 dark:text-gray-300">聚合图片显示</span>
-              <span id="searchHeaderSort" class="text-sm font-medium text-gray-600 dark:text-gray-300">排序</span>
-              <div id="searchSettingsSaveStatus" class="text-xs hidden whitespace-nowrap ml-2 text-gray-500 dark:text-gray-400"></div>
-            </div>
-            <ul id="searchSettingsList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
-              <li class="text-gray-500 dark:text-gray-400">无数据</li>
-            </ul>
-          </div>
-        </section>
-        <section v-if="bootstrap.user.role === 'admin'" id="adminMagic" class="admin-panel hidden space-y-6">
-          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-600 dark:text-gray-300"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>
-            魔法匹配设置
-          </div>
 
 			          <div class="admin-card space-y-3">
 			            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">列表清洗正则</div>
@@ -684,3 +687,64 @@ onMounted(() => {
   initDashboardPage(props.bootstrap);
 });
 </script>
+
+<style>
+.tv-us-acc-item {
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  overflow: hidden;
+}
+
+.dark .tv-us-acc-item {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tv-us-acc-head {
+  width: 100%;
+  height: 46px;
+  padding: 0 14px 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(17, 24, 39, 1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.dark .tv-us-acc-head {
+  color: rgba(243, 244, 246, 1);
+}
+
+.tv-us-acc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.55);
+  color: rgba(55, 65, 81, 1);
+  transition: transform 0.18s ease;
+}
+
+.tv-us-acc-icon[data-open='true'] {
+  transform: rotate(180deg);
+}
+
+.dark .tv-us-acc-icon {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(229, 231, 235, 1);
+}
+
+.tv-us-acc-body {
+  padding: 12px 14px 14px;
+}
+</style>
