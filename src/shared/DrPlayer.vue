@@ -1294,10 +1294,10 @@ onMounted(() => {
       };
       el.addEventListener('click', onBlankClickCapture, { capture: true });
 
-      const onKeyDown = (evt) => {
-        if (!evt) return;
-        if (isMobile.value) return;
-        if (!art) return;
+	      const onKeyDown = (evt) => {
+	        if (!evt) return;
+	        if (isMobile.value) return;
+	        if (!art) return;
         if (evt.defaultPrevented) return;
         if (evt.ctrlKey || evt.metaKey || evt.altKey) return;
         if (isUiControlTarget(evt.target)) return;
@@ -1317,17 +1317,17 @@ onMounted(() => {
         }
 	        if (key === 'ArrowLeft') {
 	          evt.preventDefault();
-	          seekBySeconds(-60);
+	          seekBySeconds(-5);
 	          showUiTemporarily();
 	          return;
 	        }
 	        if (key === 'ArrowRight') {
 	          evt.preventDefault();
-	          seekBySeconds(60);
+	          seekBySeconds(5);
 	          showUiTemporarily();
 	          return;
 	        }
-      };
+	      };
       window.addEventListener('keydown', onKeyDown, true);
 
       const onFsChange = () => {
@@ -1587,8 +1587,9 @@ defineExpose({ destroy: destroyNow });
     (var(--yt-buffer-p) * (100% - var(--yt-progress-thumb-h))) + (var(--yt-progress-thumb-h) / 2)
   );
   max-width: 100%;
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.6);
   border-radius: 999px;
+  pointer-events: none;
 }
 
 .yt-progress__fill {
