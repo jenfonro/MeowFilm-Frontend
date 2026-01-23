@@ -1637,13 +1637,23 @@ export function initDashboardPage(bootstrap = {}) {
 
   const normalizeAvailability = (v) => {
     const raw = typeof v === 'string' ? v.trim() : '';
-    if (raw === 'valid' || raw === 'invalid' || raw === 'unknown' || raw === 'unchecked') return raw;
+    if (
+      raw === 'valid' ||
+      raw === 'invalid' ||
+      raw === 'unknown' ||
+      raw === 'unchecked' ||
+      raw === 'category_error' ||
+      raw === 'search_error'
+    )
+      return raw;
     return 'unchecked';
   };
   const formatAvailabilityText = (status) => {
     const s = normalizeAvailability(status);
     if (s === 'valid') return '有效';
     if (s === 'invalid') return '无效';
+    if (s === 'category_error') return '分类异常';
+    if (s === 'search_error') return '搜索异常';
     if (s === 'unknown') return '未知';
     return '未检测';
   };
@@ -1651,7 +1661,7 @@ export function initDashboardPage(bootstrap = {}) {
     const s = normalizeAvailability(status);
     if (s === 'valid') return 'tag-green';
     if (s === 'invalid') return 'tag-red';
-    if (s === 'unknown') return 'tag-yellow';
+    if (s === 'unknown' || s === 'category_error' || s === 'search_error') return 'tag-yellow';
     return 'tag-gray';
   };
   const buildAvailabilityTag = (status) => {
@@ -1749,7 +1759,7 @@ export function initDashboardPage(bootstrap = {}) {
 	      setFixedHeaderCell(videoSourceHeaderSort, 72);
 	    }
 	    if (videoSourceHeaderError) {
-	      setEllipsisCell(videoSourceHeaderError, { ...fixedCell(260) });
+	      setStyles(videoSourceHeaderError, { display: 'inline-block', minWidth: '240px', flex: '1 1 240px' });
 	    }
 	    if (videoSourceHeaderAvailability) {
 	      setFixedHeaderCell(videoSourceHeaderAvailability, 96);
@@ -1806,12 +1816,13 @@ export function initDashboardPage(bootstrap = {}) {
       setCenterCell(enableCell, fixedCell(72));
       enableCell.appendChild(switchLabel);
 
-      const { label: homeSwitchLabel } = createSwitchLabel({
-        checked: !!homeShown,
-        title: homeShown ? '首页显示' : '首页隐藏',
-        ariaLabel: homeShown ? '首页显示' : '首页隐藏',
-        inputAttrs: { 'data-home-key': key },
-      });
+	      const { label: homeSwitchLabel } = createSwitchLabel({
+	        checked: !!homeShown,
+	        disabled: !enabled,
+	        title: homeShown ? '首页显示' : '首页隐藏',
+	        ariaLabel: homeShown ? '首页显示' : '首页隐藏',
+	        inputAttrs: { 'data-home-key': key },
+	      });
 
 	      const homeCell = document.createElement('span');
 	      setCenterCell(homeCell, fixedCell(72));
@@ -1819,6 +1830,7 @@ export function initDashboardPage(bootstrap = {}) {
 
       const { label: searchSwitchLabel } = createSwitchLabel({
         checked: !!searchEnabled,
+        disabled: !enabled,
         title: searchEnabled ? '搜索启用' : '搜索禁用',
         ariaLabel: searchEnabled ? '搜索启用' : '搜索禁用',
         inputAttrs: { 'data-search-key': key },
@@ -1830,7 +1842,7 @@ export function initDashboardPage(bootstrap = {}) {
 
 	      const { label: coverSwitchLabel } = createSwitchLabel({
 	        checked: coverShown,
-	        disabled: videoSourceCoverSaving,
+	        disabled: videoSourceCoverSaving || !enabled,
 	        title: coverShown ? '已启用' : '未启用',
 	        ariaLabel: coverShown ? '已启用' : '未启用',
 	        inputAttrs: { 'data-cover-key': key },
@@ -1851,7 +1863,7 @@ export function initDashboardPage(bootstrap = {}) {
       });
 
       const errorCell = document.createElement('span');
-      errorCell.className = `${CLS.mutedXs} truncate`;
+      errorCell.className = `${CLS.mutedXs}`;
       const rawError =
         site && typeof site.error === 'string'
           ? site.error
@@ -1861,7 +1873,13 @@ export function initDashboardPage(bootstrap = {}) {
               ? site.err
               : '';
       errorCell.textContent = rawError || '';
-      setEllipsisCell(errorCell, { ...fixedCell(260) });
+      setStyles(errorCell, {
+        minWidth: '240px',
+        flex: '1 1 240px',
+        whiteSpace: 'normal',
+        overflowWrap: 'anywhere',
+        wordBreak: 'break-word',
+      });
 
       li.appendChild(selectBox);
       li.appendChild(name);
@@ -1955,6 +1973,50 @@ export function initDashboardPage(bootstrap = {}) {
       return [];
     };
 
+    const extractClasses = (data) => {
+      if (!data) return [];
+      if (Array.isArray(data.class)) return data.class;
+      if (Array.isArray(data.classes)) return data.classes;
+      if (data.data && Array.isArray(data.data.class)) return data.data.class;
+      if (data.data && Array.isArray(data.data.classes)) return data.data.classes;
+      if (data.data && Array.isArray(data.data.types)) return data.data.types;
+      if (Array.isArray(data.types)) return data.types;
+      return [];
+    };
+
+    const extractClassId = (c) => {
+      if (!c) return '';
+      const pick = (v) => (v != null ? String(v).trim() : '');
+      return (
+        pick(c.type_id) ||
+        pick(c.tid) ||
+        pick(c.id) ||
+        pick(c.typeId) ||
+        ''
+      );
+    };
+
+    const normalizeStatusCode = (resp) => {
+      if (resp && typeof resp.statusCode === 'number') return resp.statusCode;
+      if (resp && resp.data && typeof resp.data.statusCode === 'number') return resp.data.statusCode;
+      return 0;
+    };
+
+    const normalizeMessage = (resp) => {
+      if (resp && typeof resp.message === 'string') return resp.message;
+      if (resp && typeof resp.msg === 'string') return resp.msg;
+      if (resp && resp.data && typeof resp.data.message === 'string') return resp.data.message;
+      return '';
+    };
+
+    const formatHttpError = (e) => {
+      const status = e && typeof e.status === 'number' ? e.status : 0;
+      const msg = e && e.message ? String(e.message) : '请求失败';
+      if (!status) return msg;
+      if (msg.startsWith(`HTTP ${status}`)) return msg;
+      return `HTTP ${status}：${msg}`;
+    };
+
     const extractSpiderNameFromApi = (api) => {
       const raw = typeof api === 'string' ? api.trim() : '';
       if (!raw) return '';
@@ -1974,11 +2036,13 @@ export function initDashboardPage(bootstrap = {}) {
     };
 
     const results = {};
+    const errors = {};
     for (let i = 0; i < uniq.length; i += 1) {
       const key = uniq[i];
       const site = byKey.get(key);
       if (!site || !site.api) {
-        results[key] = 'unknown';
+        results[key] = 'invalid';
+        errors[key] = '分类接口:站点配置无效';
         continue;
       }
       try {
@@ -1990,25 +2054,132 @@ export function initDashboardPage(bootstrap = {}) {
           continue;
         }
         const spiderPath = String(site.api || '').trim().replace(/\/+$/, '').replace(/^\//, '');
-        const resp = await requestCatPawOpenAdminJson({
-          apiBase: normalizedBase,
-          path: `${spiderPath}/search`,
-          method: 'POST',
-          body: { wd: '斗破', page: 1 },
-        });
-        if (resp && typeof resp.statusCode === 'number' && resp.statusCode >= 400) {
-          results[key] = 'invalid';
-          continue;
+
+        let categoryOk = false;
+        let categoryErr = '';
+        try {
+          const homeResp = await requestCatPawOpenAdminJson({
+            apiBase: normalizedBase,
+            path: `${spiderPath}/home`,
+            method: 'POST',
+            body: {},
+          });
+          const sc = normalizeStatusCode(homeResp);
+          if (sc >= 400) {
+            const msg = normalizeMessage(homeResp) || '请求失败';
+            categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc}：${msg}`;
+          } else {
+            const classes = extractClasses(homeResp);
+            const firstWithId = Array.isArray(classes) ? classes.find((c) => !!extractClassId(c)) : null;
+            const tid = extractClassId(firstWithId);
+            if (tid) {
+              const catResp = await requestCatPawOpenAdminJson({
+                apiBase: normalizedBase,
+                path: `${spiderPath}/category`,
+                method: 'POST',
+                body: { tid, t: tid, page: 1, pg: 1 },
+              });
+              const sc2 = normalizeStatusCode(catResp);
+              if (sc2 >= 400) {
+                const msg = normalizeMessage(catResp) || '请求失败';
+                categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc2}：${msg}`;
+              } else {
+                categoryOk = true;
+              }
+            } else {
+              // Fallback: some spiders don't expose classes in `home` but still support category listing.
+              try {
+                const rootResp = await requestCatPawOpenAdminJson({
+                  apiBase: normalizedBase,
+                  path: `${spiderPath}/category`,
+                  method: 'POST',
+                  body: { tid: '0', t: '0', page: 1, pg: 1 },
+                });
+                const rootSc = normalizeStatusCode(rootResp);
+                if (rootSc >= 400) {
+                  const msg = normalizeMessage(rootResp) || '请求失败';
+                  categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${rootSc}：${msg}`;
+                } else {
+                  const list = extractList(rootResp);
+                  const firstFolder =
+                    (Array.isArray(list) &&
+                      list.find((it) => {
+                        const tag =
+                          it && (it.vod_tag != null ? String(it.vod_tag) : it.tag != null ? String(it.tag) : '');
+                        return tag === 'folder';
+                      })) ||
+                    null;
+                  const nextId =
+                    (firstFolder && (firstFolder.vod_id != null ? String(firstFolder.vod_id) : firstFolder.id != null ? String(firstFolder.id) : '')) ||
+                    '';
+                  if (!nextId) {
+                    categoryOk = true;
+                  } else {
+                    const subResp = await requestCatPawOpenAdminJson({
+                      apiBase: normalizedBase,
+                      path: `${spiderPath}/category`,
+                      method: 'POST',
+                      body: { tid: nextId, t: nextId, page: 1, pg: 1 },
+                    });
+                    const subSc = normalizeStatusCode(subResp);
+                    if (subSc >= 400) {
+                      const msg = normalizeMessage(subResp) || '请求失败';
+                      categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${subSc}：${msg}`;
+                    } else {
+                      categoryOk = true;
+                    }
+                  }
+                }
+              } catch (e2) {
+                categoryErr = formatHttpError(e2);
+              }
+            }
+          }
+        } catch (e) {
+          categoryErr = formatHttpError(e);
         }
-        const list = extractList(resp);
-        results[key] = list.length > 0 ? 'valid' : 'unknown';
+
+        let searchOk = false;
+        let searchErr = '';
+        try {
+          const searchResp = await requestCatPawOpenAdminJson({
+            apiBase: normalizedBase,
+            path: `${spiderPath}/search`,
+            method: 'POST',
+            body: { wd: '斗破', page: 1 },
+          });
+          const sc = normalizeStatusCode(searchResp);
+          if (sc >= 400) {
+            const msg = normalizeMessage(searchResp) || '请求失败';
+            searchErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc}：${msg}`;
+          } else {
+            // Search is considered "ok" as long as it returns a response without error statusCode.
+            // Some sites can legitimately return empty results for the probe keyword.
+            extractList(searchResp);
+            searchOk = true;
+          }
+        } catch (e) {
+          searchErr = formatHttpError(e);
+        }
+
+        if (categoryOk && searchOk) results[key] = 'valid';
+        else if (!categoryOk && !searchOk) results[key] = 'invalid';
+        else if (!categoryOk && searchOk) results[key] = 'category_error';
+        else results[key] = 'search_error';
+
+        const parts = [];
+        if (categoryErr) parts.push(`分类接口:${categoryErr}`);
+        if (searchErr) parts.push(`搜索接口:${searchErr}`);
+        if (parts.length) errors[key] = parts.join('  ');
       } catch (_e) {
         results[key] = 'invalid';
+        errors[key] = '分类接口:检测失败  搜索接口:检测失败';
       }
     }
 
     const { resp, data } = await postForm('/dashboard/video/source/sites/check', {
       results: JSON.stringify(results),
+      errors: JSON.stringify(errors),
     });
     if (resp.ok && data && data.success) {
       return { ok: true, sites: Array.isArray(data.sites) ? data.sites : [], results: data.results || {} };
@@ -2083,7 +2254,8 @@ export function initDashboardPage(bootstrap = {}) {
     try {
       let validCount = 0;
       let invalidCount = 0;
-      let unknownCount = 0;
+      let categoryErrCount = 0;
+      let searchErrCount = 0;
       for (let i = 0; i < keys.length; i += 1) {
         setVideoSourceListStatus('', `检测中... ${i + 1}/${keys.length}`);
         // eslint-disable-next-line no-await-in-loop
@@ -2097,14 +2269,15 @@ export function initDashboardPage(bootstrap = {}) {
               : 'unchecked';
           if (status === 'valid') validCount += 1;
           else if (status === 'invalid') invalidCount += 1;
-          else if (status === 'unknown') unknownCount += 1;
+          else if (status === 'category_error') categoryErrCount += 1;
+          else if (status === 'search_error') searchErrCount += 1;
         } else {
           invalidCount += 1;
         }
       }
       setVideoSourceListStatus(
         invalidCount > 0 ? 'error' : 'success',
-        `检测完成：有效${validCount} 无效${invalidCount} 未知${unknownCount}`
+        `检测完成：有效${validCount} 无效${invalidCount} 分类异常${categoryErrCount} 搜索异常${searchErrCount}`
       );
     } catch (_e) {
       setVideoSourceListStatus('error', '检测失败');
