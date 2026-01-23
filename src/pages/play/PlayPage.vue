@@ -2087,6 +2087,17 @@ const sanitizeTvUsername = (input) => {
   return safe || 'admin';
 };
 
+const isWodePanVideoId = (videoId) => {
+  const id = String(videoId || '').trim();
+  if (!id) return false;
+  return /######wodepan$/i.test(id);
+};
+
+const getDefaultQuarkTvUserDir = (tvUser) => {
+  const user = sanitizeTvUsername(tvUser);
+  return `TV_Server_${user}`;
+};
+
 const normalizeOpenListMountPath = (value) => {
   const raw = typeof value === 'string' ? value.trim() : '';
   if (!raw) return '';
@@ -2345,8 +2356,17 @@ const requestPlay = async () => {
   })();
   const openListDirAtCall = (() => {
     const raw = props.videoPanDir ? String(props.videoPanDir || '').trim() : '';
-    if (!raw) return '';
-    return raw.replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/');
+    const fromHistory = raw ? raw.replace(/^\/+|\/+$/g, '').replace(/\/{2,}/g, '/') : '';
+    const tvUser = props.bootstrap?.user?.username || '';
+    const fallback = getDefaultQuarkTvUserDir(tvUser);
+
+    // Only netdisk ("我的|网盘") items should carry a real directory stack.
+    // For normal sites, always use the per-user Quark TV folder to avoid polluting history with category breadcrumbs.
+    if (isWodePanVideoId(props.videoId)) return fromHistory;
+
+    if (!fromHistory) return fallback;
+    if (fromHistory === fallback || fromHistory.startsWith(`${fallback}/`)) return fromHistory;
+    return fallback;
   })();
 
   playRequestState.seq += 1;
@@ -2465,7 +2485,7 @@ const requestPlay = async () => {
 		          videoPoster: historyCoverPoster.value || pickHistoryPoster() || '',
 		          videoRemark: (props.videoRemark || '').trim(),
 		          panLabel: (src && src.label ? String(src.label) : '').trim(),
-		          videoPanDir: (props.videoPanDir || '').trim(),
+		          videoPanDir: (openListDirAtCall || '').trim(),
 		          playFlag: flag,
 		          episodeIndex: idxAtCall >= 0 ? idxAtCall : 0,
 		          episodeName: epNameAtCall,
