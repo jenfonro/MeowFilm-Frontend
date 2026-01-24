@@ -2308,8 +2308,8 @@ const registerGoProxyToken = async ({ base, url, headers }) => {
   return { token, proxyUrl };
 };
 
-const maybeUseGoProxyForPlayback = async (playUrl, playHeaders, preferredPan = '', proxyHint = false) => {
-  if (!proxyHint) return { url: playUrl, headers: playHeaders };
+const maybeUseGoProxyForPlayback = async (playUrl, playHeaders, preferredPan = '', enabled = false) => {
+  if (!enabled) return { url: playUrl, headers: playHeaders };
   const pan = detectGoProxyPan(playUrl, playHeaders, preferredPan);
   if (!pan) return { url: playUrl, headers: playHeaders };
   const base = await pickGoProxyBaseForPlayback(pan);
@@ -2408,8 +2408,7 @@ const requestPlay = async () => {
           const payload = normalizePlayPayload(rewritten);
           const url = pickFirstPlayableUrl(payload);
           const rawHeaders = payload && payload.header && typeof payload.header === 'object' ? payload.header : {};
-          const proxyHintFromPayload = !!(payload && typeof payload === 'object' && payload.proxyHint === true);
-          return { raw, payload, url, rawHeaders, proxyHintFromPayload };
+          return { raw, payload, url, rawHeaders };
         };
 
         let playResult = null;
@@ -2462,11 +2461,10 @@ const requestPlay = async () => {
         }
 
         const goProxyEnabled = !!props.bootstrap?.settings?.goProxyEnabled;
-        const proxyHint = goProxyEnabled || !!(playResult && playResult.proxyHintFromPayload);
 
       try {
         const preferredPan = guessPreferredPanFromLabel(src && src.label ? String(src.label) : '');
-        const out = await maybeUseGoProxyForPlayback(finalUrl, finalHeaders, preferredPan, proxyHint && !disableGoProxy);
+        const out = await maybeUseGoProxyForPlayback(finalUrl, finalHeaders, preferredPan, goProxyEnabled && !disableGoProxy);
         if (out && typeof out === 'object') {
           if (typeof out.url === 'string' && out.url.trim()) finalUrl = out.url.trim();
           if (out.headers && typeof out.headers === 'object') finalHeaders = out.headers;
