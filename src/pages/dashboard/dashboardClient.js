@@ -530,6 +530,10 @@ export function initDashboardPage(bootstrap = {}) {
       if (directLinkInput && settingsResp && settingsResp.settings) {
         directLinkInput.checked = !!settingsResp.settings.directLinkEnabled;
       }
+      const panBuiltinInput = document.getElementById('catPawOpenPanBuiltinResolverEnabled');
+      if (panBuiltinInput && settingsResp && settingsResp.settings) {
+        panBuiltinInput.checked = !!settingsResp.settings.panBuiltinResolverEnabled;
+      }
       setCatPawOpenRemoteState('ready');
       return { ok: true, data: { settingsResp } };
     } catch (e) {
@@ -545,18 +549,21 @@ export function initDashboardPage(bootstrap = {}) {
     const proxy = proxyInput && typeof proxyInput.value === 'string' ? proxyInput.value : '';
     const directLinkInput = document.getElementById('catPawOpenDirectLinkEnabled');
     const directLinkEnabled = !!(directLinkInput && directLinkInput.checked);
+    const panBuiltinInput = document.getElementById('catPawOpenPanBuiltinResolverEnabled');
+    const panBuiltinResolverEnabled = !!(panBuiltinInput && panBuiltinInput.checked);
     const parts = [];
     try {
       const resp = await requestCatPawOpenAdminJson({
         apiBase: normalizedBase,
         path: 'admin/settings',
         method: 'PUT',
-        body: { proxy: String(proxy || ''), directLinkEnabled },
+        body: { proxy: String(proxy || ''), directLinkEnabled, panBuiltinResolverEnabled },
       });
       if (proxyInput && resp && resp.settings && typeof resp.settings.proxy === 'string') {
         proxyInput.value = resp.settings.proxy || '';
       }
       if (directLinkInput && resp && resp.settings) directLinkInput.checked = !!resp.settings.directLinkEnabled;
+      if (panBuiltinInput && resp && resp.settings) panBuiltinInput.checked = !!resp.settings.panBuiltinResolverEnabled;
       return { ok: true, parts: [], data: resp };
     } catch (err) {
       const msg = err && err.message ? String(err.message) : '同步失败';
