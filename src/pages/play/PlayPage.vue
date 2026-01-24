@@ -2096,7 +2096,7 @@ const isWodePanVideoId = (videoId) => {
 
 const getDefaultQuarkTvUserDir = (tvUser) => {
   const user = sanitizeTvUsername(tvUser);
-  return `TV_Server_${user}`;
+  return `TV_Server/${user}`;
 };
 
 const normalizeOpenListMountPath = (value) => {
