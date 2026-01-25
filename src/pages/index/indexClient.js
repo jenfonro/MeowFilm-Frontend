@@ -1980,6 +1980,9 @@ export function initIndexPage() {
           doubanImgProxy: (cfgEl.getAttribute('data-douban-img-proxy') || 'direct-browser').trim(),
           doubanImgCustom: (cfgEl.getAttribute('data-douban-img-custom') || '').trim(),
         };
+        runtimeConfig.doubanDataProxy = (runtimeConfig.doubanDataProxy || '').split(/[\\s,]+/g)[0] || 'direct';
+        runtimeConfig.doubanImgProxy =
+          (runtimeConfig.doubanImgProxy || '').split(/[\\s,]+/g)[0] || 'direct-browser';
 
         const movieRow = document.getElementById('homeHotMovieRow');
         const tvRow = document.getElementById('homeHotTvRow');
@@ -2050,17 +2053,62 @@ export function initIndexPage() {
           return raw;
         };
 
+        const isAllowedDoubanImageHost = (hostname) => {
+          const host = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
+          if (!host) return false;
+          if (/^img\d+\.doubanio\.com$/.test(host)) return true;
+          if (host === 'img3.doubanio.com') return true;
+          if (host === 'img.doubanio.cmliussss.net') return true;
+          if (host === 'img.doubanio.cmliussss.com') return true;
+          return false;
+        };
+
+        const swapDoubanImageHost = (urlStr, nextHost) => {
+          const original = normalizeImageUrl(urlStr);
+          const target = typeof nextHost === 'string' ? nextHost.trim() : '';
+          if (!original || !target) return original;
+          try {
+            const u = new URL(original);
+            if (!isAllowedDoubanImageHost(u.hostname || '')) return original;
+            u.protocol = 'https:';
+            u.hostname = target;
+            return u.toString();
+          } catch (_e) {
+            return original.replace(
+              /(img\d+\.doubanio\.com|img3\.doubanio\.com|img\.doubanio\.cmliussss\.(net|com))/gi,
+              target
+            );
+          }
+        };
+
         const buildImageCandidates = (originalUrl) => {
           const original = normalizeImageUrl(originalUrl);
           const processed = processImageUrl(original);
           const candidates = [];
           if (processed) candidates.push(processed);
-          if (original && original.includes('doubanio.com')) {
-            candidates.push(original.replace(/img\\d+\\.doubanio\\.com/g, 'img3.doubanio.com'));
-            candidates.push(original);
+          if (original && original.includes('doubanio')) {
             const p = runtimeConfig.doubanImgProxy;
-            const allowServerFallback = p !== 'server-proxy' && p !== 'custom';
-            if (allowServerFallback) candidates.push(`/api/douban/image?url=${encodeURIComponent(original)}`);
+            const isDirect = p === 'direct' || p === 'direct-browser' || !p;
+            if (isDirect) {
+              candidates.push(swapDoubanImageHost(original, 'img3.doubanio.com'));
+              candidates.push(original);
+            } else {
+              // Prefer configured CDN / mirrors; do not fall back to direct img1/img2...doubanio.com.
+              if (p === 'cdn-tx' || p === 'cmliussss-cdn-tencent') {
+                candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
+                candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
+              } else if (p === 'cdn-ali' || p === 'cmliussss-cdn-ali') {
+                candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
+                candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
+              }
+            }
+            if (p !== 'server-proxy') {
+              const apiTarget =
+                p === 'custom' || !processed || processed.startsWith('/api/')
+                  ? original
+                  : processed;
+              candidates.push(`/api/douban/image?url=${encodeURIComponent(apiTarget)}`);
+            }
           }
           const uniq = [];
           const seen = new Set();
@@ -2087,18 +2135,24 @@ export function initIndexPage() {
               : original;
           }
 
-          if (!original.includes('doubanio.com')) return original;
+          let host = '';
+          try {
+            host = new URL(original).hostname || '';
+          } catch (_e) {
+            host = '';
+          }
+          if (!isAllowedDoubanImageHost(host) && !original.includes('doubanio')) return original;
 
           switch (p) {
             case 'douban-cdn-ali':
             case 'img3':
-              return original.replace(/img\\d+\\.doubanio\\.com/g, 'img3.doubanio.com');
+              return swapDoubanImageHost(original, 'img3.doubanio.com');
             case 'cdn-tx':
             case 'cmliussss-cdn-tencent':
-              return original.replace(/img\\d+\\.doubanio\\.com/g, 'img.doubanio.cmliussss.net');
+              return swapDoubanImageHost(original, 'img.doubanio.cmliussss.net');
             case 'cdn-ali':
             case 'cmliussss-cdn-ali':
-              return original.replace(/img\\d+\\.doubanio\\.com/g, 'img.doubanio.cmliussss.com');
+              return swapDoubanImageHost(original, 'img.doubanio.cmliussss.com');
             case 'direct-browser':
             case 'direct':
             default:
@@ -2135,7 +2189,7 @@ export function initIndexPage() {
           return items.map((item) => ({
             id: String(item?.id || ''),
             title: item?.title || '',
-            poster: item?.pic?.normal || item?.pic?.large || '',
+            poster: processImageUrl(item?.pic?.normal || item?.pic?.large || ''),
             rate: item?.rating?.value ? Number(item.rating.value).toFixed(1) : '',
             year: (item?.card_subtitle || '').match(/(\\d{4})/)?.[1] || '',
             isBangumi: false,

@@ -576,6 +576,7 @@ import { initPlayPage } from './playClient.js';
 import DrPlayer from '../../shared/DrPlayer.vue';
 import { normalizeCatPawOpenApiBase, requestCatSpider } from '../../shared/catpawopen';
 import { apiGetJson, apiPostJson, buildQuery } from '../../shared/apiClient';
+import { processPosterUrl } from '../../shared/posterCard';
 
 const props = defineProps({
   bootstrap: { type: Object, required: true },
@@ -1180,7 +1181,7 @@ const sourcesTabItems = computed(() => {
       siteName: s.siteName || s.siteKey,
       videoId: s.videoId,
       title: s.videoTitle || '未命名',
-      poster: s.videoPoster || '',
+      poster: processPosterUrl(s.videoPoster || ''),
       remark: (s.videoRemark || '').trim(),
     })),
   ];
@@ -1210,7 +1211,7 @@ const displayTitle = computed(() => {
 });
 
 const displayPoster = computed(() => {
-  return (detail.value.poster || props.videoPoster || '').trim();
+  return processPosterUrl((detail.value.poster || props.videoPoster || '').trim());
 });
 
 const historyCoverPoster = ref('');
@@ -1246,7 +1247,7 @@ const pickHistoryPoster = () => {
   }
   (aggregatedSources.value || []).forEach((s) => {
     if (!s || !s.siteKey || !s.videoPoster) return;
-    list.push({ siteKey: s.siteKey, poster: s.videoPoster });
+    list.push({ siteKey: s.siteKey, poster: processPosterUrl(s.videoPoster) });
   });
 
   const pickFrom = (siteKey) => {
