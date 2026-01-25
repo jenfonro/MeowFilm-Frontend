@@ -459,6 +459,11 @@ const isUiControlTarget = (target) => {
       '.yt-btn',
       '.m-center__controls',
       '.m-btn',
+      '.art-contextmenus',
+      '.art-contextmenu',
+      '.art-info',
+      '.art-info-panel',
+      '.art-info-close',
     ].join(',')
   );
 };
@@ -1244,6 +1249,17 @@ const onDocDown = (e) => {
   settingsOpen.value = false;
 };
 
+const closeArtPopups = (target) => {
+  if (!art) return;
+  const playerEl = art && art.template && art.template.$player ? art.template.$player : null;
+  if (!playerEl || !playerEl.classList) return;
+  if (target && typeof target.closest === 'function') {
+    if (target.closest('.art-contextmenus') || target.closest('.art-info')) return;
+  }
+  playerEl.classList.remove('art-contextmenu-show');
+  playerEl.classList.remove('art-info-show');
+};
+
 onMounted(() => {
   // Ensure device flags are computed before initializing ArtPlayer,
   // otherwise desktop/mobile behaviors can be swapped after mount.
@@ -1261,7 +1277,18 @@ onMounted(() => {
     mediaQuery = null;
   }
 
-  document.addEventListener('mousedown', onDocDown, true);
+  document.addEventListener(
+    'mousedown',
+    (e) => {
+      try {
+        onDocDown(e);
+      } catch (_e) {}
+      try {
+        closeArtPopups(e && e.target ? e.target : null);
+      } catch (_e) {}
+    },
+    true
+  );
   try {
     const el = shell.value;
     if (el) {
@@ -1440,6 +1467,15 @@ defineExpose({ destroy: destroyNow, pause });
   height: 100% !important;
 }
 
+:deep(.art-contextmenus) {
+  z-index: 150 !important;
+}
+
+:deep(.art-info) {
+  z-index: 140 !important;
+  pointer-events: auto;
+}
+
 .tv-drplayer.tv-drplayer--fullscreen :deep(.art-video-player),
 .tv-drplayer.tv-drplayer--fullscreen :deep(.art-video),
 .tv-drplayer.tv-drplayer--fullscreen :deep(video) {
@@ -1490,7 +1526,7 @@ defineExpose({ destroy: destroyNow, pause });
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 10000;
+  z-index: 110;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
