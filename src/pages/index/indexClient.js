@@ -1238,17 +1238,45 @@ function setupHomeSpiderBrowse() {
   };
   window.addEventListener('tv:home-view', onHomeViewEvent);
 
+  const resolveActiveSiteName = () => {
+    const key = typeof activeSiteKey === 'string' ? activeSiteKey.trim() : '';
+    let name = '';
+    try {
+      if (key) name = (getSiteDisplayName(key) || '').trim();
+    } catch (_e) {}
+    if (name) return name;
+    try {
+      name = (localStorage.getItem('tv_server_last_visited_site_name') || '').trim();
+      if (!name) name = (localStorage.getItem('tv_server_last_site_name') || '').trim();
+    } catch (_e) {
+      name = '';
+    }
+    return name || key;
+  };
+
   if (segHomeBtn) {
     segHomeBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      if (favoritesViewActive) hideFavoritesView();
-      else showHomeDouban();
+      if (favoritesViewActive) {
+        hideFavoritesView();
+        if (siteSections && !siteSections.classList.contains('hidden')) {
+          emitMobileContext('site', resolveActiveSiteName());
+        } else if (doubanBrowse && !doubanBrowse.classList.contains('hidden')) {
+          emitMobileContext('douban', '');
+        } else {
+          emitMobileContext('home', '');
+        }
+        return;
+      }
+      showHomeDouban();
+      emitMobileContext('home', '');
     });
   }
   if (segFavBtn) {
     segFavBtn.addEventListener('click', (e) => {
       e.preventDefault();
       showFavoritesView();
+      emitMobileContext('favorites', '');
     });
   }
 

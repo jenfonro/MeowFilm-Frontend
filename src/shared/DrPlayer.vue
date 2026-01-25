@@ -1390,8 +1390,18 @@ onBeforeUnmount(() => {
   destroyNow();
 });
 
+const pause = () => {
+  try {
+    if (art && typeof art.pause === 'function') {
+      art.pause();
+      return;
+    }
+    const v = art && art.video ? art.video : null;
+    if (v && typeof v.pause === 'function') v.pause();
+  } catch (_e) {}
+};
 
-defineExpose({ destroy: destroyNow });
+defineExpose({ destroy: destroyNow, pause });
 </script>
 
 <style scoped>

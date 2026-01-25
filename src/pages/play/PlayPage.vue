@@ -85,9 +85,10 @@
 
 	              <div id="playGrid" class="grid gap-4 transition-all duration-300 ease-in-out grid-cols-1 md:grid-cols-4">
 	                <div id="playerArea" class="transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 md:col-span-3">
-	                  <div class="play-video-ratio rounded-xl overflow-hidden shadow-lg">
-	                    <div class="play-video-ratio__inner">
-		                      <DrPlayer
+                    <div class="tv-player-stack flex flex-col gap-2">
+	                    <div class="play-video-ratio rounded-xl overflow-hidden shadow-lg">
+	                      <div class="play-video-ratio__inner">
+		                        <DrPlayer
                           ref="drPlayerRef"
 		                        v-if="playerUrl"
 		                        :url="playerUrl"
@@ -113,8 +114,45 @@
 	                          <div v-if="playerPhaseLoading" class="tv-spinner" aria-hidden="true"></div>
 	                        </div>
 	                      </div>
+	                      </div>
 	                    </div>
-	                  </div>
+
+                      <div class="tv-thirdparty-bar w-full rounded-xl border border-white/0 dark:border-white/30 bg-white/75 dark:bg-white/5 backdrop-blur-sm shadow-sm">
+                        <div class="tv-thirdparty-bar__inner flex flex-wrap items-center justify-center gap-1.5 px-2 py-2">
+                          <button
+                            v-for="p in thirdPartyVisiblePlayers"
+                            :key="p.icon"
+                            type="button"
+                            class="tv-thirdparty-btn"
+                            :disabled="!playerUrl"
+                            :title="p.name"
+                            :aria-label="`使用${p.name}播放`"
+                            @click="openWithThirdPartyPlayer(p)"
+                          >
+                            <img :src="`/images/${p.icon}.webp`" :alt="p.name" class="tv-thirdparty-icon" />
+                          </button>
+
+                          <button
+                            type="button"
+                            class="tv-thirdparty-expand"
+                            :aria-label="thirdPartyExpanded ? '收起' : '展开'"
+                            :title="thirdPartyExpanded ? '收起' : '展开'"
+                            @click="toggleThirdPartyExpanded"
+                          >
+                            <svg
+                              class="tv-thirdparty-expand__ico"
+                              :class="{ 'tv-thirdparty-expand__ico--open': thirdPartyExpanded }"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              aria-hidden="true"
+                            >
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
 	                </div>
 
                 <div id="episodePanel" class="relative w-full h-[320px] sm:h-[360px] md:h-auto md:overflow-hidden transition-all duration-300 ease-in-out md:col-span-1 lg:opacity-100 lg:scale-100">
@@ -500,6 +538,177 @@ const props = defineProps({
 });
 
 const drPlayerRef = ref(null);
+
+const THIRD_PARTY_PLAYERS = [
+  { icon: 'iina', name: 'IINA', scheme: 'iina://weblink?url=$edurl', platforms: ['MacOS'] },
+  { icon: 'potplayer', name: 'PotPlayer', scheme: 'potplayer://$durl', platforms: ['Windows'] },
+  { icon: 'vlc', name: 'VLC', scheme: 'vlc://$durl', platforms: ['Windows', 'MacOS', 'Linux', 'Android', 'iOS'] },
+  { icon: 'nplayer', name: 'nPlayer', scheme: 'nplayer-$durl', platforms: ['Android', 'iOS'] },
+  { icon: 'omniplayer', name: 'OmniPlayer', scheme: 'omniplayer://weblink?url=$durl', platforms: ['MacOS'] },
+  { icon: 'figplayer', name: 'Fig Player', scheme: 'figplayer://weblink?url=$durl', platforms: ['MacOS'] },
+  { icon: 'infuse', name: 'Infuse', scheme: 'infuse://x-callback-url/play?url=$durl', platforms: ['MacOS', 'iOS'] },
+  { icon: 'fileball', name: 'Fileball', scheme: 'filebox://play?url=$durl', platforms: ['MacOS', 'iOS'] },
+  {
+    icon: 'mxplayer',
+    name: 'MX Player',
+    scheme: 'intent:$durl#Intent;package=com.mxtech.videoplayer.ad;S.title=$name;end',
+    platforms: ['Android'],
+  },
+  {
+    icon: 'mxplayer-pro',
+    name: 'MX Player Pro',
+    scheme: 'intent:$durl#Intent;package=com.mxtech.videoplayer.pro;S.title=$name;end',
+    platforms: ['Android'],
+  },
+  { icon: 'iPlay', name: 'iPlay', scheme: 'iplay://play/any?type=url&url=$bdurl', platforms: ['iOS'] },
+  { icon: 'mpv', name: 'mpv', scheme: 'mpv://$edurl', platforms: ['Windows', 'MacOS', 'Linux', 'Android'] },
+];
+
+const THIRD_PARTY_EXPANDED_KEY = 'tv:play:third_party_players:expanded';
+const thirdPartyExpanded = ref(false);
+try {
+  thirdPartyExpanded.value = localStorage.getItem(THIRD_PARTY_EXPANDED_KEY) === 'true';
+} catch (_e) {}
+
+const thirdPartyIsMobile = ref(false);
+const updateThirdPartyIsMobile = () => {
+  try {
+    if (typeof window === 'undefined') return;
+    thirdPartyIsMobile.value = window.innerWidth < 768;
+  } catch (_e) {
+    thirdPartyIsMobile.value = false;
+  }
+};
+updateThirdPartyIsMobile();
+
+const getPlatform = () => {
+  try {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'Unknown';
+    const ua = navigator.userAgent ? String(navigator.userAgent) : '';
+    const touch =
+      (typeof navigator.maxTouchPoints === 'number' && navigator.maxTouchPoints > 0) ||
+      'ontouchstart' in window;
+    const isIos = /iPad|iPhone|iPod/i.test(ua) || (!!touch && /Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+    if (isIos) return 'iOS';
+    if (/Android/i.test(ua)) return 'Android';
+    if (/Windows/i.test(ua)) return 'Windows';
+    if (/Mac OS X/i.test(ua)) return 'MacOS';
+    if (/Linux/i.test(ua)) return 'Linux';
+    return 'Unknown';
+  } catch (_e) {
+    return 'Unknown';
+  }
+};
+
+const thirdPartyCollapsedPlayers = computed(() => {
+  if (thirdPartyIsMobile.value) {
+    const wanted = ['mxplayer', 'infuse', 'nplayer'];
+    const byIcon = new Map(THIRD_PARTY_PLAYERS.map((p) => [p.icon, p]));
+    const out = [];
+    const seen = new Set();
+    for (const icon of wanted) {
+      const p = byIcon.get(icon);
+      if (!p) continue;
+      if (seen.has(p.icon)) continue;
+      seen.add(p.icon);
+      out.push(p);
+    }
+    if (out.length >= 3) return out.slice(0, 3);
+    // Fill to 3 (best-effort) to keep the bar consistent even if the list changes.
+    const platform = getPlatform();
+    const platformPlayers = platform === 'Unknown' ? THIRD_PARTY_PLAYERS : THIRD_PARTY_PLAYERS.filter((p) => p.platforms.includes(platform));
+    for (const p of platformPlayers) {
+      if (out.length >= 3) break;
+      if (seen.has(p.icon)) continue;
+      seen.add(p.icon);
+      out.push(p);
+    }
+    return out.slice(0, 3);
+  }
+
+  const platform = getPlatform();
+  const platformPlayers =
+    platform === 'Unknown' ? THIRD_PARTY_PLAYERS : THIRD_PARTY_PLAYERS.filter((p) => p.platforms.includes(platform));
+  return platformPlayers.slice(0, 3);
+});
+
+const thirdPartyVisiblePlayers = computed(() => {
+  return thirdPartyExpanded.value ? THIRD_PARTY_PLAYERS : thirdPartyCollapsedPlayers.value;
+});
+
+const toggleThirdPartyExpanded = () => {
+  thirdPartyExpanded.value = !thirdPartyExpanded.value;
+  try {
+    localStorage.setItem(THIRD_PARTY_EXPANDED_KEY, thirdPartyExpanded.value.toString());
+  } catch (_e) {}
+};
+
+onMounted(() => {
+  try {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('resize', updateThirdPartyIsMobile, { passive: true });
+  } catch (_e) {}
+});
+
+onBeforeUnmount(() => {
+  try {
+    if (typeof window === 'undefined') return;
+    window.removeEventListener('resize', updateThirdPartyIsMobile);
+  } catch (_e) {}
+});
+
+const convertThirdPartyUrl = (scheme, args) => {
+  let ans = String(scheme || '');
+  ans = ans.replace('$name', args.name || '');
+  ans = ans.replace(/\$[eb_]*url/g, (old) => {
+    const op = old.match(/[eb]/g);
+    let u = String(args.raw_url || '');
+    if (op) {
+      for (const o of op.reverse()) {
+        if (o === 'e') u = encodeURIComponent(u);
+        else if (o === 'b') u = window.btoa(u);
+      }
+    }
+    return u;
+  });
+  ans = ans.replace(/\$[eb_]*durl/g, (old) => {
+    const op = old.match(/[eb]/g);
+    let u = String(args.d_url || '');
+    if (op) {
+      for (const o of op.reverse()) {
+        if (o === 'e') u = encodeURIComponent(u);
+        else if (o === 'b') u = window.btoa(u);
+      }
+    }
+    return u;
+  });
+  return ans;
+};
+
+const openWithThirdPartyPlayer = (player) => {
+  try {
+    const p = player && typeof player === 'object' ? player : null;
+    if (!p || !p.scheme) return;
+    const durl = playerUrl && playerUrl.value ? String(playerUrl.value || '').trim() : '';
+    if (!durl) return;
+    const name = (displayTitle && displayTitle.value ? String(displayTitle.value) : props.videoTitle) || '';
+    const href = convertThirdPartyUrl(p.scheme, { raw_url: '', name, d_url: durl });
+
+    try {
+      if (drPlayerRef.value && typeof drPlayerRef.value.pause === 'function') drPlayerRef.value.pause();
+    } catch (_e) {}
+
+    window.setTimeout(() => {
+      try {
+        window.location.href = href;
+      } catch (_e) {
+        try {
+          window.open(href, '_self');
+        } catch (_e2) {}
+      }
+    }, 0);
+  } catch (_e) {}
+};
 
 const AGG_STORAGE_KEY = 'tv:search:aggregate:sources:v1';
 const aggregatedSources = ref([]);
@@ -3198,7 +3407,7 @@ onMounted(() => {
   // Keep episode panel height aligned to the 16:9 player height on desktop,
   // and prevent tall episode lists from expanding the whole page.
   try {
-    const playerBox = document.querySelector('.play-video-ratio');
+    const playerBox = document.querySelector('.tv-player-stack') || document.querySelector('.play-video-ratio');
     const panel = document.getElementById('episodePanel');
     if (playerBox && panel && typeof ResizeObserver !== 'undefined') {
       const apply = () => {
@@ -3409,6 +3618,82 @@ watch(
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.tv-thirdparty-btn,
+.tv-thirdparty-expand {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.6);
+  color: rgba(55, 65, 81, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: transform 0.12s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  user-select: none;
+}
+
+.tv-thirdparty-btn:hover,
+.tv-thirdparty-expand:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.tv-thirdparty-btn:active,
+.tv-thirdparty-expand:active {
+  transform: translateY(1px);
+}
+
+.tv-thirdparty-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tv-thirdparty-icon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.tv-thirdparty-expand__ico {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.2s ease;
+}
+
+.tv-thirdparty-expand__ico--open {
+  transform: rotate(180deg);
+}
+
+.dark .tv-thirdparty-btn,
+.dark .tv-thirdparty-expand {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(229, 231, 235, 1);
+  box-shadow: none;
+}
+
+.dark .tv-thirdparty-btn:hover,
+.dark .tv-thirdparty-expand:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 767px) {
+  .tv-thirdparty-bar__inner {
+    position: relative;
+    justify-content: center;
+    padding-left: 48px;
+    padding-right: 48px;
+  }
+
+  .tv-thirdparty-expand {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
 }
 
 /* iOS Safari: videos can go "audio-only black screen" when their parent clips (border-radius + overflow hidden).
