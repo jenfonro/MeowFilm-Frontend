@@ -544,10 +544,10 @@ const THIRD_PARTY_PLAYERS = [
   { icon: 'potplayer', name: 'PotPlayer', scheme: 'potplayer://$durl', platforms: ['Windows'] },
   { icon: 'vlc', name: 'VLC', scheme: 'vlc://$durl', platforms: ['Windows', 'MacOS', 'Linux', 'Android', 'iOS'] },
   { icon: 'nplayer', name: 'nPlayer', scheme: 'nplayer-$durl', platforms: ['Android', 'iOS'] },
-  { icon: 'omniplayer', name: 'OmniPlayer', scheme: 'omniplayer://weblink?url=$durl', platforms: ['MacOS'] },
-  { icon: 'figplayer', name: 'Fig Player', scheme: 'figplayer://weblink?url=$durl', platforms: ['MacOS'] },
-  { icon: 'infuse', name: 'Infuse', scheme: 'infuse://x-callback-url/play?url=$durl', platforms: ['MacOS', 'iOS'] },
-  { icon: 'fileball', name: 'Fileball', scheme: 'filebox://play?url=$durl', platforms: ['MacOS', 'iOS'] },
+  { icon: 'omniplayer', name: 'OmniPlayer', scheme: 'omniplayer://weblink?url=$edurl', platforms: ['MacOS'] },
+  { icon: 'figplayer', name: 'Fig Player', scheme: 'figplayer://weblink?url=$edurl', platforms: ['MacOS'] },
+  { icon: 'infuse', name: 'Infuse', scheme: 'infuse://x-callback-url/play?url=$edurl', platforms: ['MacOS', 'iOS'] },
+  { icon: 'fileball', name: 'Fileball', scheme: 'filebox://play?url=$edurl', platforms: ['MacOS', 'iOS'] },
   {
     icon: 'mxplayer',
     name: 'MX Player',
@@ -689,8 +689,9 @@ const openWithThirdPartyPlayer = (player) => {
   try {
     const p = player && typeof player === 'object' ? player : null;
     if (!p || !p.scheme) return;
-    const durl = playerUrl && playerUrl.value ? String(playerUrl.value || '').trim() : '';
+    let durl = playerUrl && playerUrl.value ? String(playerUrl.value || '').trim() : '';
     if (!durl) return;
+
     const name = (displayTitle && displayTitle.value ? String(displayTitle.value) : props.videoTitle) || '';
     const href = convertThirdPartyUrl(p.scheme, { raw_url: '', name, d_url: durl });
 
