@@ -1207,6 +1207,182 @@ export function initDashboardPage(bootstrap = {}) {
 
   const setPanSettingsStatus = bindInlineStatus(panSettingsStatus);
 
+  const baiduQrState = {
+    qid: '',
+    expiresAt: 0,
+    imageUrl: '',
+    status: '',
+    message: '',
+    pollTimer: null,
+  };
+
+  const quarkQrState = {
+    qid: '',
+    expiresAt: 0,
+    imageUrl: '',
+    status: '',
+    message: '',
+    pollTimer: null,
+  };
+
+  const stopBaiduQrPoll = () => {
+    if (baiduQrState.pollTimer) {
+      clearInterval(baiduQrState.pollTimer);
+      baiduQrState.pollTimer = null;
+    }
+  };
+
+  const stopQuarkQrPoll = () => {
+    if (quarkQrState.pollTimer) {
+      clearInterval(quarkQrState.pollTimer);
+      quarkQrState.pollTimer = null;
+    }
+  };
+
+  const isBaiduQrExpired = () => {
+    if (!baiduQrState.qid) return true;
+    const exp = Number(baiduQrState.expiresAt || 0);
+    if (!Number.isFinite(exp) || exp <= 0) return false;
+    return Date.now() > exp - 1500;
+  };
+
+  const isQuarkQrExpired = () => {
+    if (!quarkQrState.qid) return true;
+    const exp = Number(quarkQrState.expiresAt || 0);
+    if (!Number.isFinite(exp) || exp <= 0) return false;
+    return Date.now() > exp - 1500;
+  };
+
+  const startBaiduQrPoll = () => {
+    stopBaiduQrPoll();
+    if (!baiduQrState.qid || isBaiduQrExpired()) return;
+    const tick = async () => {
+      if (!baiduQrState.qid || isBaiduQrExpired()) {
+        stopBaiduQrPoll();
+        baiduQrState.status = 'expired';
+        baiduQrState.imageUrl = '';
+        baiduQrState.qid = '';
+        baiduQrState.expiresAt = 0;
+        setPanSettingsStatus('error', '二维码登录超时/已过期');
+        renderPanSettingsContent();
+        return;
+      }
+      try {
+        const { resp, data } = await postJsonSafe('/dashboard/pan/baidu/qr/cookie', { qid: baiduQrState.qid });
+        if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
+          const cookie = String(data.cookie || '');
+          const textarea = panSettingsContent
+            ? panSettingsContent.querySelector('textarea[data-pan-cookie-input="baidu"]')
+            : null;
+          if (textarea) textarea.value = cookie;
+          panLoginSettings = Object.assign({}, panLoginSettings, {
+            baidu: Object.assign({}, getPanSettingValue('baidu'), { cookie }),
+          });
+          stopBaiduQrPoll();
+          baiduQrState.status = 'confirmed';
+          baiduQrState.imageUrl = '';
+          baiduQrState.qid = '';
+          baiduQrState.expiresAt = 0;
+          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
+          clearStatusLater(setPanSettingsStatus, 2200);
+          renderPanSettingsContent();
+          return;
+        }
+        if (resp.status === 409) {
+          const st = data && data.status ? String(data.status) : 'pending';
+          baiduQrState.status = st;
+          if (st === 'scanned') setPanSettingsStatus('', '已扫码：请在手机端确认登录…');
+          else setPanSettingsStatus('', '等待扫码确认…');
+          return;
+        }
+        const msg = (data && data.message) ? String(data.message) : `HTTP ${resp.status}`;
+        stopBaiduQrPoll();
+        baiduQrState.status = 'error';
+        baiduQrState.imageUrl = '';
+        baiduQrState.qid = '';
+        baiduQrState.expiresAt = 0;
+        setPanSettingsStatus('error', msg);
+        renderPanSettingsContent();
+      } catch (e) {
+        stopBaiduQrPoll();
+        baiduQrState.status = 'error';
+        baiduQrState.imageUrl = '';
+        baiduQrState.qid = '';
+        baiduQrState.expiresAt = 0;
+        setPanSettingsStatus('error', (e && e.message) ? String(e.message) : '获取失败');
+        renderPanSettingsContent();
+      }
+    };
+    tick();
+    baiduQrState.pollTimer = setInterval(tick, 1500);
+    renderPanSettingsContent();
+  };
+
+  const startQuarkQrPoll = () => {
+    stopQuarkQrPoll();
+    if (!quarkQrState.qid || isQuarkQrExpired()) return;
+    const tick = async () => {
+      if (!quarkQrState.qid || isQuarkQrExpired()) {
+        stopQuarkQrPoll();
+        quarkQrState.status = 'expired';
+        quarkQrState.imageUrl = '';
+        quarkQrState.qid = '';
+        quarkQrState.expiresAt = 0;
+        setPanSettingsStatus('error', '二维码登录超时/已过期');
+        renderPanSettingsContent();
+        return;
+      }
+      try {
+        const { resp, data } = await postJsonSafe('/dashboard/pan/quark/qr/cookie', { qid: quarkQrState.qid });
+        if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
+          const cookie = String(data.cookie || '');
+          const textarea = panSettingsContent
+            ? panSettingsContent.querySelector('textarea[data-pan-cookie-input="quark"]')
+            : null;
+          if (textarea) textarea.value = cookie;
+          panLoginSettings = Object.assign({}, panLoginSettings, {
+            quark: Object.assign({}, getPanSettingValue('quark'), { cookie }),
+          });
+          stopQuarkQrPoll();
+          quarkQrState.status = 'confirmed';
+          quarkQrState.imageUrl = '';
+          quarkQrState.qid = '';
+          quarkQrState.expiresAt = 0;
+          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
+          clearStatusLater(setPanSettingsStatus, 2200);
+          renderPanSettingsContent();
+          return;
+        }
+        if (resp.status === 409) {
+          const st = data && data.status ? String(data.status) : 'pending';
+          quarkQrState.status = st;
+          if (st === 'scanned') setPanSettingsStatus('', '已扫码：请在手机端确认登录…');
+          else setPanSettingsStatus('', '等待扫码确认…');
+          return;
+        }
+        const msg = (data && data.message) ? String(data.message) : `HTTP ${resp.status}`;
+        stopQuarkQrPoll();
+        quarkQrState.status = 'error';
+        quarkQrState.imageUrl = '';
+        quarkQrState.qid = '';
+        quarkQrState.expiresAt = 0;
+        setPanSettingsStatus('error', msg);
+        renderPanSettingsContent();
+      } catch (e) {
+        stopQuarkQrPoll();
+        quarkQrState.status = 'error';
+        quarkQrState.imageUrl = '';
+        quarkQrState.qid = '';
+        quarkQrState.expiresAt = 0;
+        setPanSettingsStatus('error', (e && e.message) ? String(e.message) : '获取失败');
+        renderPanSettingsContent();
+      }
+    };
+    tick();
+    quarkQrState.pollTimer = setInterval(tick, 1500);
+    renderPanSettingsContent();
+  };
+
   const fetchPanSettings = async (key) => {
     const qs = key ? `?key=${encodeURIComponent(String(key))}` : '';
     const data = await getSuccessJson(`/dashboard/pan/settings${qs}`);
@@ -1451,6 +1627,39 @@ export function initDashboardPage(bootstrap = {}) {
 	      const stack = createEl('div', { className: 'flex flex-col items-start gap-3' });
 	      setStyles(stack, { width: '100%' });
 
+        if (def.key === 'baidu' && baiduQrState.imageUrl && !isBaiduQrExpired()) {
+          const imgRow = createEl('div', { className: 'w-full flex items-center justify-center' });
+          const img = createEl('img');
+          img.alt = 'baidu qrcode';
+          img.src = baiduQrState.imageUrl;
+          setStyles(img, {
+            width: '220px',
+            height: '220px',
+            objectFit: 'contain',
+            borderRadius: '12px',
+            background: '#fff',
+            border: '1px solid rgba(0,0,0,0.10)',
+          });
+          imgRow.appendChild(img);
+          stack.appendChild(imgRow);
+        }
+        if (def.key === 'quark' && quarkQrState.imageUrl && !isQuarkQrExpired()) {
+          const imgRow = createEl('div', { className: 'w-full flex items-center justify-center' });
+          const img = createEl('img');
+          img.alt = 'quark qrcode';
+          img.src = quarkQrState.imageUrl;
+          setStyles(img, {
+            width: '220px',
+            height: '220px',
+            objectFit: 'contain',
+            borderRadius: '12px',
+            background: '#fff',
+            border: '1px solid rgba(0,0,0,0.10)',
+          });
+          imgRow.appendChild(img);
+          stack.appendChild(imgRow);
+        }
+
 	      const textarea = createEl('textarea', { className: 'tv-field' });
 	      textarea.rows = 3;
 	      setStyles(textarea, { width: '100%' });
@@ -1460,8 +1669,38 @@ export function initDashboardPage(bootstrap = {}) {
 	      stack.appendChild(textarea);
 
 	      const saveWrap = createEl('div');
-	      setStyles(saveWrap, { display: 'flex', justifyContent: 'center', width: '100%' });
-	      saveWrap.appendChild(saveBtn);
+	      setStyles(saveWrap, {
+	        display: 'flex',
+	        justifyContent: (def.key === 'baidu' || def.key === 'quark') ? 'flex-start' : 'center',
+	        alignItems: 'center',
+	        width: '100%',
+	      });
+        if (def.key === 'baidu' || def.key === 'quark') {
+          setStyles(saveWrap, { position: 'relative' });
+          const isBaidu = def.key === 'baidu';
+          const inFlight = isBaidu ? !!baiduQrState.pollTimer : !!quarkQrState.pollTimer;
+          const action = isBaidu ? 'baidu-qr-start' : 'quark-qr-start';
+          const qrBtn = createEl('button', { className: 'btn-ghost-blue', text: inFlight ? '二维码登录中...' : '二维码登录' });
+          qrBtn.type = 'button';
+          qrBtn.disabled = inFlight;
+          qrBtn.setAttribute('data-pan-action', action);
+          qrBtn.setAttribute('data-pan-key', def.key);
+          saveWrap.appendChild(qrBtn);
+
+          const center = createEl('div');
+          setStyles(center, {
+            position: 'absolute',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            justifyContent: 'center',
+            width: 'max-content',
+          });
+          center.appendChild(saveBtn);
+          saveWrap.appendChild(center);
+        } else {
+          saveWrap.appendChild(saveBtn);
+        }
 	      stack.appendChild(saveWrap);
 
 	      panSettingsContent.appendChild(stack);
@@ -1514,6 +1753,8 @@ export function initDashboardPage(bootstrap = {}) {
       if (!btn) return;
       const key = btn.dataset.panTab || '';
       if (!key || key === activePanSettingKey) return;
+      if (activePanSettingKey === 'baidu') stopBaiduQrPoll();
+      if (activePanSettingKey === 'quark') stopQuarkQrPoll();
       activePanSettingKey = key;
       setPanSettingsStatus('', '');
       renderPanSettingsTabs();
@@ -1576,6 +1817,8 @@ export function initDashboardPage(bootstrap = {}) {
       if (!btn) return;
       const key = btn.dataset.panTab || '';
       if (!key) return;
+      if (activePanSettingKey === 'baidu') stopBaiduQrPoll();
+      if (activePanSettingKey === 'quark') stopQuarkQrPoll();
       activePanSettingKey = key;
       hidePanMoreMenu();
       setPanSettingsStatus('', '');
@@ -1604,6 +1847,72 @@ export function initDashboardPage(bootstrap = {}) {
         await savePanLoginSettingToServer({
           key,
           save: () => savePanCookie(key, value),
+        });
+        return;
+      }
+
+      if (action === 'baidu-qr-start' && key === 'baidu') {
+        await withDatasetLock(actionEl, 'baiduQrStartPending', async () => {
+          stopBaiduQrPoll();
+          baiduQrState.status = '';
+          baiduQrState.message = '';
+          baiduQrState.imageUrl = '';
+          baiduQrState.qid = '';
+          baiduQrState.expiresAt = 0;
+          renderPanSettingsContent();
+          setPanSettingsStatus('', '生成二维码...');
+          baiduQrState.status = 'starting';
+          baiduQrState.message = '';
+          const { resp, data } = await postJsonSafe('/dashboard/pan/baidu/qr/start', {});
+          if (!resp.ok || !data || data.success !== true) {
+            const msg = (data && data.message) ? String(data.message) : '生成失败';
+            baiduQrState.status = 'error';
+            baiduQrState.message = msg;
+            setPanSettingsStatus('error', msg);
+            renderPanSettingsContent();
+            return;
+          }
+          baiduQrState.qid = (data && data.qid) ? String(data.qid) : '';
+          baiduQrState.expiresAt = Number(data && data.expiresAt ? data.expiresAt : 0);
+          baiduQrState.imageUrl = (data && data.imageUrl) ? String(data.imageUrl) : '';
+          baiduQrState.status = 'pending';
+          baiduQrState.message = '二维码已生成：请扫码并在手机端确认登录…';
+          setPanSettingsStatus('', '二维码已生成，等待扫码确认…');
+          renderPanSettingsContent();
+          startBaiduQrPoll();
+        });
+        return;
+      }
+
+      if (action === 'quark-qr-start' && key === 'quark') {
+        await withDatasetLock(actionEl, 'quarkQrStartPending', async () => {
+          stopQuarkQrPoll();
+          quarkQrState.status = '';
+          quarkQrState.message = '';
+          quarkQrState.imageUrl = '';
+          quarkQrState.qid = '';
+          quarkQrState.expiresAt = 0;
+          renderPanSettingsContent();
+          setPanSettingsStatus('', '生成二维码...');
+          quarkQrState.status = 'starting';
+          quarkQrState.message = '';
+          const { resp, data } = await postJsonSafe('/dashboard/pan/quark/qr/start', {});
+          if (!resp.ok || !data || data.success !== true) {
+            const msg = (data && data.message) ? String(data.message) : '生成失败';
+            quarkQrState.status = 'error';
+            quarkQrState.message = msg;
+            setPanSettingsStatus('error', msg);
+            renderPanSettingsContent();
+            return;
+          }
+          quarkQrState.qid = (data && data.qid) ? String(data.qid) : '';
+          quarkQrState.expiresAt = Number(data && data.expiresAt ? data.expiresAt : 0);
+          quarkQrState.imageUrl = (data && data.imageUrl) ? String(data.imageUrl) : '';
+          quarkQrState.status = 'pending';
+          quarkQrState.message = '二维码已生成：请使用夸克 App（已登录）扫码并在手机端确认登录…';
+          setPanSettingsStatus('', '二维码已生成，等待扫码确认…');
+          renderPanSettingsContent();
+          startQuarkQrPoll();
         });
         return;
       }
