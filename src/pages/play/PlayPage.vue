@@ -88,8 +88,8 @@
                     <div class="tv-player-stack flex flex-col gap-2">
 	                    <div class="play-video-ratio rounded-xl overflow-hidden shadow-lg">
 	                      <div class="play-video-ratio__inner">
-		                        <DrPlayer
-                          ref="drPlayerRef"
+		                        <ArtPlayer
+                          ref="artPlayerRef"
 		                        v-if="playerUrl"
 		                        :url="playerUrl"
 		                        :poster="displayPoster"
@@ -573,7 +573,7 @@
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { initPlayPage } from './playClient.js';
-import DrPlayer from '../../shared/DrPlayer.vue';
+	import ArtPlayer from '../../shared/ArtPlayer.vue';
 import { normalizeCatPawOpenApiBase, requestCatSpider } from '../../shared/catpawopen';
 import { apiGetJson, apiPostJson, buildQuery } from '../../shared/apiClient';
 import { processPosterUrl } from '../../shared/posterCard';
@@ -592,7 +592,7 @@ const props = defineProps({
   videoPanDir: { type: String, default: '' },
 });
 
-const drPlayerRef = ref(null);
+const artPlayerRef = ref(null);
 
 const THIRD_PARTY_PLAYERS = [
   { icon: 'iina', name: 'IINA', scheme: 'iina://weblink?url=$edurl', platforms: ['MacOS'] },
@@ -751,7 +751,7 @@ const openWithThirdPartyPlayer = (player) => {
     const href = convertThirdPartyUrl(p.scheme, { raw_url: '', name, d_url: durl });
 
     try {
-      if (drPlayerRef.value && typeof drPlayerRef.value.pause === 'function') drPlayerRef.value.pause();
+      if (artPlayerRef.value && typeof artPlayerRef.value.pause === 'function') artPlayerRef.value.pause();
     } catch (_e) {}
 
     window.setTimeout(() => {
@@ -975,8 +975,8 @@ const fetchAggregatedSourcesExactMatches = async () => {
 const exitPlay = () => {
   try {
     // Stop playback immediately (avoid continuing audio in background).
-    if (drPlayerRef.value && typeof drPlayerRef.value.destroy === 'function') {
-      drPlayerRef.value.destroy();
+    if (artPlayerRef.value && typeof artPlayerRef.value.destroy === 'function') {
+      artPlayerRef.value.destroy();
     }
     playerUrl.value = '';
     playerHeaders.value = {};
@@ -987,8 +987,8 @@ const exitPlay = () => {
 
 const resetForNewVideo = () => {
   try {
-    if (drPlayerRef.value && typeof drPlayerRef.value.destroy === 'function') {
-      drPlayerRef.value.destroy();
+    if (artPlayerRef.value && typeof artPlayerRef.value.destroy === 'function') {
+      artPlayerRef.value.destroy();
     }
   } catch (_e) {}
   playerUrl.value = '';
@@ -1026,8 +1026,8 @@ const resetForNewVideo = () => {
 
 const resetForNewSource = () => {
   try {
-    if (drPlayerRef.value && typeof drPlayerRef.value.destroy === 'function') {
-      drPlayerRef.value.destroy();
+    if (artPlayerRef.value && typeof artPlayerRef.value.destroy === 'function') {
+      artPlayerRef.value.destroy();
     }
   } catch (_e) {}
   playerUrl.value = '';

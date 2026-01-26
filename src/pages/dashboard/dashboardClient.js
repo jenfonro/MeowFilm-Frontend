@@ -382,7 +382,7 @@ export function initDashboardPage(bootstrap = {}) {
     return list;
   };
   let initialPanelKey = null;
-  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic', 'live']);
+  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic']);
   const normalizePanelKey = (key) => {
     const k = typeof key === 'string' ? key.trim().toLowerCase() : '';
     return allowedPanels.has(k) ? k : 'site';

@@ -1,10 +1,10 @@
 <template>
   <div
-    class="tv-drplayer"
-    :class="{ 'tv-drplayer--fullscreen': isFullscreen, 'tv-drplayer--mobile': isMobile }"
+    class="tv-artplayer"
+    :class="{ 'tv-artplayer--fullscreen': isFullscreen, 'tv-artplayer--mobile': isMobile }"
     ref="shell"
   >
-    <div ref="container" class="drplayer-root" />
+    <div ref="container" class="artplayer-root" />
 
     <teleport :to="teleportTarget || 'body'" :disabled="!teleportTarget">
       <!-- Buffering ring -->
@@ -1432,7 +1432,7 @@ defineExpose({ destroy: destroyNow, pause });
 </script>
 
 <style scoped>
-.tv-drplayer {
+.tv-artplayer {
   --yt-btn-size: 34px;
   --yt-ico-size: 18px;
   --yt-pill-pad-y: 8px;
@@ -1446,7 +1446,7 @@ defineExpose({ destroy: destroyNow, pause });
   background: #000;
 }
 
-.tv-drplayer.tv-drplayer--fullscreen {
+.tv-artplayer.tv-artplayer--fullscreen {
   /* Fullscreen: keep capsule height ~50px on 2K, scale smoothly on other screens. */
   --yt-pill-h: clamp(42px, 1.95vw, 50px);
   --yt-btn-size: calc(var(--yt-pill-h) - 10px);
@@ -1456,7 +1456,7 @@ defineExpose({ destroy: destroyNow, pause });
   --yt-time-size: clamp(12px, 0.55vw, 14px);
 }
 
-.drplayer-root {
+.artplayer-root {
   width: 100%;
   height: 100%;
 }
@@ -1476,16 +1476,16 @@ defineExpose({ destroy: destroyNow, pause });
   pointer-events: auto;
 }
 
-.tv-drplayer.tv-drplayer--fullscreen :deep(.art-video-player),
-.tv-drplayer.tv-drplayer--fullscreen :deep(.art-video),
-.tv-drplayer.tv-drplayer--fullscreen :deep(video) {
+.tv-artplayer.tv-artplayer--fullscreen :deep(.art-video-player),
+.tv-artplayer.tv-artplayer--fullscreen :deep(.art-video),
+.tv-artplayer.tv-artplayer--fullscreen :deep(video) {
   transform: translateZ(0);
   will-change: transform;
   backface-visibility: hidden;
 }
 
-.tv-drplayer.tv-drplayer--fullscreen :deep(.art-video),
-.tv-drplayer.tv-drplayer--fullscreen :deep(video) {
+.tv-artplayer.tv-artplayer--fullscreen :deep(.art-video),
+.tv-artplayer.tv-artplayer--fullscreen :deep(video) {
   filter: opacity(0.999);
 }
 
@@ -1507,16 +1507,16 @@ defineExpose({ destroy: destroyNow, pause });
   display: none !important;
 }
 
-.tv-drplayer.tv-drplayer--mobile :deep(.art-layer-play) {
+.tv-artplayer.tv-artplayer--mobile :deep(.art-layer-play) {
   display: none !important;
 }
 
-.tv-drplayer.tv-drplayer--mobile :deep(.art-state) {
+.tv-artplayer.tv-artplayer--mobile :deep(.art-state) {
   display: none !important;
 }
 
-.tv-drplayer :deep(.art-loading),
-.tv-drplayer :deep(.art-layer-loading) {
+.tv-artplayer :deep(.art-loading),
+.tv-artplayer :deep(.art-layer-loading) {
   display: none !important;
 }
 
@@ -1670,7 +1670,7 @@ defineExpose({ destroy: destroyNow, pause });
   color: rgba(255, 255, 255, 0.92);
 }
 
-.tv-drplayer.tv-drplayer--fullscreen .yt-pill {
+.tv-artplayer.tv-artplayer--fullscreen .yt-pill {
   height: var(--yt-pill-h);
   padding-top: 0;
   padding-bottom: 0;
@@ -1819,12 +1819,12 @@ defineExpose({ destroy: destroyNow, pause });
 }
 
 /* -------------------- Mobile controls -------------------- */
-.tv-drplayer.tv-drplayer--mobile .yt-ui {
+.tv-artplayer.tv-artplayer--mobile .yt-ui {
   /* Mobile: keep controls visible a bit more naturally on tap */
   transition: opacity 0.16s ease;
 }
 
-.tv-drplayer.tv-drplayer--mobile {
+.tv-artplayer.tv-artplayer--mobile {
   --m-control-bottom: 10px;
 }
 
@@ -1834,7 +1834,7 @@ defineExpose({ destroy: destroyNow, pause });
   pointer-events: auto;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-progress {
+.tv-artplayer.tv-artplayer--mobile .m-progress {
   position: absolute;
   left: 12px;
   right: 60px; /* leave room for fullscreen */
@@ -1845,26 +1845,26 @@ defineExpose({ destroy: destroyNow, pause });
   --yt-progress-thumb-h: 12px;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-setting {
+.tv-artplayer.tv-artplayer--mobile .m-setting {
   position: absolute;
   top: 10px;
   right: 10px;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-setting .yt-setting__menu {
+.tv-artplayer.tv-artplayer--mobile .m-setting .yt-setting__menu {
   top: calc(100% + 10px);
   bottom: auto;
   right: 0;
   transform-origin: top right;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-fullscreen {
+.tv-artplayer.tv-artplayer--mobile .m-fullscreen {
   position: absolute;
   right: 10px;
   bottom: var(--m-control-bottom);
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-center {
+.tv-artplayer.tv-artplayer--mobile .m-center {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -1875,19 +1875,19 @@ defineExpose({ destroy: destroyNow, pause });
   display: block;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-center.m-center--show {
+.tv-artplayer.tv-artplayer--mobile .m-center.m-center--show {
   opacity: 1;
   pointer-events: auto;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-center__controls {
+.tv-artplayer.tv-artplayer--mobile .m-center__controls {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-btn {
+.tv-artplayer.tv-artplayer--mobile .m-btn {
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
@@ -1899,7 +1899,7 @@ defineExpose({ destroy: destroyNow, pause });
   color: rgba(255, 255, 255, 0.92);
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-btn--play {
+.tv-artplayer.tv-artplayer--mobile .m-btn--play {
   width: 62px;
   height: 62px;
   background: rgba(20, 20, 20, 0.48);
@@ -1907,7 +1907,7 @@ defineExpose({ destroy: destroyNow, pause });
   position: relative;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-btn--play[data-loading='true']::after {
+.tv-artplayer.tv-artplayer--mobile .m-btn--play[data-loading='true']::after {
   content: '';
   position: absolute;
   /* Sit the ring on the button border (no extra gap) */
@@ -1931,7 +1931,7 @@ defineExpose({ destroy: destroyNow, pause });
   opacity: 0.95;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-btn--play[data-loading='true']::before {
+.tv-artplayer.tv-artplayer--mobile .m-btn--play[data-loading='true']::before {
   content: '';
   position: absolute;
   inset: -1px;
@@ -1941,22 +1941,22 @@ defineExpose({ destroy: destroyNow, pause });
   opacity: 1;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-btn--skip {
+.tv-artplayer.tv-artplayer--mobile .m-btn--skip {
   width: 46px;
   height: 46px;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-ico {
+.tv-artplayer.tv-artplayer--mobile .m-ico {
   width: 20px;
   height: 20px;
 }
 
-.tv-drplayer.tv-drplayer--mobile .m-ico--play {
+.tv-artplayer.tv-artplayer--mobile .m-ico--play {
   width: 26px;
   height: 26px;
 }
 
-.tv-drplayer .m-buffer-ring {
+.tv-artplayer .m-buffer-ring {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -1968,7 +1968,7 @@ defineExpose({ destroy: destroyNow, pause });
   z-index: 10001;
 }
 
-.tv-drplayer .m-buffer-ring::after {
+.tv-artplayer .m-buffer-ring::after {
   content: '';
   position: absolute;
   inset: -1px;
@@ -1990,7 +1990,7 @@ defineExpose({ destroy: destroyNow, pause });
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tv-drplayer .m-buffer-ring::after {
+  .tv-artplayer .m-buffer-ring::after {
     animation: none;
   }
 }
@@ -2004,9 +2004,9 @@ defineExpose({ destroy: destroyNow, pause });
 /* iOS Safari: backdrop-filter overlays can trigger "audio-only / black video" rendering bugs.
    Disable blur glass effects for mobile controls on iOS to keep video rendering stable. */
 @supports (-webkit-touch-callout: none) {
-  .tv-drplayer.tv-drplayer--mobile .m-btn,
-  .tv-drplayer.tv-drplayer--mobile .yt-btn,
-  .tv-drplayer.tv-drplayer--mobile .yt-setting__menu {
+  .tv-artplayer.tv-artplayer--mobile .m-btn,
+  .tv-artplayer.tv-artplayer--mobile .yt-btn,
+  .tv-artplayer.tv-artplayer--mobile .yt-setting__menu {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }

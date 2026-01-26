@@ -420,10 +420,6 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-film h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M7 3v18"></path><path d="M3 7.5h4"></path><path d="M3 12h18"></path><path d="M3 16.5h4"></path><path d="M17 3v18"></path><path d="M17 7.5h4"></path><path d="M17 16.5h4"></path></svg>
             <span class="nav-label">视频源管理</span>
           </a>
-          <a data-admin="live" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 text-gray-700 dark:text-gray-100 hover:bg-gray-100/60 dark:hover:bg-white/10 gap-3" href="#">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-radio h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"></path><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"></path><circle cx="12" cy="12" r="2"></circle><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"></path><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"></path></svg>
-            <span class="nav-label">直播源管理</span>
-          </a>
         </nav>
       </aside>
       <div class="flex-1 flex flex-col">
@@ -480,9 +476,6 @@
           </section>
           <section id="adminVideo" class="admin-panel hidden">
             <div class="text-sm text-gray-500 dark:text-gray-400">视频源管理内容占位</div>
-          </section>
-          <section id="adminLive" class="admin-panel hidden">
-            <div class="text-sm text-gray-500 dark:text-gray-400">直播源管理内容占位</div>
           </section>
         </div>
       </div>
