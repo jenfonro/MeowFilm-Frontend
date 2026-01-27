@@ -1234,6 +1234,15 @@ export function initDashboardPage(bootstrap = {}) {
     pollTimer: null,
   };
 
+  const pan115QrState = {
+    qid: '',
+    expiresAt: 0,
+    imageUrl: '',
+    status: '',
+    message: '',
+    pollTimer: null,
+  };
+
   const stopBaiduQrPoll = () => {
     if (baiduQrState.pollTimer) {
       clearInterval(baiduQrState.pollTimer);
@@ -1255,6 +1264,13 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
+  const stop115QrPoll = () => {
+    if (pan115QrState.pollTimer) {
+      clearInterval(pan115QrState.pollTimer);
+      pan115QrState.pollTimer = null;
+    }
+  };
+
   const isBaiduQrExpired = () => {
     if (!baiduQrState.qid) return true;
     const exp = Number(baiduQrState.expiresAt || 0);
@@ -1272,6 +1288,13 @@ export function initDashboardPage(bootstrap = {}) {
   const isUcQrExpired = () => {
     if (!ucQrState.qid) return true;
     const exp = Number(ucQrState.expiresAt || 0);
+    if (!Number.isFinite(exp) || exp <= 0) return false;
+    return Date.now() > exp - 1500;
+  };
+
+  const is115QrExpired = () => {
+    if (!pan115QrState.qid) return true;
+    const exp = Number(pan115QrState.expiresAt || 0);
     if (!Number.isFinite(exp) || exp <= 0) return false;
     return Date.now() > exp - 1500;
   };
@@ -1468,6 +1491,71 @@ export function initDashboardPage(bootstrap = {}) {
     };
     tick();
     ucQrState.pollTimer = setInterval(tick, 1500);
+    renderPanSettingsContent();
+  };
+
+  const start115QrPoll = () => {
+    stop115QrPoll();
+    if (!pan115QrState.qid || is115QrExpired()) return;
+    const tick = async () => {
+      if (!pan115QrState.qid || is115QrExpired()) {
+        stop115QrPoll();
+        pan115QrState.status = 'expired';
+        pan115QrState.imageUrl = '';
+        pan115QrState.qid = '';
+        pan115QrState.expiresAt = 0;
+        setPanSettingsStatus('error', '二维码登录超时/已过期');
+        renderPanSettingsContent();
+        return;
+      }
+      try {
+        const { resp, data } = await postJsonSafe('/dashboard/pan/115/qr/cookie', { qid: pan115QrState.qid });
+        if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
+          const cookie = String(data.cookie || '');
+          const textarea = panSettingsContent
+            ? panSettingsContent.querySelector('textarea[data-pan-cookie-input="115"]')
+            : null;
+          if (textarea) textarea.value = cookie;
+          panLoginSettings = Object.assign({}, panLoginSettings, {
+            '115': Object.assign({}, getPanSettingValue('115'), { cookie }),
+          });
+          stop115QrPoll();
+          pan115QrState.status = 'confirmed';
+          pan115QrState.imageUrl = '';
+          pan115QrState.qid = '';
+          pan115QrState.expiresAt = 0;
+          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
+          clearStatusLater(setPanSettingsStatus, 2200);
+          renderPanSettingsContent();
+          return;
+        }
+        if (resp.status === 409) {
+          const st = data && data.status ? String(data.status) : 'pending';
+          pan115QrState.status = st;
+          if (st === 'scanned') setPanSettingsStatus('', '已扫码：请在手机端确认登录…');
+          else setPanSettingsStatus('', '等待扫码确认…');
+          return;
+        }
+        const msg = (data && data.message) ? String(data.message) : `HTTP ${resp.status}`;
+        stop115QrPoll();
+        pan115QrState.status = 'error';
+        pan115QrState.imageUrl = '';
+        pan115QrState.qid = '';
+        pan115QrState.expiresAt = 0;
+        setPanSettingsStatus('error', msg);
+        renderPanSettingsContent();
+      } catch (e) {
+        stop115QrPoll();
+        pan115QrState.status = 'error';
+        pan115QrState.imageUrl = '';
+        pan115QrState.qid = '';
+        pan115QrState.expiresAt = 0;
+        setPanSettingsStatus('error', (e && e.message) ? String(e.message) : '获取失败');
+        renderPanSettingsContent();
+      }
+    };
+    tick();
+    pan115QrState.pollTimer = setInterval(tick, 1500);
     renderPanSettingsContent();
   };
 
@@ -1763,6 +1851,22 @@ export function initDashboardPage(bootstrap = {}) {
           imgRow.appendChild(img);
           stack.appendChild(imgRow);
         }
+        if (def.key === '115' && pan115QrState.imageUrl && !is115QrExpired()) {
+          const imgRow = createEl('div', { className: 'w-full flex items-center justify-center' });
+          const img = createEl('img');
+          img.alt = '115 qrcode';
+          img.src = pan115QrState.imageUrl;
+          setStyles(img, {
+            width: '220px',
+            height: '220px',
+            objectFit: 'contain',
+            borderRadius: '12px',
+            background: '#fff',
+            border: '1px solid rgba(0,0,0,0.10)',
+          });
+          imgRow.appendChild(img);
+          stack.appendChild(imgRow);
+        }
 
 	      const textarea = createEl('textarea', { className: 'tv-field' });
 	      textarea.rows = 3;
@@ -1775,16 +1879,22 @@ export function initDashboardPage(bootstrap = {}) {
 	      const saveWrap = createEl('div');
 	      setStyles(saveWrap, {
 	        display: 'flex',
-	        justifyContent: (def.key === 'baidu' || def.key === 'quark' || def.key === 'uc') ? 'flex-start' : 'center',
+	        justifyContent: (def.key === 'baidu' || def.key === 'quark' || def.key === 'uc' || def.key === '115') ? 'flex-start' : 'center',
 	        alignItems: 'center',
 	        width: '100%',
 	      });
-        if (def.key === 'baidu' || def.key === 'quark' || def.key === 'uc') {
+        if (def.key === 'baidu' || def.key === 'quark' || def.key === 'uc' || def.key === '115') {
           setStyles(saveWrap, { position: 'relative' });
           const isBaidu = def.key === 'baidu';
           const isQuark = def.key === 'quark';
-          const inFlight = isBaidu ? !!baiduQrState.pollTimer : (isQuark ? !!quarkQrState.pollTimer : !!ucQrState.pollTimer);
-          const action = isBaidu ? 'baidu-qr-start' : (isQuark ? 'quark-qr-start' : 'uc-qr-start');
+          const isUc = def.key === 'uc';
+          const is115 = def.key === '115';
+          const inFlight = isBaidu
+            ? !!baiduQrState.pollTimer
+            : (isQuark ? !!quarkQrState.pollTimer : (isUc ? !!ucQrState.pollTimer : !!pan115QrState.pollTimer));
+          const action = isBaidu
+            ? 'baidu-qr-start'
+            : (isQuark ? 'quark-qr-start' : (isUc ? 'uc-qr-start' : '115-qr-start'));
           const qrBtn = createEl('button', { className: 'btn-ghost-blue', text: inFlight ? '二维码登录中...' : '二维码登录' });
           qrBtn.type = 'button';
           qrBtn.disabled = inFlight;
@@ -1861,6 +1971,7 @@ export function initDashboardPage(bootstrap = {}) {
       if (activePanSettingKey === 'baidu') stopBaiduQrPoll();
       if (activePanSettingKey === 'quark') stopQuarkQrPoll();
       if (activePanSettingKey === 'uc') stopUcQrPoll();
+      if (activePanSettingKey === '115') stop115QrPoll();
       activePanSettingKey = key;
       setPanSettingsStatus('', '');
       renderPanSettingsTabs();
@@ -1926,6 +2037,7 @@ export function initDashboardPage(bootstrap = {}) {
       if (activePanSettingKey === 'baidu') stopBaiduQrPoll();
       if (activePanSettingKey === 'quark') stopQuarkQrPoll();
       if (activePanSettingKey === 'uc') stopUcQrPoll();
+      if (activePanSettingKey === '115') stop115QrPoll();
       activePanSettingKey = key;
       hidePanMoreMenu();
       setPanSettingsStatus('', '');
@@ -2053,6 +2165,39 @@ export function initDashboardPage(bootstrap = {}) {
           setPanSettingsStatus('', '二维码已生成，等待扫码确认…');
           renderPanSettingsContent();
           startUcQrPoll();
+        });
+        return;
+      }
+
+      if (action === '115-qr-start' && key === '115') {
+        await withDatasetLock(actionEl, 'pan115QrStartPending', async () => {
+          stop115QrPoll();
+          pan115QrState.status = '';
+          pan115QrState.message = '';
+          pan115QrState.imageUrl = '';
+          pan115QrState.qid = '';
+          pan115QrState.expiresAt = 0;
+          renderPanSettingsContent();
+          setPanSettingsStatus('', '生成二维码...');
+          pan115QrState.status = 'starting';
+          pan115QrState.message = '';
+          const { resp, data } = await postJsonSafe('/dashboard/pan/115/qr/start', {});
+          if (!resp.ok || !data || data.success !== true) {
+            const msg = (data && data.message) ? String(data.message) : '生成失败';
+            pan115QrState.status = 'error';
+            pan115QrState.message = msg;
+            setPanSettingsStatus('error', msg);
+            renderPanSettingsContent();
+            return;
+          }
+          pan115QrState.qid = (data && data.qid) ? String(data.qid) : '';
+          pan115QrState.expiresAt = Number(data && data.expiresAt ? data.expiresAt : 0);
+          pan115QrState.imageUrl = (data && data.imageUrl) ? String(data.imageUrl) : '';
+          pan115QrState.status = 'pending';
+          pan115QrState.message = '二维码已生成：请使用 115 App（已登录）扫码并在手机端确认登录…';
+          setPanSettingsStatus('', '二维码已生成，等待扫码确认…');
+          renderPanSettingsContent();
+          start115QrPoll();
         });
         return;
       }
