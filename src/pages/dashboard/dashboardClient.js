@@ -1243,6 +1243,15 @@ export function initDashboardPage(bootstrap = {}) {
     pollTimer: null,
   };
 
+  const biliQrState = {
+    qid: '',
+    expiresAt: 0,
+    imageUrl: '',
+    status: '',
+    message: '',
+    pollTimer: null,
+  };
+
   const stopBaiduQrPoll = () => {
     if (baiduQrState.pollTimer) {
       clearInterval(baiduQrState.pollTimer);
@@ -1271,6 +1280,13 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
+  const stopBiliQrPoll = () => {
+    if (biliQrState.pollTimer) {
+      clearInterval(biliQrState.pollTimer);
+      biliQrState.pollTimer = null;
+    }
+  };
+
   const isBaiduQrExpired = () => {
     if (!baiduQrState.qid) return true;
     const exp = Number(baiduQrState.expiresAt || 0);
@@ -1295,6 +1311,13 @@ export function initDashboardPage(bootstrap = {}) {
   const is115QrExpired = () => {
     if (!pan115QrState.qid) return true;
     const exp = Number(pan115QrState.expiresAt || 0);
+    if (!Number.isFinite(exp) || exp <= 0) return false;
+    return Date.now() > exp - 1500;
+  };
+
+  const isBiliQrExpired = () => {
+    if (!biliQrState.qid) return true;
+    const exp = Number(biliQrState.expiresAt || 0);
     if (!Number.isFinite(exp) || exp <= 0) return false;
     return Date.now() > exp - 1500;
   };
@@ -1556,6 +1579,71 @@ export function initDashboardPage(bootstrap = {}) {
     };
     tick();
     pan115QrState.pollTimer = setInterval(tick, 1500);
+    renderPanSettingsContent();
+  };
+
+  const startBiliQrPoll = () => {
+    stopBiliQrPoll();
+    if (!biliQrState.qid || isBiliQrExpired()) return;
+    const tick = async () => {
+      if (!biliQrState.qid || isBiliQrExpired()) {
+        stopBiliQrPoll();
+        biliQrState.status = 'expired';
+        biliQrState.imageUrl = '';
+        biliQrState.qid = '';
+        biliQrState.expiresAt = 0;
+        setPanSettingsStatus('error', '二维码登录超时/已过期');
+        renderPanSettingsContent();
+        return;
+      }
+      try {
+        const { resp, data } = await postJsonSafe('/dashboard/pan/bili/qr/cookie', { qid: biliQrState.qid });
+        if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
+          const cookie = String(data.cookie || '');
+          const textarea = panSettingsContent
+            ? panSettingsContent.querySelector('textarea[data-pan-cookie-input="bili"]')
+            : null;
+          if (textarea) textarea.value = cookie;
+          panLoginSettings = Object.assign({}, panLoginSettings, {
+            bili: Object.assign({}, getPanSettingValue('bili'), { cookie }),
+          });
+          stopBiliQrPoll();
+          biliQrState.status = 'confirmed';
+          biliQrState.imageUrl = '';
+          biliQrState.qid = '';
+          biliQrState.expiresAt = 0;
+          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
+          clearStatusLater(setPanSettingsStatus, 2200);
+          renderPanSettingsContent();
+          return;
+        }
+        if (resp.status === 409) {
+          const st = data && data.status ? String(data.status) : 'pending';
+          biliQrState.status = st;
+          if (st === 'scanned') setPanSettingsStatus('', '已扫码：请在手机端确认登录…');
+          else setPanSettingsStatus('', '等待扫码确认…');
+          return;
+        }
+        const msg = (data && data.message) ? String(data.message) : `HTTP ${resp.status}`;
+        stopBiliQrPoll();
+        biliQrState.status = 'error';
+        biliQrState.imageUrl = '';
+        biliQrState.qid = '';
+        biliQrState.expiresAt = 0;
+        setPanSettingsStatus('error', msg);
+        renderPanSettingsContent();
+      } catch (e) {
+        stopBiliQrPoll();
+        biliQrState.status = 'error';
+        biliQrState.imageUrl = '';
+        biliQrState.qid = '';
+        biliQrState.expiresAt = 0;
+        setPanSettingsStatus('error', (e && e.message) ? String(e.message) : '获取失败');
+        renderPanSettingsContent();
+      }
+    };
+    tick();
+    biliQrState.pollTimer = setInterval(tick, 1500);
     renderPanSettingsContent();
   };
 
@@ -1867,6 +1955,22 @@ export function initDashboardPage(bootstrap = {}) {
           imgRow.appendChild(img);
           stack.appendChild(imgRow);
         }
+        if (def.key === 'bili' && biliQrState.imageUrl && !isBiliQrExpired()) {
+          const imgRow = createEl('div', { className: 'w-full flex items-center justify-center' });
+          const img = createEl('img');
+          img.alt = 'bili qrcode';
+          img.src = biliQrState.imageUrl;
+          setStyles(img, {
+            width: '220px',
+            height: '220px',
+            objectFit: 'contain',
+            borderRadius: '12px',
+            background: '#fff',
+            border: '1px solid rgba(0,0,0,0.10)',
+          });
+          imgRow.appendChild(img);
+          stack.appendChild(imgRow);
+        }
 
 	      const textarea = createEl('textarea', { className: 'tv-field' });
 	      textarea.rows = 3;
@@ -1879,22 +1983,27 @@ export function initDashboardPage(bootstrap = {}) {
 	      const saveWrap = createEl('div');
 	      setStyles(saveWrap, {
 	        display: 'flex',
-	        justifyContent: (def.key === 'baidu' || def.key === 'quark' || def.key === 'uc' || def.key === '115') ? 'flex-start' : 'center',
+	        justifyContent: (def.key === 'baidu' || def.key === 'quark' || def.key === 'uc' || def.key === '115' || def.key === 'bili') ? 'flex-start' : 'center',
 	        alignItems: 'center',
 	        width: '100%',
 	      });
-        if (def.key === 'baidu' || def.key === 'quark' || def.key === 'uc' || def.key === '115') {
+        if (def.key === 'baidu' || def.key === 'quark' || def.key === 'uc' || def.key === '115' || def.key === 'bili') {
           setStyles(saveWrap, { position: 'relative' });
           const isBaidu = def.key === 'baidu';
           const isQuark = def.key === 'quark';
           const isUc = def.key === 'uc';
           const is115 = def.key === '115';
+          const isBili = def.key === 'bili';
           const inFlight = isBaidu
             ? !!baiduQrState.pollTimer
-            : (isQuark ? !!quarkQrState.pollTimer : (isUc ? !!ucQrState.pollTimer : !!pan115QrState.pollTimer));
+            : (isQuark
+              ? !!quarkQrState.pollTimer
+              : (isUc ? !!ucQrState.pollTimer : (is115 ? !!pan115QrState.pollTimer : !!biliQrState.pollTimer)));
           const action = isBaidu
             ? 'baidu-qr-start'
-            : (isQuark ? 'quark-qr-start' : (isUc ? 'uc-qr-start' : '115-qr-start'));
+            : (isQuark
+              ? 'quark-qr-start'
+              : (isUc ? 'uc-qr-start' : (is115 ? '115-qr-start' : 'bili-qr-start')));
           const qrBtn = createEl('button', { className: 'btn-ghost-blue', text: inFlight ? '二维码登录中...' : '二维码登录' });
           qrBtn.type = 'button';
           qrBtn.disabled = inFlight;
@@ -1972,6 +2081,7 @@ export function initDashboardPage(bootstrap = {}) {
       if (activePanSettingKey === 'quark') stopQuarkQrPoll();
       if (activePanSettingKey === 'uc') stopUcQrPoll();
       if (activePanSettingKey === '115') stop115QrPoll();
+      if (activePanSettingKey === 'bili') stopBiliQrPoll();
       activePanSettingKey = key;
       setPanSettingsStatus('', '');
       renderPanSettingsTabs();
@@ -2038,6 +2148,7 @@ export function initDashboardPage(bootstrap = {}) {
       if (activePanSettingKey === 'quark') stopQuarkQrPoll();
       if (activePanSettingKey === 'uc') stopUcQrPoll();
       if (activePanSettingKey === '115') stop115QrPoll();
+      if (activePanSettingKey === 'bili') stopBiliQrPoll();
       activePanSettingKey = key;
       hidePanMoreMenu();
       setPanSettingsStatus('', '');
@@ -2198,6 +2309,39 @@ export function initDashboardPage(bootstrap = {}) {
           setPanSettingsStatus('', '二维码已生成，等待扫码确认…');
           renderPanSettingsContent();
           start115QrPoll();
+        });
+        return;
+      }
+
+      if (action === 'bili-qr-start' && key === 'bili') {
+        await withDatasetLock(actionEl, 'biliQrStartPending', async () => {
+          stopBiliQrPoll();
+          biliQrState.status = '';
+          biliQrState.message = '';
+          biliQrState.imageUrl = '';
+          biliQrState.qid = '';
+          biliQrState.expiresAt = 0;
+          renderPanSettingsContent();
+          setPanSettingsStatus('', '生成二维码...');
+          biliQrState.status = 'starting';
+          biliQrState.message = '';
+          const { resp, data } = await postJsonSafe('/dashboard/pan/bili/qr/start', {});
+          if (!resp.ok || !data || data.success !== true) {
+            const msg = (data && data.message) ? String(data.message) : '生成失败';
+            biliQrState.status = 'error';
+            biliQrState.message = msg;
+            setPanSettingsStatus('error', msg);
+            renderPanSettingsContent();
+            return;
+          }
+          biliQrState.qid = (data && data.qid) ? String(data.qid) : '';
+          biliQrState.expiresAt = Number(data && data.expiresAt ? data.expiresAt : 0);
+          biliQrState.imageUrl = (data && data.imageUrl) ? String(data.imageUrl) : '';
+          biliQrState.status = 'pending';
+          biliQrState.message = '二维码已生成：请使用 Bilibili App（已登录）扫码并在手机端确认登录…';
+          setPanSettingsStatus('', '二维码已生成，等待扫码确认…');
+          renderPanSettingsContent();
+          startBiliQrPoll();
         });
         return;
       }
