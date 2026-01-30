@@ -543,14 +543,12 @@ const loadCatProxyRealtime = async () => {
   }
   if (catProxyLoading.value) return;
   catProxyLoading.value = true;
-  try {
-    const url = new URL('admin/settings', normalized);
-    const headers = {};
-    const u = (tvUser.value || '').trim();
-    if (u) headers['X-TV-User'] = u;
-    const resp = await fetch(url.toString(), { method: 'GET', headers, credentials: 'omit' });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
+	  try {
+	    const url = new URL('admin/settings', normalized);
+	    const headers = {};
+	    const resp = await fetch(url.toString(), { method: 'GET', headers, credentials: 'omit' });
+	    const data = await resp.json().catch(() => ({}));
+	    if (!resp.ok) {
       const msg = data && (data.message || data.error) ? String(data.message || data.error) : `HTTP ${resp.status}`;
       throw new Error(msg);
     }
@@ -598,14 +596,14 @@ const save = async () => {
   );
   let sitesPayload = null;
   let sitesFetchError = '';
-  const normalizedForFetch = normalizeCatPawOpenApiBase(catApiBase.value);
-  if (normalizedForFetch) {
-    try {
-      const fullConfig = await requestCatWebsiteJson('full-config', { method: 'GET' });
-      const list = fullConfig && fullConfig.video && Array.isArray(fullConfig.video.sites) ? fullConfig.video.sites : [];
-      sitesPayload = list
-        .map((s) => ({
-          key: s && typeof s.key === 'string' ? s.key : '',
+	  const normalizedForFetch = normalizeCatPawOpenApiBase(catApiBase.value);
+	  if (normalizedForFetch) {
+	    try {
+	      const fullConfig = await requestCatWebsiteJson('admin/full-config', { method: 'GET' });
+	      const list = fullConfig && fullConfig.video && Array.isArray(fullConfig.video.sites) ? fullConfig.video.sites : [];
+	      sitesPayload = list
+	        .map((s) => ({
+	          key: s && typeof s.key === 'string' ? s.key : '',
           name: s && typeof s.name === 'string' ? s.name : '',
           api: s && typeof s.api === 'string' ? s.api : '',
         }))
@@ -816,43 +814,22 @@ const save = async () => {
       }
     }
 
-	    // Shared users: sync admin-managed pan credentials to the user's CatPawOpen (client-side).
-	    if (userRole.value === 'shared' && savedCatApiBase.value) {
-	      const cookieSyncErrors = [];
-	      try {
-	        const data2 = await apiGetJson('/api/user/pan-login-settings', { cacheMs: 0 });
-	        if (!data2 || data2.success !== true) throw new Error((data2 && data2.message) || '读取失败');
-	        const store = data2.settings && typeof data2.settings === 'object' ? data2.settings : {};
-	        const keys = Object.keys(store || {});
-	        for (let i = 0; i < keys.length; i += 1) {
-	          const key = typeof keys[i] === 'string' ? keys[i].trim() : '';
-          if (!key) continue;
-          const v = store[key];
-          if (!v || typeof v !== 'object') continue;
-          try {
-            if (typeof v.cookie === 'string') {
-              await requestCatWebsiteJson(`website/${encodeURIComponent(key)}/cookie`, {
-                method: 'PUT',
-                body: JSON.stringify({ cookie: v.cookie }),
-              });
-            } else if (typeof v.username === 'string' || typeof v.password === 'string') {
-              await requestCatWebsiteJson(`website/${encodeURIComponent(key)}/account`, {
-                method: 'PUT',
-                body: JSON.stringify({
-                  username: typeof v.username === 'string' ? v.username : '',
-                  password: typeof v.password === 'string' ? v.password : '',
-                }),
-              });
-            }
-          } catch (e) {
-            cookieSyncErrors.push(`${key}: ${(e && e.message) || '同步失败'}`);
-          }
-        }
-      } catch (e) {
-        cookieSyncErrors.push(`读取后台 Cookie 配置失败：${(e && e.message) || '未知错误'}`);
-      }
-      if (cookieSyncErrors.length > 0) {
-        msgKind.value = 'success';
+		    // Shared users: sync admin-managed pan credentials to the user's CatPawOpen (client-side).
+		    if (userRole.value === 'shared' && savedCatApiBase.value) {
+		      const cookieSyncErrors = [];
+		      try {
+		        const data2 = await apiGetJson('/api/user/pan-login-settings', { cacheMs: 0 });
+		        if (!data2 || data2.success !== true) throw new Error((data2 && data2.message) || '读取失败');
+		        const store = data2.settings && typeof data2.settings === 'object' ? data2.settings : {};
+		        await requestCatWebsiteJson('admin/pan/sync', {
+		          method: 'POST',
+		          body: JSON.stringify({ pans: store }),
+		        });
+		      } catch (e) {
+		        cookieSyncErrors.push(`读取后台 Cookie 配置失败：${(e && e.message) || '未知错误'}`);
+		      }
+		      if (cookieSyncErrors.length > 0) {
+		        msgKind.value = 'success';
         msg.value = `保存成功，但 Cookie 同步失败：${cookieSyncErrors.slice(0, 3).join('；')}${cookieSyncErrors.length > 3 ? `…（共 ${cookieSyncErrors.length} 项）` : ''}`;
         collapseAccordionsAfterSave();
         return;
@@ -876,18 +853,16 @@ const save = async () => {
   }
 };
 
-const requestCatWebsiteJsonByBase = async (apiBase, path, init = {}) => {
-  const normalized = normalizeCatPawOpenApiBase(apiBase);
-  if (!normalized) throw new Error('CatPawOpen 接口地址未设置');
-  const url = new URL(path.replace(/^\//, ''), normalized);
-  const headers = Object.assign({}, init.headers && typeof init.headers === 'object' ? init.headers : {});
-  headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-  const u = (tvUser.value || '').trim();
-  if (u) headers['X-TV-User'] = u;
+	const requestCatWebsiteJsonByBase = async (apiBase, path, init = {}) => {
+	  const normalized = normalizeCatPawOpenApiBase(apiBase);
+	  if (!normalized) throw new Error('CatPawOpen 接口地址未设置');
+	  const url = new URL(path.replace(/^\//, ''), normalized);
+	  const headers = Object.assign({}, init.headers && typeof init.headers === 'object' ? init.headers : {});
+	  headers['Content-Type'] = headers['Content-Type'] || 'application/json';
 
-  const resp = await fetch(url.toString(), {
-    method: init.method || 'GET',
-    headers,
+	  const resp = await fetch(url.toString(), {
+	    method: init.method || 'GET',
+	    headers,
     body: init.body,
     credentials: 'omit',
   });
@@ -1009,23 +984,21 @@ const checkOneUserSite = async (site) => {
   if (!normalized) throw new Error('CatPawOpen 接口地址未设置');
   const api = site && typeof site.api === 'string' ? site.api : '';
   const spiderName = extractSpiderNameFromApi(api);
-  if (spiderName === 'baseset') {
-    const url = new URL('website', normalized);
-    const headers = {};
-    const u = (tvUser.value || '').trim();
-    if (u) headers['X-TV-User'] = u;
-    const resp = await fetch(url.toString(), { method: 'GET', headers, credentials: 'omit' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return 'valid';
-  }
+	  if (spiderName === 'baseset') {
+	    const url = new URL('website', normalized);
+	    const headers = {};
+	    const resp = await fetch(url.toString(), { method: 'GET', headers, credentials: 'omit' });
+	    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+	    return 'valid';
+	  }
 
-  const data = await requestCatSpider({
-    apiBase: normalized,
-    username: tvUser.value,
-    action: 'search',
-    spiderApi: api,
-    payload: { wd: '斗破', page: 1 },
-  });
+	  const data = await requestCatSpider({
+	    apiBase: normalized,
+	    username: '',
+	    action: 'search',
+	    spiderApi: api,
+	    payload: { wd: '斗破', page: 1 },
+	  });
   const list =
     (data && Array.isArray(data.list) && data.list) ||
     (data && data.data && Array.isArray(data.data.list) && data.data.list) ||

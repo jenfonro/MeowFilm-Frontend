@@ -574,7 +574,7 @@
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { initPlayPage } from './playClient.js';
 	import ArtPlayer from '../../shared/ArtPlayer.vue';
-import { normalizeCatPawOpenApiBase, requestCatSpider } from '../../shared/catpawopen';
+import { normalizeCatPawOpenApiBase, requestCatPlay, requestCatSpider } from '../../shared/catpawopen';
 import { apiGetJson, apiPostJson, buildQuery } from '../../shared/apiClient';
 import { processPosterUrl } from '../../shared/posterCard';
 
@@ -2662,21 +2662,24 @@ const requestPlay = async () => {
           !!props.bootstrap?.settings?.openListToken &&
           !!props.bootstrap?.settings?.openListQuarkTvMount;
 
-        const fetchPlay = async (query) => {
-          const raw = await requestCatSpider({
-            apiBase,
-            username: tvUser,
-            action: 'play',
-            spiderApi: api,
-            payload: { flag, id },
-            query: query && typeof query === 'object' ? query : undefined,
-          });
-          const rewritten = rewritePlayPayloadUrls(raw, apiBase, tvUser);
-          const payload = normalizePlayPayload(rewritten);
-          const url = pickFirstPlayableUrl(payload);
-          const rawHeaders = payload && payload.header && typeof payload.header === 'object' ? payload.header : {};
-          return { raw, payload, url, rawHeaders };
-        };
+	        const fetchPlay = async (query) => {
+	          const siteApi = String(api || '').trim();
+	          const siteId = (() => {
+	            const m = /^\/([a-f0-9]{10})\/spider\//.exec(siteApi);
+	            return m && m[1] ? String(m[1]) : '';
+	          })();
+	          const raw = await requestCatPlay({
+	            apiBase,
+	            username: tvUser,
+	            payload: { flag, id, siteApi, ...(siteId ? { siteId } : {}) },
+	            query: query && typeof query === 'object' ? query : undefined,
+	          });
+	          const rewritten = rewritePlayPayloadUrls(raw, apiBase, tvUser);
+	          const payload = normalizePlayPayload(rewritten);
+	          const url = pickFirstPlayableUrl(payload);
+	          const rawHeaders = payload && payload.header && typeof payload.header === 'object' ? payload.header : {};
+	          return { raw, payload, url, rawHeaders };
+	        };
 
         let playResult = null;
         let finalUrl = '';

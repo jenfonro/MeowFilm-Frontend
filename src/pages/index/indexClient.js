@@ -1448,7 +1448,6 @@ function setupHomeSpiderBrowse() {
     const url = new URL(String(path || '').replace(/^\//, ''), normalized);
     const headers = Object.assign({}, init.headers && typeof init.headers === 'object' ? init.headers : {});
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
-    if (tvUser) headers['X-TV-User'] = tvUser;
     const resp = await fetch(url.toString(), {
       method: init.method || 'GET',
       headers,

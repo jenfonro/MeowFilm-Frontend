@@ -8,6 +8,8 @@ export function normalizeCatPawOpenApiBase(inputUrl) {
     let path = url.pathname || '/';
     const spiderIdx = path.indexOf('/spider/');
     if (spiderIdx >= 0) path = path.slice(0, spiderIdx) || '/';
+    // If user pasted an id-prefixed spider API like "/<id>/spider/...", drop the id segment.
+    if (/^\/[a-f0-9]{10}\/?$/.test(path)) path = '/';
     path = path.replace(/\/spider\/?$/, '/');
     path = path.replace(/\/(full-config|config|website)\/?$/, '/');
     // Keep pathname but ensure it ends with "/" so URL(resolve) works as expected.
@@ -35,7 +37,7 @@ export async function requestCatSpider({
   const extra = extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : null;
 
   if (!safeAction) throw new Error('action 不能为空');
-  if (!safeSpider || !safeSpider.startsWith('/spider/')) throw new Error('站点 API 无效');
+  if (!safeSpider || !(/^\/spider\/|^\/[a-f0-9]{10}\/spider\//.test(safeSpider))) throw new Error('站点 API 无效');
 
   const normalizedBase = normalizeCatPawOpenApiBase(apiBase);
   if (!normalizedBase) throw new Error('CatPawOpen 接口地址未设置');
@@ -50,6 +52,43 @@ export async function requestCatSpider({
       target.searchParams.set(key, String(v));
     });
   }
+  const headers = { 'Content-Type': 'application/json', ...(extra ? extra : {}) };
+
+  const resp = await fetch(target.toString(), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    credentials: 'omit',
+  });
+  const status = resp && typeof resp.status === 'number' ? resp.status : 0;
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const msg = data && data.message ? String(data.message) : '请求失败';
+    const err = new Error(msg);
+    err.status = status;
+    throw err;
+  }
+  return data;
+}
+
+export async function requestCatPlay({ apiBase, username, payload, query, headers: extraHeaders }) {
+  const body = payload && typeof payload === 'object' ? payload : {};
+  const q = query && typeof query === 'object' ? query : null;
+  const extra = extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : null;
+
+  const normalizedBase = normalizeCatPawOpenApiBase(apiBase);
+  if (!normalizedBase) throw new Error('CatPawOpen 接口地址未设置');
+
+  const target = new URL('play', normalizedBase);
+  if (q) {
+    Object.entries(q).forEach(([k, v]) => {
+      const key = typeof k === 'string' ? k.trim() : '';
+      if (!key) return;
+      if (v == null) return;
+      target.searchParams.set(key, String(v));
+    });
+  }
+
   const headers = { 'Content-Type': 'application/json', ...(extra ? extra : {}) };
   const u = typeof username === 'string' ? username.trim() : '';
   if (u) headers['X-TV-User'] = u;

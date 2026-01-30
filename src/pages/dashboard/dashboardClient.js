@@ -91,6 +91,7 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   let catPawOpenConfigListEditor = null;
+  let catPawOpenSavedApiBaseNorm = '';
 
   const createEl = (tag, options = {}) => {
     const el = document.createElement(tag);
@@ -447,6 +448,8 @@ export function initDashboardPage(bootstrap = {}) {
       let p = u.pathname || '/';
       const spiderIdx = p.indexOf('/spider/');
       if (spiderIdx >= 0) p = p.slice(0, spiderIdx) || '/';
+      // If user pasted an id-prefixed spider API like "/<id>/spider/...", drop the id segment.
+      if (/^\/[a-f0-9]{10}\/?$/.test(p)) p = '/';
       p = p.replace(/\/spider\/?$/, '/') || '/';
       p = p.replace(/\/(full-config|config|website)\/?$/, '/') || '/';
       if (!p.endsWith('/')) p += '/';
@@ -455,6 +458,29 @@ export function initDashboardPage(bootstrap = {}) {
     } catch (_e) {
       return '';
     }
+  };
+
+  const syncCatPawOpenSettingsVisibility = () => {
+    const form = document.getElementById('catPawOpenSettingsForm');
+    const apiInput = form ? form.querySelector('input[name="catPawOpenApiBase"]') : null;
+    const extrasEl = document.getElementById('catPawOpenSettingsExtras');
+    const syncWrap = document.getElementById('catPawOpenSyncSaveWrap');
+    const syncInput = document.getElementById('catPawOpenSyncSave');
+    if (!apiInput) return;
+
+    const currentRaw = typeof apiInput.value === 'string' ? apiInput.value : '';
+    const currentNorm = normalizeCatPawOpenAdminBase(currentRaw);
+
+    const showExtras = currentNorm === catPawOpenSavedApiBaseNorm;
+    if (extrasEl) extrasEl.classList.toggle('hidden', !showExtras);
+
+    const showSync = !!currentNorm && currentNorm !== catPawOpenSavedApiBaseNorm;
+    if (syncWrap) {
+      const wasHidden = syncWrap.classList.contains('hidden');
+      syncWrap.classList.toggle('hidden', !showSync);
+      if (showSync && wasHidden && syncInput) syncInput.checked = true;
+    }
+    if (syncInput) syncInput.disabled = !showSync;
   };
 
   const normalizeHttpUrl = (value) => {
@@ -702,10 +728,7 @@ export function initDashboardPage(bootstrap = {}) {
     return api;
   };
 
-  const getTvUserHeaders = () => {
-    const u = bootstrap && bootstrap.user && typeof bootstrap.user.username === 'string' ? bootstrap.user.username.trim() : '';
-    return u ? { 'X-TV-User': u } : {};
-  };
+  const getTvUserHeaders = () => ({});
 
   const requestCatPawOpenAdminJson = async ({ apiBase, path, method, body, timeoutMs }) => {
     const base = normalizeCatPawOpenAdminBase(apiBase);
@@ -800,7 +823,8 @@ export function initDashboardPage(bootstrap = {}) {
       setCatPawOpenRemoteState('ready');
       return { ok: true, data: { settingsResp } };
     } catch (e) {
-      setCatPawOpenRemoteState('error');
+      const msg = e && e.message ? String(e.message) : '';
+      setCatPawOpenRemoteState('error', msg);
       return { ok: false, skipped: false, reason: 'error', error: e };
     }
   };
@@ -1693,60 +1717,19 @@ export function initDashboardPage(bootstrap = {}) {
     const entries = store && typeof store === 'object' ? Object.entries(store) : [];
     if (!entries.length) return { ok: true, skipped: false, okCount: 0, failCount: 0 };
 
-    const typeByKey = new Map();
-    panSettingDefs.forEach((d) => {
-      if (!d || !d.key) return;
-      const t = d.type === 'account' ? 'account' : 'cookie';
-      typeByKey.set(d.key, t);
-    });
-
-    let okCount = 0;
-    let failCount = 0;
-    for (let i = 0; i < entries.length; i += 1) {
-      const key = typeof entries[i][0] === 'string' ? entries[i][0].trim() : '';
-      const val = entries[i][1] && typeof entries[i][1] === 'object' ? entries[i][1] : {};
-      if (!key) continue;
-
-      if (!typeByKey.has(key)) continue;
-      const t = typeByKey.get(key) || 'cookie';
-      if (t === 'account') {
-        const username = typeof val.username === 'string' ? val.username : '';
-        const password = typeof val.password === 'string' ? val.password : '';
-        if (!username || !password) continue;
-        try {
-          // eslint-disable-next-line no-await-in-loop
-          const resp = await requestCatPawOpenAdminJson({
-            apiBase: normalizedBase,
-            path: `website/${encodeURIComponent(key)}/account`,
-            method: 'PUT',
-            body: { username, password },
-          });
-          unwrapCatPawOpenWebsiteData(resp);
-          okCount += 1;
-        } catch (_e) {
-          failCount += 1;
-        }
-        continue;
-      }
-
-      const cookie = typeof val.cookie === 'string' ? val.cookie : '';
-      if (!cookie) continue;
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const resp = await requestCatPawOpenAdminJson({
-          apiBase: normalizedBase,
-          path: `website/${encodeURIComponent(key)}/cookie`,
-          method: 'PUT',
-          body: { cookie },
-        });
-        unwrapCatPawOpenWebsiteData(resp);
-        okCount += 1;
-      } catch (_e) {
-        failCount += 1;
-      }
+    try {
+      const resp = await requestCatPawOpenAdminJson({
+        apiBase: normalizedBase,
+        path: 'admin/pan/sync',
+        method: 'POST',
+        body: { pans: store },
+      });
+      const okCount = resp && typeof resp.okCount === 'number' ? resp.okCount : 0;
+      const failCount = resp && typeof resp.failCount === 'number' ? resp.failCount : 0;
+      return { ok: failCount <= 0 && resp && resp.success !== false, skipped: false, okCount, failCount };
+    } catch (_e) {
+      return { ok: false, skipped: false, okCount: 0, failCount: 0 };
     }
-
-    return { ok: failCount <= 0, skipped: false, okCount, failCount };
   };
 
   const savePanLoginSettingToServer = async ({ key, save }) => {
@@ -3017,6 +3000,33 @@ export function initDashboardPage(bootstrap = {}) {
 
     const results = {};
     const errors = {};
+    const disableSearchKeys = [];
+
+    const normalizeSiteNameForMatch = (name) => {
+      const raw = name != null ? String(name) : '';
+      if (!raw) return '';
+      // Remove emoji + variation selectors + zero-width.
+      let s = raw.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\uFE0F/g, '');
+      try {
+        s = s.replace(/[\u{1F300}-\u{1FAFF}]/gu, '');
+      } catch (_e) {
+        // ignore
+      }
+      // Drop punctuation/symbols and whitespace.
+      s = s.replace(/[^\p{L}\p{N}\u4e00-\u9fff]+/gu, '');
+      return s.trim();
+    };
+
+    const isMyPanSite = (site) => {
+      const nameRaw = site && typeof site.name === 'string' ? site.name : '';
+      const name = normalizeSiteNameForMatch(nameRaw);
+      if (!name) return false;
+      if (!name.includes('我的')) return false;
+      const keys = ['夸克', '百度', '天逸', '115', '123', 'quark', 'baidu'];
+      const lower = name.toLowerCase();
+      return keys.some((k) => (/[a-z]/i.test(k) ? lower.includes(k) : name.includes(k)));
+    };
+
     for (let i = 0; i < uniq.length; i += 1) {
       const key = uniq[i];
       const site = byKey.get(key);
@@ -3033,10 +3043,68 @@ export function initDashboardPage(bootstrap = {}) {
           results[key] = 'valid';
           continue;
         }
+        if (isMyPanSite(site)) {
+          // "我的xxx" pan browsing sources depend on user storage and may not be probe-able here.
+          results[key] = 'valid';
+          disableSearchKeys.push(key);
+          continue;
+        }
         const spiderPath = String(site.api || '').trim().replace(/\/+$/, '').replace(/^\//, '');
 
-        let categoryOk = false;
-        let categoryErr = '';
+        const isFatalHttpProbeError = (err) => {
+          const status = err && typeof err.status === 'number' ? err.status : 0;
+          const msg = err && err.message ? String(err.message) : '';
+          if (status === 403 || status === 404) return true;
+          if (status === 500 && /ECONNREFUSED/i.test(msg)) return true;
+          return false;
+        };
+
+        const extractVodId = (vod) => {
+          if (!vod) return '';
+          const pick = (v) => (v != null ? String(v).trim() : '');
+          return pick(vod.vod_id) || pick(vod.vodId) || pick(vod.id) || pick(vod.ID) || '';
+        };
+
+        const parsePlayCandidate = (fromStr, urlStr) => {
+          const fromRaw = typeof fromStr === 'string' ? fromStr : '';
+          const urlRaw = typeof urlStr === 'string' ? urlStr : '';
+          const from = String(fromRaw.split('$$$')[0] || '').trim();
+          const urlBlock = String(urlRaw.split('$$$')[0] || '').trim();
+          if (!from || !urlBlock) return null;
+          const firstLine = String(urlBlock.split('#')[0] || '').trim();
+          if (!firstLine) return null;
+          const parts = firstLine.split('$');
+          const epUrl = parts.length >= 2 ? parts.slice(1).join('$') : firstLine;
+          const id = String(epUrl || '').trim();
+          if (!id) return null;
+          return { flag: from, id };
+        };
+
+        const extractPlayFromVod = (vod) => {
+          if (!vod || typeof vod !== 'object') return null;
+          const from =
+            (typeof vod.vod_play_from === 'string' ? vod.vod_play_from : '') ||
+            (typeof vod.play_from === 'string' ? vod.play_from : '') ||
+            (typeof vod.playFrom === 'string' ? vod.playFrom : '');
+          const url =
+            (typeof vod.vod_play_url === 'string' ? vod.vod_play_url : '') ||
+            (typeof vod.play_url === 'string' ? vod.play_url : '') ||
+            (typeof vod.playUrl === 'string' ? vod.playUrl : '');
+          return parsePlayCandidate(from, url);
+        };
+
+        const extractPlayUrl = (resp) => {
+          if (!resp) return '';
+          const pick = (v) => (typeof v === 'string' ? v.trim() : '');
+          return pick(resp.url) || pick(resp.playUrl) || (resp.data && pick(resp.data.url)) || '';
+        };
+
+        // 1) Home probe
+        let homeOk = false;
+        let homeErr = '';
+        let homeClasses = [];
+        let homeHasClasses = false;
+        let homeHasList = false;
         try {
           const homeResp = await requestCatPawOpenAdminJson({
             apiBase: normalizedBase,
@@ -3047,113 +3115,199 @@ export function initDashboardPage(bootstrap = {}) {
           const sc = normalizeStatusCode(homeResp);
           if (sc >= 400) {
             const msg = normalizeMessage(homeResp) || '请求失败';
-            categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc}：${msg}`;
+            homeErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc}：${msg}`;
           } else {
-            const classes = extractClasses(homeResp);
-            const firstWithId = Array.isArray(classes) ? classes.find((c) => !!extractClassId(c)) : null;
-            const tid = extractClassId(firstWithId);
-            if (tid) {
-              const catResp = await requestCatPawOpenAdminJson({
-                apiBase: normalizedBase,
-                path: `${spiderPath}/category`,
-                method: 'POST',
-                body: { tid, t: tid, page: 1, pg: 1 },
-              });
-              const sc2 = normalizeStatusCode(catResp);
-              if (sc2 >= 400) {
-                const msg = normalizeMessage(catResp) || '请求失败';
-                categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc2}：${msg}`;
-              } else {
-                categoryOk = true;
-              }
+            homeOk = true;
+            homeClasses = extractClasses(homeResp);
+            homeHasClasses = Array.isArray(homeClasses) && homeClasses.some((c) => !!extractClassId(c));
+            const homeList = extractList(homeResp);
+            homeHasList = Array.isArray(homeList) && homeList.length > 0;
+          }
+        } catch (e) {
+          homeErr = formatHttpError(e);
+          if (isFatalHttpProbeError(e)) {
+            results[key] = 'invalid';
+            errors[key] = `首页接口:${homeErr}`;
+            continue;
+          }
+        }
+
+        // 2) Category probe (collect candidates)
+        let categoryOk = false;
+        let categoryErr = '';
+        let categoryEmpty = false;
+        let vodCandidates = [];
+        if (homeOk) {
+          const firstWithId = Array.isArray(homeClasses) ? homeClasses.find((c) => !!extractClassId(c)) : null;
+          const tid = extractClassId(firstWithId);
+          const body = tid ? { id: tid, page: 1, filter: true, filters: {} } : { id: '0', page: 1, filter: true, filters: {} };
+          try {
+            const catResp = await requestCatPawOpenAdminJson({
+              apiBase: normalizedBase,
+              path: `${spiderPath}/category`,
+              method: 'POST',
+              body,
+            });
+            const sc2 = normalizeStatusCode(catResp);
+            if (sc2 >= 400) {
+              const msg = normalizeMessage(catResp) || '请求失败';
+              categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc2}：${msg}`;
             } else {
-              // Fallback: some spiders don't expose classes in `home` but still support category listing.
-              try {
-                const rootResp = await requestCatPawOpenAdminJson({
-                  apiBase: normalizedBase,
-                  path: `${spiderPath}/category`,
-                  method: 'POST',
-                  body: { tid: '0', t: '0', page: 1, pg: 1 },
-                });
-                const rootSc = normalizeStatusCode(rootResp);
-                if (rootSc >= 400) {
-                  const msg = normalizeMessage(rootResp) || '请求失败';
-                  categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${rootSc}：${msg}`;
-                } else {
-                  const list = extractList(rootResp);
-                  const firstFolder =
-                    (Array.isArray(list) &&
-                      list.find((it) => {
-                        const tag =
-                          it && (it.vod_tag != null ? String(it.vod_tag) : it.tag != null ? String(it.tag) : '');
-                        return tag === 'folder';
-                      })) ||
-                    null;
-                  const nextId =
-                    (firstFolder && (firstFolder.vod_id != null ? String(firstFolder.vod_id) : firstFolder.id != null ? String(firstFolder.id) : '')) ||
-                    '';
-                  if (!nextId) {
-                    categoryOk = true;
-                  } else {
-                    const subResp = await requestCatPawOpenAdminJson({
-                      apiBase: normalizedBase,
-                      path: `${spiderPath}/category`,
-                      method: 'POST',
-                      body: { tid: nextId, t: nextId, page: 1, pg: 1 },
-                    });
-                    const subSc = normalizeStatusCode(subResp);
-                    if (subSc >= 400) {
-                      const msg = normalizeMessage(subResp) || '请求失败';
-                      categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${subSc}：${msg}`;
-                    } else {
-                      categoryOk = true;
-                    }
-                  }
-                }
-              } catch (e2) {
-                categoryErr = formatHttpError(e2);
-              }
+              categoryOk = true;
+              const list = extractList(catResp);
+              vodCandidates = Array.isArray(list) ? list.slice(0, 10) : [];
+              categoryEmpty = vodCandidates.length === 0;
+            }
+          } catch (e) {
+            categoryErr = formatHttpError(e);
+            if (isFatalHttpProbeError(e)) {
+              results[key] = 'invalid';
+              errors[key] = `分类接口:${categoryErr}`;
+              continue;
             }
           }
-        } catch (e) {
-          categoryErr = formatHttpError(e);
         }
 
+	        // 3) Play probe (up to 3 candidates)
+	        let playOk = false;
+	        let playOkFromCategory = false;
+	        let playOkFromSearch = false;
+	        let playErr = '';
+	        if (categoryOk && !categoryEmpty) {
+	          const candidates = vodCandidates.filter((v) => v && typeof v === 'object').slice(0, 3);
+	          for (let j = 0; j < candidates.length; j += 1) {
+	            const vod = candidates[j];
+            let playCandidate = extractPlayFromVod(vod);
+            try {
+              if (!playCandidate) {
+                const vodId = extractVodId(vod);
+                if (!vodId) continue;
+                const detailResp = await requestCatPawOpenAdminJson({
+                  apiBase: normalizedBase,
+                  path: `${spiderPath}/detail`,
+                  method: 'POST',
+                  body: { id: vodId, vod_id: vodId },
+                });
+                const dsc = normalizeStatusCode(detailResp);
+                if (dsc >= 400) continue;
+                const detailList = extractList(detailResp);
+                const first = Array.isArray(detailList) && detailList.length ? detailList[0] : null;
+                playCandidate = extractPlayFromVod(first);
+              }
+	              if (!playCandidate) continue;
+	              const playResp = await requestCatPawOpenAdminJson({
+	                apiBase: normalizedBase,
+	                path: `play`,
+	                method: 'POST',
+	                body: { flag: playCandidate.flag, id: playCandidate.id, siteApi: `/${spiderPath}`.replace(/\/{2,}/g, '/') },
+	              });
+	              const psc = normalizeStatusCode(playResp);
+	              if (psc >= 400) continue;
+	              const url = extractPlayUrl(playResp);
+	              if (url) {
+	                playOk = true;
+	                playOkFromCategory = true;
+	                break;
+	              }
+	              playErr = '未提取到地址';
+	            } catch (e) {
+	              playErr = formatHttpError(e);
+              if (isFatalHttpProbeError(e)) break;
+            }
+          }
+        }
+
+        // 4) Search probe (only when needed)
         let searchOk = false;
         let searchErr = '';
-        try {
-          const searchResp = await requestCatPawOpenAdminJson({
-            apiBase: normalizedBase,
-            path: `${spiderPath}/search`,
-            method: 'POST',
-            body: { wd: '斗破', page: 1 },
-          });
-          const sc = normalizeStatusCode(searchResp);
-          if (sc >= 400) {
-            const msg = normalizeMessage(searchResp) || '请求失败';
-            searchErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc}：${msg}`;
-          } else {
-            // Search is considered "ok" as long as it returns a response without error statusCode.
-            // Some sites can legitimately return empty results for the probe keyword.
-            extractList(searchResp);
-            searchOk = true;
+        let searchCandidates = [];
+        const needsSearchProbe = !playOk && (!homeOk || !categoryOk || categoryEmpty || (!homeHasClasses && !homeHasList));
+        if (!needsSearchProbe && playOk) {
+          searchOk = true;
+        } else {
+          try {
+            const searchResp = await requestCatPawOpenAdminJson({
+              apiBase: normalizedBase,
+              path: `${spiderPath}/search`,
+              method: 'POST',
+              body: { wd: '斗破', page: 1 },
+            });
+            const sc = normalizeStatusCode(searchResp);
+            if (sc >= 400) {
+              const msg = normalizeMessage(searchResp) || '请求失败';
+              searchErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc}：${msg}`;
+            } else {
+              searchCandidates = extractList(searchResp);
+              searchOk = true;
+            }
+          } catch (e) {
+            searchErr = formatHttpError(e);
+            if (isFatalHttpProbeError(e)) searchOk = false;
           }
-        } catch (e) {
-          searchErr = formatHttpError(e);
         }
 
-        if (categoryOk && searchOk) results[key] = 'valid';
-        else if (!categoryOk && !searchOk) results[key] = 'invalid';
-        else if (!categoryOk && searchOk) results[key] = 'category_error';
-        else results[key] = 'search_error';
+        // If category didn't yield a playable item, verify play using search results (up to 3).
+	        if (!playOk && searchOk && Array.isArray(searchCandidates) && searchCandidates.length) {
+	          const candidates = searchCandidates.filter((v) => v && typeof v === 'object').slice(0, 3);
+	          for (let j = 0; j < candidates.length; j += 1) {
+	            const vod = candidates[j];
+            let playCandidate = extractPlayFromVod(vod);
+            try {
+              if (!playCandidate) {
+                const vodId = extractVodId(vod);
+                if (!vodId) continue;
+                const detailResp = await requestCatPawOpenAdminJson({
+                  apiBase: normalizedBase,
+                  path: `${spiderPath}/detail`,
+                  method: 'POST',
+                  body: { id: vodId, vod_id: vodId },
+                });
+                const dsc = normalizeStatusCode(detailResp);
+                if (dsc >= 400) continue;
+                const detailList = extractList(detailResp);
+                const first = Array.isArray(detailList) && detailList.length ? detailList[0] : null;
+                playCandidate = extractPlayFromVod(first);
+              }
+	              if (!playCandidate) continue;
+	              const playResp = await requestCatPawOpenAdminJson({
+	                apiBase: normalizedBase,
+	                path: `play`,
+	                method: 'POST',
+	                body: { flag: playCandidate.flag, id: playCandidate.id, siteApi: `/${spiderPath}`.replace(/\/{2,}/g, '/') },
+	              });
+	              const psc = normalizeStatusCode(playResp);
+	              if (psc >= 400) continue;
+	              const url = extractPlayUrl(playResp);
+	              if (url) {
+	                playOk = true;
+	                playOkFromSearch = true;
+	                break;
+	              }
+	              playErr = '未提取到地址';
+	            } catch (e) {
+	              playErr = formatHttpError(e);
+              if (isFatalHttpProbeError(e)) break;
+            }
+          }
+        }
+
+	        // Final decision.
+	        // - If category flow yields a playable item => valid
+	        // - If only search flow yields a playable item => category_error (disable homepage but keep search)
+	        // - Otherwise => invalid
+	        if (playOkFromCategory) results[key] = 'valid';
+	        else if (playOkFromSearch) results[key] = 'category_error';
+	        else results[key] = 'invalid';
 
         const parts = [];
+        if (homeErr) parts.push(`首页接口:${homeErr}`);
         if (categoryErr) parts.push(`分类接口:${categoryErr}`);
+        if (playErr) parts.push(`播放接口:${playErr}`);
         if (searchErr) parts.push(`搜索接口:${searchErr}`);
         if (parts.length) errors[key] = parts.join('  ');
       } catch (_e) {
         results[key] = 'invalid';
-        errors[key] = '分类接口:检测失败  搜索接口:检测失败';
+        errors[key] = '首页接口:检测失败  分类接口:检测失败  播放接口:检测失败  搜索接口:检测失败';
       }
     }
 
@@ -3161,6 +3315,18 @@ export function initDashboardPage(bootstrap = {}) {
       results: JSON.stringify(results),
       errors: JSON.stringify(errors),
     });
+
+    // Apply search disable for "我的xxx" sources (best-effort).
+    if (resp.ok && data && data.success && disableSearchKeys.length) {
+      for (let i = 0; i < disableSearchKeys.length; i += 1) {
+        const k = disableSearchKeys[i];
+        // Disable homepage for these sources so category browsing won't be triggered by the UI.
+        // eslint-disable-next-line no-await-in-loop
+        await postForm('/dashboard/video/source/sites/home', { key: k, home: '0' }).catch(() => {});
+        // eslint-disable-next-line no-await-in-loop
+        await postForm('/dashboard/video/source/sites/search', { key: k, search: '0' }).catch(() => {});
+      }
+    }
     if (resp.ok && data && data.success) {
       return { ok: true, sites: Array.isArray(data.sites) ? data.sites : [], results: data.results || {} };
     }
@@ -3571,14 +3737,16 @@ export function initDashboardPage(bootstrap = {}) {
     panelLoading.interface = true;
     try {
       const settings = await fetchSiteSettings();
-      if (settings) {
-        const catForm = document.getElementById('catPawOpenSettingsForm');
-        const apiInput = catForm ? catForm.querySelector('input[name="catPawOpenApiBase"]') : null;
-        if (apiInput) apiInput.value = settings.catPawOpenApiBase || '';
+        if (settings) {
+          const catForm = document.getElementById('catPawOpenSettingsForm');
+          const apiInput = catForm ? catForm.querySelector('input[name="catPawOpenApiBase"]') : null;
+          if (apiInput) apiInput.value = settings.catPawOpenApiBase || '';
+          catPawOpenSavedApiBaseNorm = normalizeCatPawOpenAdminBase(settings.catPawOpenApiBase || '');
+          syncCatPawOpenSettingsVisibility();
 
-        const openListApiInput = openListSettingsForm
-          ? openListSettingsForm.querySelector('input[name="openListApiBase"]')
-          : null;
+          const openListApiInput = openListSettingsForm
+            ? openListSettingsForm.querySelector('input[name="openListApiBase"]')
+            : null;
         if (openListApiInput) openListApiInput.value = settings.openListApiBase || '';
         const openListTokenInput = openListSettingsForm
           ? openListSettingsForm.querySelector('input[name="openListToken"]')
@@ -3631,6 +3799,17 @@ export function initDashboardPage(bootstrap = {}) {
   bindOnce(catPawOpenForm, () => {
     const apiInput = catPawOpenForm ? catPawOpenForm.querySelector('input[name="catPawOpenApiBase"]') : null;
     catPawOpenConfigListEditor = initCatPawOpenConfigListEditor();
+    const syncSaveInput = document.getElementById('catPawOpenSyncSave');
+
+    catPawOpenSavedApiBaseNorm = normalizeCatPawOpenAdminBase(
+      apiInput && typeof apiInput.value === 'string' ? apiInput.value : ''
+    );
+    syncCatPawOpenSettingsVisibility();
+    if (apiInput) {
+      apiInput.addEventListener('input', () => {
+        syncCatPawOpenSettingsVisibility();
+      });
+    }
 
     const submitBtn = catPawOpenForm ? catPawOpenForm.querySelector('button[type="submit"]') : null;
     const submitBtnOriginalHtml = submitBtn ? submitBtn.innerHTML : '';
@@ -3784,7 +3963,11 @@ export function initDashboardPage(bootstrap = {}) {
         setSubmitBtnLoading(true);
         setCatPawOpenSaveStatus('', '保存中...');
         try {
-          const apiBase = apiInput && typeof apiInput.value === 'string' ? apiInput.value : '';
+          const apiBaseRaw = apiInput && typeof apiInput.value === 'string' ? apiInput.value : '';
+          const normalizedBase = normalizeCatPawOpenAdminBase(apiBaseRaw);
+          const savedBaseBefore = catPawOpenSavedApiBaseNorm;
+          const baseChanged = normalizedBase !== savedBaseBefore;
+          const wantsSyncSave = !!(syncSaveInput && syncSaveInput.checked);
 
           const { resp, data } = await postForm(catPawOpenForm.action, formToFields(catPawOpenForm));
           if (!(resp.ok && data && data.success)) {
@@ -3794,24 +3977,55 @@ export function initDashboardPage(bootstrap = {}) {
           // "保存成功" only indicates the dashboard setting was persisted.
           setCatPawOpenSaveStatus('success', '保存成功');
 
-          const normalizedBase = normalizeCatPawOpenAdminBase(apiBase);
+          // If API base changed, hide previous remote block immediately and only show it again after the new server responds.
+          if (baseChanged) {
+            setCatPawOpenRemoteState('hidden');
+          }
+
           if (!normalizedBase) {
-            await refreshCatPawOpenRemoteSettings(apiBase);
+            await refreshCatPawOpenRemoteSettings(apiBaseRaw);
             return;
           }
 
-          const remoteSettingsEl = document.getElementById('catPawOpenRemoteSettings');
-          const canSync = !!(remoteSettingsEl && !remoteSettingsEl.classList.contains('hidden'));
-          if (!canSync) {
-            await refreshCatPawOpenRemoteSettings(apiBase);
+          if (apiInput) apiInput.value = normalizedBase;
+          catPawOpenSavedApiBaseNorm = normalizedBase;
+          syncCatPawOpenSettingsVisibility();
+
+          if (baseChanged && !wantsSyncSave) {
+            await refreshCatPawOpenRemoteSettings(normalizedBase);
             return;
+          }
+
+          if (baseChanged && wantsSyncSave) {
+            try {
+              await requestCatPawOpenAdminJson({
+                apiBase: normalizedBase,
+                path: 'admin/settings',
+                method: 'GET',
+                timeoutMs: 4000,
+              });
+              setCatPawOpenRemoteState('ready');
+            } catch (err) {
+              const msg = err && err.message ? String(err.message) : 'CatPawOpen 接口异常';
+              setCatPawOpenRemoteState('error', msg);
+              return;
+            }
+          }
+
+          if (!baseChanged) {
+            const remoteSettingsEl = document.getElementById('catPawOpenRemoteSettings');
+            const canSync = !!(remoteSettingsEl && !remoteSettingsEl.classList.contains('hidden'));
+            if (!canSync) {
+              await refreshCatPawOpenRemoteSettings(normalizedBase);
+              return;
+            }
           }
 
           if (catPawOpenConfigListEditor && typeof catPawOpenConfigListEditor.setCheckingAll === 'function') {
             catPawOpenConfigListEditor.setCheckingAll();
           }
           startCheckingWatch();
-          const sync = await syncCatPawOpenRemoteSettings(apiBase);
+          const sync = await syncCatPawOpenRemoteSettings(normalizedBase);
           if (checkingDotsTimer) {
             clearInterval(checkingDotsTimer);
             checkingDotsTimer = null;
@@ -3820,12 +4034,7 @@ export function initDashboardPage(bootstrap = {}) {
             renderCheckingStatus({ failed: true });
             return;
           }
-          const willRestart = !!(sync && sync.data && sync.data.restart);
-          if (willRestart) {
-            startRestartWatch(apiBase);
-          } else {
-            setCatPawOpenSaveStatus('success', '保存成功');
-          }
+          setCatPawOpenSaveStatus('success', '保存成功');
         } catch (_err) {
           stopRestartWatch();
           setCatPawOpenSaveStatus('error', '保存失败');
@@ -3954,11 +4163,11 @@ export function initDashboardPage(bootstrap = {}) {
     }
     setVideoSourceSaveStatus('', '导入中...');
     try {
-      const fullConfig = await requestCatPawOpenAdminJson({
-        apiBase: normalizedBase,
-        path: 'full-config',
-        method: 'GET',
-      });
+	      const fullConfig = await requestCatPawOpenAdminJson({
+	        apiBase: normalizedBase,
+	        path: 'admin/full-config',
+	        method: 'GET',
+	      });
       const list = fullConfig && fullConfig.video && Array.isArray(fullConfig.video.sites) ? fullConfig.video.sites : [];
       const sitesPayload = list
         .map((s) => ({
@@ -3981,10 +4190,10 @@ export function initDashboardPage(bootstrap = {}) {
 	        }
 	        // `baseset` is a settings site; mark as "valid" on import so the UI doesn't show "未检测".
 	        try {
-	          const basesetKeys = (d2.sites || [])
-	            .filter((s) => s && typeof s.key === 'string' && typeof s.api === 'string' && /^\/spider\/baseset(?:\/|$)/.test(s.api))
-	            .map((s) => s.key)
-	            .filter(Boolean);
+          const basesetKeys = (d2.sites || [])
+            .filter((s) => s && typeof s.key === 'string' && typeof s.api === 'string' && /^\/(?:[a-f0-9]{10}\/)?spider\/baseset(?:\/|$)/.test(s.api))
+            .map((s) => s.key)
+            .filter(Boolean);
 	          if (basesetKeys.length) {
 	            const results = {};
 	            basesetKeys.forEach((k) => {
