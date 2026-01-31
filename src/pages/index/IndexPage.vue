@@ -487,16 +487,41 @@
 </template>
 
 <script setup>
-	import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+	import { computed, defineAsyncComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 	import AppSidebar from '../../shared/AppSidebar.vue';
 	import { initMainInteractions } from '../../shared/mainInteractions';
 	import { initIndexPage } from './indexClient.js';
 	import UserSettingsModal from '../../shared/UserSettingsModal.vue';
-	import PlayPage from '../play/PlayPage.vue';
 import LoginPage from '../login/LoginPage.vue';
 
 const props = defineProps({ bootstrap: { type: Object, required: true } });
 const bootstrap = props.bootstrap;
+
+const PlayPage = defineAsyncComponent({
+  loader: () => import('../play/PlayPage.vue'),
+  delay: 120,
+  timeout: 30000,
+  loadingComponent: {
+    name: 'PlayPageLoading',
+    render() {
+      return h(
+        'div',
+        { class: 'px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400 select-none' },
+        '正在加载播放页…',
+      );
+    },
+  },
+  errorComponent: {
+    name: 'PlayPageLoadError',
+    render() {
+      return h(
+        'div',
+        { class: 'px-6 py-10 text-center text-sm text-rose-600 dark:text-rose-400 select-none' },
+        '播放页加载失败，请刷新重试。',
+      );
+    },
+  },
+});
 
 const appVersion =
   (typeof window !== 'undefined' && window.__MEOWFILM_VERSION__) || 'beta';
