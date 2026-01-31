@@ -1267,10 +1267,11 @@ export function initDashboardPage(bootstrap = {}) {
   const panSettingDefs = [
     { key: 'baidu', name: '百度', type: 'cookie' },
     { key: 'quark', name: '夸克', type: 'cookie' },
-    { key: 'uc', name: 'UC', type: 'cookie' },
-    { key: '115', name: '115', type: 'cookie' },
     { key: 'tianyi', name: '天翼', type: 'account' },
+    { key: 'yidong', name: '移动', type: 'authorization' },
+    { key: 'uc', name: 'UC', type: 'cookie' },
     { key: 'pan123', name: '123', type: 'account' },
+    { key: '115', name: '115', type: 'cookie' },
     { key: 'bili', name: 'Bilibili', type: 'cookie' },
     { key: 'wuming', name: '观影', type: 'cookie' },
     { key: 'yunchao', name: '云巢', type: 'account' },
@@ -1752,8 +1753,12 @@ export function initDashboardPage(bootstrap = {}) {
     });
   };
 
+  const savePanAuthorization = async (key, authorization) => {
+    return savePanSettings(key, 'authorization', { authorization: authorization != null ? String(authorization) : '' });
+  };
+
   const savePanSettings = async (key, type, fields) => {
-    const t = type === 'account' ? 'account' : 'cookie';
+    const t = type === 'account' || type === 'authorization' || type === 'cookie' ? type : 'cookie';
     const payload = Object.assign({ key, type: t }, fields && typeof fields === 'object' ? fields : {});
     const { resp, data } = await postForm('/dashboard/pan/settings', payload);
     if (resp.ok && data && data.success) return { ok: true, settings: data.settings || {} };
@@ -1917,10 +1922,11 @@ export function initDashboardPage(bootstrap = {}) {
 	    if (!def) return;
 	    panSettingsContent.innerHTML = '';
 
-	    if (def.type === 'cookie') {
+	    if (def.type === 'cookie' || def.type === 'authorization') {
+        const isAuthorization = def.type === 'authorization';
 	      const saveBtn = createEl('button', { className: 'btn-green', text: '保存' });
 	      saveBtn.type = 'button';
-	      saveBtn.setAttribute('data-pan-action', 'save-cookie');
+	      saveBtn.setAttribute('data-pan-action', isAuthorization ? 'save-authorization' : 'save-cookie');
 	      saveBtn.setAttribute('data-pan-key', def.key);
 
 	      const stack = createEl('div', { className: 'flex flex-col items-start gap-3' });
@@ -2010,9 +2016,14 @@ export function initDashboardPage(bootstrap = {}) {
 	      const textarea = createEl('textarea', { className: 'tv-field' });
 	      textarea.rows = 3;
 	      setStyles(textarea, { width: '100%' });
-	      textarea.placeholder = `请输入${def.name} Cookie`;
-	      textarea.value = (getPanSettingValue(def.key).cookie || '').toString();
-	      textarea.setAttribute('data-pan-cookie-input', def.key);
+	      textarea.placeholder = isAuthorization ? `请输入${def.name} Authorization` : `请输入${def.name} Cookie`;
+        if (isAuthorization) {
+	        textarea.value = (getPanSettingValue(def.key).authorization || '').toString();
+	        textarea.setAttribute('data-pan-authorization-input', def.key);
+        } else {
+	        textarea.value = (getPanSettingValue(def.key).cookie || '').toString();
+	        textarea.setAttribute('data-pan-cookie-input', def.key);
+        }
 	      stack.appendChild(textarea);
 
 	      const saveWrap = createEl('div');
@@ -2212,6 +2223,16 @@ export function initDashboardPage(bootstrap = {}) {
         await savePanLoginSettingToServer({
           key,
           save: () => savePanCookie(key, value),
+        });
+        return;
+      }
+
+      if (action === 'save-authorization') {
+        const textarea = panSettingsContent.querySelector(`textarea[data-pan-authorization-input="${key}"]`);
+        const value = textarea ? textarea.value : '';
+        await savePanLoginSettingToServer({
+          key,
+          save: () => savePanAuthorization(key, value),
         });
         return;
       }
