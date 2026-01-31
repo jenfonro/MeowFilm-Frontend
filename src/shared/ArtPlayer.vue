@@ -801,6 +801,13 @@ const detectVideoFormat = (url) => {
 			        }
 			      : {},
   });
+  try {
+    if (props.autoplay && art && typeof art.play === 'function') {
+      Promise.resolve()
+        .then(() => art && art.play && art.play())
+        .catch(() => {});
+    }
+  } catch (_e) {}
 
   try {
     teleportTarget.value = art && art.template && art.template.$player ? art.template.$player : null;
@@ -1428,7 +1435,19 @@ const pause = () => {
   } catch (_e) {}
 };
 
-defineExpose({ destroy: destroyNow, pause });
+const play = async () => {
+  try {
+    if (art && typeof art.play === 'function') return await art.play();
+    const v = art && art.video ? art.video : null;
+    if (v && typeof v.play === 'function') return await v.play();
+  } catch (_e) {}
+};
+
+const tryAutoplay = async () => {
+  await play();
+};
+
+defineExpose({ destroy: destroyNow, pause, play, tryAutoplay });
 </script>
 
 <style scoped>

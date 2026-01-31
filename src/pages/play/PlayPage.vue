@@ -571,7 +571,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { initPlayPage } from './playClient.js';
 	import ArtPlayer from '../../shared/ArtPlayer.vue';
 import { normalizeCatPawOpenApiBase, requestCatPlay, requestCatSpider } from '../../shared/catpawopen';
@@ -2751,6 +2751,12 @@ const requestPlay = async () => {
 		    playerHeaders.value = finalHeaders;
 		    playingPanKey.value = panKeyAtCall;
 		    playingEpisodeIndex.value = idxAtCall;
+        try {
+          await nextTick();
+          if (seqAtCall === playRequestState.seq && artPlayerRef.value && typeof artPlayerRef.value.tryAutoplay === 'function') {
+            await artPlayerRef.value.tryAutoplay();
+          }
+        } catch (_e) {}
 
 				    try {
 				      const siteKey = (props.siteKey || '').trim();
