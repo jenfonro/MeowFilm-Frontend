@@ -233,6 +233,28 @@
 	              </span>
 	            </button>
 	            <div id="videoSourceSitesPanel" class="tv-us-acc-body hidden">
+	              <div class="flex items-center gap-2 mb-2">
+	                <button
+	                  id="videoSourceJsonImport"
+	                  type="button"
+	                  class="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-sm text-gray-700 dark:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-white/10 transition-colors duration-150"
+	                >
+	                  导入站点
+	                </button>
+	                <button
+	                  id="videoSourceJsonExport"
+	                  type="button"
+	                  class="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-sm text-gray-700 dark:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-white/10 transition-colors duration-150"
+	                >
+	                  导出站点
+	                </button>
+	                <input
+	                  id="videoSourceJsonImportFile"
+	                  type="file"
+	                  accept="application/json,.json"
+	                  class="hidden"
+	                />
+	              </div>
 	              <div class="flex items-center justify-between gap-3 mb-2">
 	                <div class="flex items-center gap-2">
 	                  <button

@@ -2675,6 +2675,9 @@ export function initDashboardPage(bootstrap = {}) {
   const videoSourceHeaderError = document.getElementById('videoSourceHeaderError');
   const videoSourceHeaderCheckbox = document.getElementById('videoSourceHeaderCheckbox');
   const videoSourceResetOrder = document.getElementById('videoSourceResetOrder');
+  const videoSourceJsonImport = document.getElementById('videoSourceJsonImport');
+  const videoSourceJsonExport = document.getElementById('videoSourceJsonExport');
+  const videoSourceJsonImportFile = document.getElementById('videoSourceJsonImportFile');
   const videoSourceBulkCheckDisable = document.getElementById('videoSourceBulkCheckDisable');
 
   const formatVideoSourceApi = (api) => {
@@ -3025,6 +3028,252 @@ export function initDashboardPage(bootstrap = {}) {
     if (resp.ok && data && data.success) return { ok: true };
     return { ok: false, message: (data && data.message) || '保存失败' };
   };
+
+  const exportVideoSourceSitesToJson = () => {
+    const safeSites = Array.isArray(currentVideoSourceSites) ? currentVideoSourceSites : [];
+    const orderKeys = safeSites.map((s) => (s && s.key) || '').filter(Boolean);
+    const payload = {
+      format: 'meowfilm.video_source.sites.v1',
+      exportedAt: new Date().toISOString(),
+      coverSite: videoSourceCoverSite || '',
+      order: orderKeys,
+      sites: safeSites.map((site, idx) => {
+        const key = (site && site.key) || '';
+        const rawError =
+          site && typeof site.error === 'string'
+            ? site.error
+            : site && typeof site.errorMessage === 'string'
+              ? site.errorMessage
+              : site && typeof site.err === 'string'
+                ? site.err
+                : '';
+        return {
+          key,
+          name: (site && site.name) || '',
+          api: (site && site.api) || '',
+          type: site && site.type != null ? site.type : undefined,
+          availability: (site && site.availability) || 'unchecked',
+          enabled: site && site.enabled !== false,
+          home: site && site.home !== false,
+          search: site && site.search !== false,
+          cover: !!(key && videoSourceCoverSite === key),
+          order: idx + 1,
+          error: rawError || '',
+        };
+      }),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `meowfilm_sites_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const normalizeImportedVideoSourcePayload = (input) => {
+    if (!input) return { sites: [], order: [], coverSite: '' };
+    if (Array.isArray(input)) return { sites: input, order: [], coverSite: '' };
+    const sites = Array.isArray(input.sites) ? input.sites : [];
+    const order = Array.isArray(input.order) ? input.order : [];
+    const coverSite = typeof input.coverSite === 'string' ? input.coverSite : '';
+    return { sites, order, coverSite };
+  };
+
+  const restoreVideoSourceSitesFromJson = async (rawText) => {
+    const text = typeof rawText === 'string' ? rawText : '';
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (_e) {
+      setVideoSourceListStatus('error', 'JSON 解析失败');
+      return;
+    }
+
+    const { sites: importedSites, order: importedOrder, coverSite: importedCoverSite } =
+      normalizeImportedVideoSourcePayload(parsed);
+    if (!Array.isArray(importedSites) || importedSites.length === 0) {
+      setVideoSourceListStatus('error', '导入数据无站点');
+      return;
+    }
+
+    let currentSites = Array.isArray(currentVideoSourceSites) ? currentVideoSourceSites : [];
+    let existing = new Set(currentSites.map((s) => (s && s.key) || '').filter(Boolean));
+    if (existing.size === 0) {
+      try {
+        const data = await getSuccessJson('/dashboard/video/source/sites');
+        if (data && typeof data.coverSite === 'string') {
+          videoSourceCoverSite = String(data.coverSite || '').trim();
+        }
+        renderVideoSourceList(data && Array.isArray(data.sites) ? data.sites : []);
+        currentSites = Array.isArray(currentVideoSourceSites) ? currentVideoSourceSites : [];
+        existing = new Set(currentSites.map((s) => (s && s.key) || '').filter(Boolean));
+      } catch (_e) {}
+    }
+    if (existing.size === 0) {
+      setVideoSourceListStatus('error', '当前站点列表为空，请先导入站源');
+      return;
+    }
+
+    const results = {};
+    const errors = {};
+    const desiredStatus = {};
+    const desiredHome = {};
+    const desiredSearch = {};
+    const desiredOrder = [];
+    const coverCandidates = [];
+
+    importedSites.forEach((it, idx) => {
+      if (!it) return;
+      const key = typeof it.key === 'string' ? it.key.trim() : '';
+      if (!key || !existing.has(key)) return;
+
+      desiredOrder.push({
+        key,
+        order: Number.isFinite(Number(it.order)) ? Number(it.order) : idx + 1,
+        idx,
+      });
+
+      const availability =
+        typeof it.availability === 'string'
+          ? it.availability
+          : typeof it.siteAvailability === 'string'
+            ? it.siteAvailability
+            : 'unchecked';
+      results[key] = String(availability || 'unchecked');
+
+      const err =
+        typeof it.error === 'string'
+          ? it.error
+          : typeof it.errorMessage === 'string'
+            ? it.errorMessage
+            : typeof it.err === 'string'
+              ? it.err
+              : '';
+      if (err && String(err).trim()) errors[key] = String(err).trim();
+
+      desiredStatus[key] = it.enabled !== false;
+      desiredHome[key] = it.home !== false;
+      desiredSearch[key] = it.search !== false;
+
+      const cover = !!(it.cover || it.coverShown);
+      if (cover) coverCandidates.push(key);
+    });
+
+    const keys = Object.keys(desiredStatus);
+    if (keys.length === 0) {
+      setVideoSourceListStatus('error', '没有可导入的站点（key 不匹配当前列表）');
+      return;
+    }
+
+    const coverKey = (() => {
+      const raw = typeof importedCoverSite === 'string' ? importedCoverSite.trim() : '';
+      if (raw && existing.has(raw)) return raw;
+      return coverCandidates.length ? coverCandidates[0] : '';
+    })();
+
+    // Prefer imported explicit order list (if present and valid), otherwise use per-item `order`.
+    let orderKeys = [];
+    if (Array.isArray(importedOrder) && importedOrder.length) {
+      orderKeys = importedOrder
+        .map((k) => (typeof k === 'string' ? k.trim() : ''))
+        .filter((k) => k && existing.has(k));
+    } else {
+      desiredOrder.sort((a, b) => {
+        if (a.order !== b.order) return a.order - b.order;
+        return a.idx - b.idx;
+      });
+      orderKeys = desiredOrder.map((it) => it.key).filter(Boolean);
+    }
+
+    setVideoSourceListStatus('', '导入中...');
+    try {
+      // Restore availability + error first (may have side effects we override below).
+      await postForm('/dashboard/video/source/sites/check', {
+        results: JSON.stringify(results),
+        errors: JSON.stringify(errors),
+      }).catch(() => {});
+
+      // Restore ordering.
+      if (orderKeys.length) {
+        await postForm('/dashboard/video/source/sites/order', { order: JSON.stringify(orderKeys) }).catch(() => {});
+      }
+
+      // Restore cover site.
+      if (coverKey) {
+        await updateVideoSourceCoverSite(coverKey).catch(() => {});
+      }
+
+      // Restore per-site switches.
+      for (let i = 0; i < keys.length; i += 1) {
+        const k = keys[i];
+        await updateVideoSourceSiteStatus(k, !!desiredStatus[k]).catch(() => {});
+        await updateVideoSourceSiteHome(k, !!desiredHome[k]).catch(() => {});
+        await updateVideoSourceSiteSearch(k, !!desiredSearch[k]).catch(() => {});
+      }
+
+      const data = await getSuccessJson('/dashboard/video/source/sites');
+      if (data && typeof data.coverSite === 'string') {
+        videoSourceCoverSite = String(data.coverSite || '').trim();
+      }
+      renderVideoSourceList(data && Array.isArray(data.sites) ? data.sites : []);
+
+      setVideoSourceListStatus('success', `导入完成（${keys.length} 个站点）`);
+      clearStatusLater(setVideoSourceListStatus, 1800);
+    } catch (e) {
+      const status = e && typeof e.status === 'number' ? e.status : 0;
+      const msg = e && e.message ? String(e.message) : '导入失败';
+      if (status) setVideoSourceListStatus('error', `HTTP ${status}：${msg}`);
+      else setVideoSourceListStatus('error', msg);
+    }
+  };
+
+  bindOnce(videoSourceJsonExport, (btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        if (!Array.isArray(currentVideoSourceSites) || currentVideoSourceSites.length === 0) {
+          const data = await getSuccessJson('/dashboard/video/source/sites');
+          if (data && typeof data.coverSite === 'string') {
+            videoSourceCoverSite = String(data.coverSite || '').trim();
+          }
+          renderVideoSourceList(data && Array.isArray(data.sites) ? data.sites : []);
+        }
+      } catch (_e) {}
+      exportVideoSourceSitesToJson();
+    });
+  });
+
+  bindOnce(videoSourceJsonImport, (btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!videoSourceJsonImportFile) return;
+      try {
+        videoSourceJsonImportFile.value = '';
+      } catch (_e) {}
+      videoSourceJsonImportFile.click();
+    });
+  });
+
+  bindOnce(videoSourceJsonImportFile, (input) => {
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0] ? input.files[0] : null;
+      if (!file) return;
+      try {
+        const text = await file.text();
+        await restoreVideoSourceSitesFromJson(text);
+      } catch (_e) {
+        setVideoSourceListStatus('error', '读取文件失败');
+      } finally {
+        try {
+          input.value = '';
+        } catch (_e) {}
+      }
+    });
+  });
 
   const resetVideoSourceOrderFromCatPawOpen = async () => {
     const apiBase = await resolveCatPawOpenApiBase();
