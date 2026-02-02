@@ -2726,6 +2726,26 @@ const maybeUseCatM3U8ProxyForPlayback = async ({
   if (!isProbablyM3U8Url(playUrl)) return null;
   if (!apiBase) return null;
 
+  const h = playHeaders && typeof playHeaders === 'object' ? playHeaders : {};
+  const hasHeader = Object.keys(h).some((k) => {
+    if (!k || typeof k !== 'string') return false;
+    const v = h[k];
+    if (v == null) return false;
+    if (Array.isArray(v)) return v.some((it) => it != null && String(it).trim());
+    return String(v).trim();
+  });
+
+  // If server doesn't require headers, prefer direct m3u8 fetch first. If it fails (CORS/IP/anti-leech),
+  // then fall back to CatPawOpen m3u8 registration + proxy rewrite.
+  if (!hasHeader) {
+    try {
+      await fetchM3U8Text({ url: playUrl, tvUser });
+      return { url: playUrl, headers: playHeaders, reason: 'direct-m3u8-fetch-ok' };
+    } catch (_e) {
+      // continue to register flow
+    }
+  }
+
   // 1) Ask CatPawOpen to fetch the m3u8 with required headers and give us both playlists.
   const { indexUrl, proxyUrl } = await registerCatM3U8({ apiBase, tvUser, url: playUrl, headers: playHeaders });
 
