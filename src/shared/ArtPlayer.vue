@@ -1239,7 +1239,22 @@ const destroyNow = () => {
 
 const togglePlay = () => {
   if (!art) return;
-  art.toggle();
+  // During buffering/waiting, `art.playing` can be out of sync with the underlying media element.
+  // Toggle based on the real <video> paused state so pause works even when stalled.
+  try {
+    const v = art && art.video ? art.video : null;
+    if (v && typeof v.pause === 'function' && typeof v.play === 'function') {
+      if (v.paused) {
+        v.play().catch(() => {});
+      } else {
+        v.pause();
+      }
+      return;
+    }
+  } catch (_e) {}
+  try {
+    art.toggle();
+  } catch (_e) {}
 };
 
 const seekBySeconds = (deltaSeconds) => {
@@ -2090,7 +2105,7 @@ defineExpose({ destroy: destroyNow, pause, play, tryAutoplay });
 .tv-artplayer .m-buffer-mask {
   position: absolute;
   inset: 0;
-  background: #000;
+  background: transparent;
   pointer-events: none;
   z-index: 10000;
 }
