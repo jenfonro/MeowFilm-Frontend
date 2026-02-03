@@ -37,6 +37,12 @@ export function initDashboardPage(bootstrap = {}) {
   const catPawOpenConfigListAdd = document.getElementById('catPawOpenConfigListAdd');
   const catPawOpenConfigList = document.getElementById('catPawOpenConfigList');
   const catPawOpenConfigListJsonInput = document.getElementById('catPawOpenConfigListJson');
+  const catPawOpenConfigEditor = document.getElementById('catPawOpenConfigEditor');
+  const catPawOpenConfigEditorName = document.getElementById('catPawOpenConfigEditorName');
+  const catPawOpenConfigEditorUrl = document.getElementById('catPawOpenConfigEditorUrl');
+  const catPawOpenConfigEditorConfirm = document.getElementById('catPawOpenConfigEditorConfirm');
+  const catPawOpenConfigEditorCancel = document.getElementById('catPawOpenConfigEditorCancel');
+  const catPawOpenConfigEditorStatus = document.getElementById('catPawOpenConfigEditorStatus');
   const catPawOpenPansToggle = document.getElementById('catPawOpenPansToggle');
   const catPawOpenPansToggleIcon = document.getElementById('catPawOpenPansToggleIcon');
   const catPawOpenPansPanel = document.getElementById('catPawOpenPansPanel');
@@ -91,7 +97,14 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   let catPawOpenConfigListEditor = null;
+  let catPawOpenServers = [];
+  let catPawOpenServerAddMode = false;
+  let catPawOpenServerPrevSelectedKey = '';
+  let catPawOpenServerPrevRemoteState = { state: 'hidden', message: '' };
+  let catPawOpenServerSelectSyncing = false;
   let catPawOpenSavedApiBaseNorm = '';
+  let syncCatPawOpenServerAddModeButtons = () => {};
+  let cancelCatPawOpenServerAddMode = async () => {};
 
   const normalizeTvUser = (value) => {
     const raw = value != null ? String(value) : '';
@@ -480,7 +493,58 @@ export function initDashboardPage(bootstrap = {}) {
     const extrasEl = document.getElementById('catPawOpenSettingsExtras');
     const syncWrap = document.getElementById('catPawOpenSyncSaveWrap');
     const syncInput = document.getElementById('catPawOpenSyncSave');
+    const syncFromRow = document.getElementById('catPawOpenSyncFromServerRow');
+    const syncFromSelect = document.getElementById('catPawOpenSyncFromServerSelect');
     if (!apiInput) return;
+
+    const rebuildSyncFromSelect = ({ includeCurrent }) => {
+      if (!syncFromSelect) return;
+      const prevValue = String(syncFromSelect.value || '');
+      syncFromSelect.innerHTML = '';
+
+      const addOpt = (value, label, { disabled = false, selected = false } = {}) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        opt.disabled = !!disabled;
+        opt.selected = !!selected;
+        syncFromSelect.appendChild(opt);
+      };
+
+      addOpt('', '请选择', { selected: true });
+      if (includeCurrent) {
+        addOpt('__current__', '当前服务器');
+      }
+
+      const serverSelect = document.getElementById('catPawOpenServerSelect');
+      const selectedKey = serverSelect ? String(serverSelect.value || '') : '';
+      const omitSelected = includeCurrent && !!selectedKey && selectedKey !== '__new__';
+
+      (catPawOpenServers || []).forEach((s) => {
+        if (!s || typeof s.name !== 'string') return;
+        const name = s.name.trim();
+        if (!name) return;
+        if (omitSelected && name === selectedKey) return;
+        addOpt(name, name);
+      });
+
+      const stillValid = Array.from(syncFromSelect.options || []).some((o) => o && String(o.value || '') === prevValue);
+      syncFromSelect.value = stillValid ? prevValue : '';
+      remountCustomSelectElement(syncFromSelect);
+    };
+
+    // When adding a new server, never show "sync save" UI.
+    if (catPawOpenServerAddMode) {
+      if (extrasEl) extrasEl.classList.add('hidden');
+      if (syncWrap) syncWrap.classList.add('hidden');
+      if (syncInput) {
+        syncInput.checked = false;
+        syncInput.disabled = true;
+      }
+      if (syncFromRow) syncFromRow.classList.remove('hidden');
+      rebuildSyncFromSelect({ includeCurrent: false });
+      return;
+    }
 
     const currentRaw = typeof apiInput.value === 'string' ? apiInput.value : '';
     const currentNorm = normalizeCatPawOpenAdminBase(currentRaw);
@@ -488,13 +552,18 @@ export function initDashboardPage(bootstrap = {}) {
     const showExtras = currentNorm === catPawOpenSavedApiBaseNorm;
     if (extrasEl) extrasEl.classList.toggle('hidden', !showExtras);
 
-    const showSync = !!currentNorm && currentNorm !== catPawOpenSavedApiBaseNorm;
-    if (syncWrap) {
-      const wasHidden = syncWrap.classList.contains('hidden');
-      syncWrap.classList.toggle('hidden', !showSync);
-      if (showSync && wasHidden && syncInput) syncInput.checked = true;
+    const showSyncFrom = !!currentNorm && currentNorm !== catPawOpenSavedApiBaseNorm;
+    if (syncWrap) syncWrap.classList.add('hidden');
+    if (syncInput) {
+      syncInput.checked = false;
+      syncInput.disabled = true;
     }
-    if (syncInput) syncInput.disabled = !showSync;
+    if (syncFromRow) syncFromRow.classList.toggle('hidden', !showSyncFrom);
+    if (showSyncFrom) rebuildSyncFromSelect({ includeCurrent: true });
+    else if (syncFromSelect) {
+      syncFromSelect.value = '';
+      remountCustomSelectElement(syncFromSelect);
+    }
   };
 
   const normalizeHttpUrl = (value) => {
@@ -510,8 +579,18 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
-  const initCatPawOpenConfigListEditor = () => {
-    if (!catPawOpenConfigList || !catPawOpenConfigListAdd) return;
+	  const initCatPawOpenConfigListEditor = () => {
+	    if (
+	      !catPawOpenConfigList ||
+	      !catPawOpenConfigListAdd ||
+	      !catPawOpenConfigEditor ||
+	      !catPawOpenConfigEditorName ||
+	      !catPawOpenConfigEditorUrl ||
+	      !catPawOpenConfigEditorConfirm ||
+	      !catPawOpenConfigEditorCancel ||
+	      !catPawOpenConfigEditorStatus
+	    )
+	      return;
 
     const CHECK_CACHE_KEY = 'meowfilm_catpawopen_online_check_v1';
     const loadCheckCache = () => {
@@ -549,7 +628,7 @@ export function initDashboardPage(bootstrap = {}) {
       const url = normalizeHttpUrl(typeof obj.url === 'string' ? obj.url : '');
       const check = normalizeConfigCheckStatus(obj.check);
       if (!url) return null;
-      return { draft: false, name: name || '未命名', url, check };
+      return { name: name || '未命名', url, check };
     };
 
     const parseInitialItems = () => {
@@ -565,32 +644,93 @@ export function initDashboardPage(bootstrap = {}) {
       }
     };
 
-    let items = parseInitialItems();
-    let draftNameInput = null;
-    let draftUrlInput = null;
-    let checkCache = loadCheckCache();
+	    let items = parseInitialItems();
+	    let checkCache = loadCheckCache();
+	    let editorOpen = false;
+	    let editorMode = 'add'; // add | edit
+	    let editorIndex = -1;
+
+    const editorHome = {
+      parent: catPawOpenConfigEditor.parentElement,
+      nextSibling: catPawOpenConfigEditor.nextSibling,
+    };
+
+    const mountEditorHome = () => {
+      try {
+        if (!editorHome.parent) return;
+        catPawOpenConfigEditor.style.width = '100%';
+        if (catPawOpenConfigEditor.parentElement === editorHome.parent) return;
+        editorHome.parent.insertBefore(catPawOpenConfigEditor, editorHome.nextSibling || null);
+      } catch (_e) {}
+    };
+
+    const setAddBtnMode = () => {
+      if (!catPawOpenConfigListAdd) return;
+      const isAddOpen = editorOpen && editorMode === 'add';
+      catPawOpenConfigListAdd.textContent = isAddOpen ? '取消' : '添加';
+    };
 
     const syncJsonField = () => {
       if (!catPawOpenConfigListJsonInput) return;
       try {
-        const saved = (items || [])
-          .filter((it) => it && it.draft !== true)
-          .map((it) => ({ name: it.name, url: it.url }));
+        const saved = (items || []).filter(Boolean).map((it) => ({ name: it.name, url: it.url }));
         catPawOpenConfigListJsonInput.value = JSON.stringify(saved);
       } catch (_e) {
         catPawOpenConfigListJsonInput.value = '[]';
       }
     };
 
-    const ensureDraftRow = () => {
-      const hasDraft = (items || []).some((it) => it && it.draft === true);
-      if (hasDraft) {
-        if (draftNameInput) draftNameInput.focus();
-        return;
-      }
-      items = (items || []).concat([{ draft: true, name: '', url: '', check: 'unchecked' }]);
-      render();
-      if (draftNameInput) draftNameInput.focus();
+    const resetEditorStatus = () => {
+      if (!catPawOpenConfigEditorStatus) return;
+      catPawOpenConfigEditorStatus.hidden = true;
+      catPawOpenConfigEditorStatus.textContent = '';
+      catPawOpenConfigEditorStatus.className = 'text-sm mt-2';
+    };
+
+    const showEditorError = (msg) => {
+      if (!catPawOpenConfigEditorStatus) return;
+      catPawOpenConfigEditorStatus.hidden = false;
+      catPawOpenConfigEditorStatus.textContent = String(msg || '');
+      catPawOpenConfigEditorStatus.className = 'text-sm mt-2 text-red-600 dark:text-red-300';
+    };
+
+    const setConfirmEnabled = () => {
+      if (!catPawOpenConfigEditorConfirm) return;
+      const nameRaw =
+        typeof catPawOpenConfigEditorName.value === 'string' ? catPawOpenConfigEditorName.value.trim() : '';
+      const url = normalizeHttpUrl(catPawOpenConfigEditorUrl.value);
+      const enabled = Boolean(nameRaw) && Boolean(url);
+      catPawOpenConfigEditorConfirm.disabled = !enabled;
+      catPawOpenConfigEditorConfirm.classList.toggle('active', enabled);
+    };
+
+    const closeEditor = () => {
+      editorOpen = false;
+      editorMode = 'add';
+      editorIndex = -1;
+      mountEditorHome();
+      catPawOpenConfigEditor.classList.add('hidden');
+      resetEditorStatus();
+      setAddBtnMode();
+      setConfirmEnabled();
+    };
+
+    const openEditor = ({ mode, index }) => {
+      editorOpen = true;
+      editorMode = mode === 'edit' ? 'edit' : 'add';
+      editorIndex = typeof index === 'number' ? index : -1;
+      if (editorMode !== 'edit') mountEditorHome();
+      catPawOpenConfigEditor.classList.remove('hidden');
+      resetEditorStatus();
+      setAddBtnMode();
+
+      const it = editorMode === 'edit' && editorIndex >= 0 ? items[editorIndex] : null;
+      catPawOpenConfigEditorName.value = it && typeof it.name === 'string' ? it.name : '';
+      catPawOpenConfigEditorUrl.value = it && typeof it.url === 'string' ? it.url : '';
+      catPawOpenConfigEditorConfirm.textContent = editorMode === 'add' ? '添加' : '确定';
+      setConfirmEnabled();
+
+      (catPawOpenConfigEditorName.value ? catPawOpenConfigEditorUrl : catPawOpenConfigEditorName).focus();
     };
 
     const mkBtn = (text, kind = '') => {
@@ -613,98 +753,65 @@ export function initDashboardPage(bootstrap = {}) {
     const render = () => {
       syncJsonField();
       catPawOpenConfigList.innerHTML = '';
-      draftNameInput = null;
-      draftUrlInput = null;
+      setAddBtnMode();
 
       const list = Array.isArray(items) ? items : [];
       if (!list.length) {
-        const li = createEl('li', { className: 'tv-row tv-cpo-config-row' });
-        li.appendChild(createEl('span', { className: `tv-cpo-config-col tv-cpo-config-col-name ${CLS.muted}`, text: '-' }));
-        li.appendChild(createEl('span', { className: `tv-cpo-config-col tv-cpo-config-col-url ${CLS.muted}`, text: '-' }));
-        li.appendChild(createEl('span', { className: `tv-cpo-config-col tv-cpo-config-col-check ${CLS.muted}`, text: '-' }));
-        li.appendChild(createEl('span', { className: `tv-cpo-config-col tv-cpo-config-col-action ${CLS.muted}`, text: '-' }));
-        catPawOpenConfigList.appendChild(li);
+        // For "add" mode, keep the editor above the list.
+        if (editorOpen && editorMode === 'add') {
+          mountEditorHome();
+        }
+        const tr = createEl('tr', {});
+        tr.appendChild(createEl('td', { className: `px-3 py-2 ${CLS.muted}`, text: '-' }));
+        tr.appendChild(createEl('td', { className: `px-3 py-2 ${CLS.muted}`, text: '-' }));
+        tr.appendChild(createEl('td', { className: `px-3 py-2 ${CLS.muted}`, text: '-' }));
+        tr.appendChild(createEl('td', { className: `px-3 py-2 ${CLS.muted}`, text: '-' }));
+        catPawOpenConfigList.appendChild(tr);
         return;
       }
 
       list.forEach((it, idx) => {
-        const li = createEl('li', { className: 'tv-row tv-cpo-config-row' });
-
-        if (it && it.draft === true) {
-          const nameInput = document.createElement('input');
-          nameInput.type = 'text';
-          nameInput.className = 'tv-field';
-          nameInput.placeholder = '名称';
-          nameInput.value = typeof it.name === 'string' ? it.name : '';
-          nameInput.addEventListener('input', () => {
-            const next = (items || []).slice();
-            const cur = next[idx];
-            if (!cur) return;
-            cur.name = nameInput.value;
-            next[idx] = cur;
-            items = next;
-          });
-          draftNameInput = nameInput;
-
-          const urlInput = document.createElement('input');
-          urlInput.type = 'text';
-          urlInput.className = 'tv-field';
-          urlInput.placeholder = '配置地址';
-          urlInput.value = typeof it.url === 'string' ? it.url : '';
-          urlInput.addEventListener('input', () => {
-            const next = (items || []).slice();
-            const cur = next[idx];
-            if (!cur) return;
-            cur.url = urlInput.value;
-            next[idx] = cur;
-            items = next;
-          });
-          draftUrlInput = urlInput;
-
-          const checkSpan = createEl('span', { className: 'tv-cpo-config-col tv-cpo-config-col-check' });
-          checkSpan.appendChild(buildConfigCheckTag('unchecked'));
-
-          const addBtn = mkBtn('添加', 'green');
-          addBtn.classList.add('tv-cpo-config-col-action');
-          addBtn.addEventListener('click', () => {
-            const next = (items || []).slice();
-            const cur = next[idx] || {};
-            const url = normalizeHttpUrl(cur.url);
-            if (!url) {
-              urlInput.focus();
-              return;
-            }
-            const name = typeof cur.name === 'string' ? cur.name.trim() : '';
-            next[idx] = { draft: false, name: name || '未命名', url, check: 'unchecked' };
-            items = next;
-            render();
-          });
-
-          li.appendChild(nameInput);
-          li.appendChild(urlInput);
-          li.appendChild(checkSpan);
-          li.appendChild(addBtn);
-          catPawOpenConfigList.appendChild(li);
-          return;
-        }
-
-        li.appendChild(
-          createEl('span', {
-            className: 'tv-cpo-config-col tv-cpo-config-col-name truncate',
+        const tr = createEl('tr', {});
+        tr.appendChild(
+          createEl('td', {
+            className: 'px-3 py-2 font-semibold whitespace-nowrap',
             text: it && typeof it.name === 'string' && it.name.trim() ? it.name.trim() : '未命名',
           })
         );
-        li.appendChild(
-          createEl('span', {
-            className: 'tv-cpo-config-col tv-cpo-config-col-url truncate',
-            text: it && typeof it.url === 'string' ? it.url : '',
-          })
-        );
-        const checkCell = createEl('span', { className: 'tv-cpo-config-col tv-cpo-config-col-check' });
-        checkCell.appendChild(buildConfigCheckTag(it && it.check ? it.check : 'unchecked'));
-        li.appendChild(checkCell);
+
+        const urlTd = createEl('td', { className: 'px-3 py-2' });
+        const urlSpan = createEl('span', {
+          text: it && typeof it.url === 'string' ? it.url : '',
+        });
+        urlSpan.style.display = 'inline-block';
+        urlSpan.style.minWidth = '30ch';
+        urlSpan.style.maxWidth = '60ch';
+        urlSpan.style.whiteSpace = 'nowrap';
+        urlSpan.style.overflow = 'hidden';
+        urlSpan.style.textOverflow = 'ellipsis';
+        urlTd.appendChild(urlSpan);
+        tr.appendChild(urlTd);
+
+        const checkTd = createEl('td', { className: 'px-3 py-2 whitespace-nowrap' });
+        checkTd.appendChild(buildConfigCheckTag(it && it.check ? it.check : 'unchecked'));
+        tr.appendChild(checkTd);
+
+      const actionsTd = createEl('td', { className: 'px-3 py-2 whitespace-nowrap' });
+      const actionsInner = createEl('div', { className: 'action-group' });
+
+        const isEditingThisRow = editorOpen && editorMode === 'edit' && editorIndex === idx;
+        const editBtn = mkBtn(isEditingThisRow ? '取消' : '修改');
+        editBtn.addEventListener('click', () => {
+          if (isEditingThisRow) {
+            closeEditor();
+            render();
+            return;
+          }
+          openEditor({ mode: 'edit', index: idx });
+          render();
+        });
+
         const delBtn = mkBtn('删除', 'red');
-        delBtn.classList.add('tv-cpo-config-col-action');
         delBtn.addEventListener('click', () => {
           try {
             const cur = items && items[idx] ? items[idx] : null;
@@ -715,27 +822,102 @@ export function initDashboardPage(bootstrap = {}) {
             }
           } catch (_e) {}
           items = (items || []).filter((_x, i) => i !== idx);
+          if (editorOpen && editorMode === 'edit') {
+            if (editorIndex === idx) closeEditor();
+            else if (editorIndex > idx) editorIndex -= 1;
+          }
           render();
         });
-        li.appendChild(delBtn);
-        catPawOpenConfigList.appendChild(li);
+
+        actionsInner.appendChild(editBtn);
+        actionsInner.appendChild(delBtn);
+        actionsTd.appendChild(actionsInner);
+        tr.appendChild(actionsTd);
+        catPawOpenConfigList.appendChild(tr);
+
+        if (editorOpen && editorMode === 'edit' && editorIndex === idx) {
+          const editorRow = createEl('tr', {});
+          const editorCell = createEl('td', { className: 'px-3 py-2' });
+          editorCell.colSpan = 4;
+          editorRow.appendChild(editorCell);
+          catPawOpenConfigList.appendChild(editorRow);
+          try {
+            catPawOpenConfigEditor.style.width = '100%';
+            editorCell.appendChild(catPawOpenConfigEditor);
+          } catch (_e) {}
+        }
       });
+
+      if (!editorOpen || editorMode === 'add') {
+        mountEditorHome();
+      }
+    };
+
+    const onConfirmEditor = () => {
+      const nameRaw =
+        typeof catPawOpenConfigEditorName.value === 'string' ? catPawOpenConfigEditorName.value.trim() : '';
+      if (!nameRaw) {
+        showEditorError('名称不能为空');
+        catPawOpenConfigEditorName.focus();
+        return;
+      }
+      const url = normalizeHttpUrl(catPawOpenConfigEditorUrl.value);
+      if (!url) {
+        showEditorError('配置地址无效');
+        catPawOpenConfigEditorUrl.focus();
+        return;
+      }
+      const name = nameRaw;
+
+      if (editorMode === 'edit' && editorIndex >= 0 && items && items[editorIndex]) {
+        const prev = items[editorIndex];
+        const prevCheck = prev && typeof prev.check === 'string' ? prev.check : 'unchecked';
+        items = (items || []).map((x, i) => (i === editorIndex ? { name, url, check: prevCheck } : x));
+      } else {
+        items = (items || []).concat([{ name, url, check: 'unchecked' }]);
+      }
+
+      closeEditor();
+      render();
     };
 
     catPawOpenConfigListAdd.addEventListener('click', (e) => {
       e.preventDefault();
-      ensureDraftRow();
+      if (editorOpen) {
+        closeEditor();
+        render();
+      }
+      else openEditor({ mode: 'add', index: -1 });
+    });
+    catPawOpenConfigEditorCancel.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeEditor();
+      render();
+    });
+    catPawOpenConfigEditorConfirm.addEventListener('click', (e) => {
+      e.preventDefault();
+      onConfirmEditor();
+    });
+    [catPawOpenConfigEditorName, catPawOpenConfigEditorUrl].forEach((el) => {
+      el.addEventListener('input', () => setConfirmEnabled());
+    });
+    [catPawOpenConfigEditorName, catPawOpenConfigEditorUrl].forEach((el) => {
+      el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        onConfirmEditor();
+      });
     });
 
     render();
 
     const api = {
       getItems: () =>
-        (items || []).filter((it) => it && it.draft !== true).map((it) => ({ name: it.name, url: it.url, check: it.check })),
+        (items || []).filter(Boolean).map((it) => ({ name: it.name, url: it.url, check: it.check })),
       setCheckingAll: () => {
         let changed = false;
         items = (items || []).map((it) => {
-          if (!it || it.draft === true) return it;
+          if (!it) return it;
           if (normalizeConfigCheckStatus(it.check) === 'checking') return it;
           changed = true;
           return { ...it, check: 'checking' };
@@ -745,7 +927,7 @@ export function initDashboardPage(bootstrap = {}) {
       setItems: (nextItems = []) => {
         const prevChecksByUrl = new Map(
           (items || [])
-            .filter((it) => it && it.draft !== true && typeof it.url === 'string')
+            .filter((it) => it && typeof it.url === 'string')
             .map((it) => [String(it.url || ''), typeof it.check === 'string' ? it.check : ''])
         );
         const arr = Array.isArray(nextItems) ? nextItems : [];
@@ -769,7 +951,7 @@ export function initDashboardPage(bootstrap = {}) {
         });
         let changed = false;
         items = (items || []).map((it) => {
-          if (!it || it.draft === true) return it;
+          if (!it) return it;
           const url = typeof it.url === 'string' ? it.url : '';
           if (!url || !statusByUrl.has(url)) return it;
           const nextCheck = statusByUrl.get(url) || 'unchecked';
@@ -839,6 +1021,8 @@ export function initDashboardPage(bootstrap = {}) {
   const setCatPawOpenRemoteState = (state, message = '') => {
     const remoteSettingsEl = document.getElementById('catPawOpenRemoteSettings');
     const remoteErrorEl = document.getElementById('catPawOpenRemoteError');
+    const versionRow = document.getElementById('catPawOpenVersionRow');
+    const versionText = document.getElementById('catPawOpenVersionText');
     try {
       if (remoteSettingsEl) remoteSettingsEl.classList.toggle('hidden', state !== 'ready');
       if (remoteErrorEl) {
@@ -851,6 +1035,10 @@ export function initDashboardPage(bootstrap = {}) {
           remoteErrorEl.classList.add('hidden');
           remoteErrorEl.textContent = '';
         }
+      }
+      if (state !== 'ready') {
+        if (versionRow) versionRow.classList.add('hidden');
+        if (versionText) versionText.textContent = '';
       }
     } catch (_e) {}
   };
@@ -873,6 +1061,24 @@ export function initDashboardPage(bootstrap = {}) {
         path: 'admin/settings',
         method: 'GET',
       });
+      try {
+        const versionRow = document.getElementById('catPawOpenVersionRow');
+        const versionText = document.getElementById('catPawOpenVersionText');
+        const raw =
+          settingsResp && typeof settingsResp.version === 'string'
+            ? settingsResp.version
+            : settingsResp && settingsResp.settings && typeof settingsResp.settings.version === 'string'
+              ? settingsResp.settings.version
+              : '';
+        const v = typeof raw === 'string' ? raw.trim() : '';
+        if (versionRow && versionText && v) {
+          versionText.textContent = `CatPawOpen版本:${v}`;
+          versionRow.classList.remove('hidden');
+        } else {
+          if (versionText) versionText.textContent = '';
+          if (versionRow) versionRow.classList.add('hidden');
+        }
+      } catch (_e) {}
       const proxyInput = document.querySelector('#catPawOpenSettingsForm input[name="catPawOpenProxy"]');
       if (proxyInput && settingsResp && settingsResp.settings && typeof settingsResp.settings.proxy === 'string') {
         proxyInput.value = settingsResp.settings.proxy || '';
@@ -898,6 +1104,12 @@ export function initDashboardPage(bootstrap = {}) {
       return { ok: true, data: { settingsResp } };
     } catch (e) {
       const msg = e && e.message ? String(e.message) : '';
+      try {
+        const versionRow = document.getElementById('catPawOpenVersionRow');
+        const versionText = document.getElementById('catPawOpenVersionText');
+        if (versionText) versionText.textContent = '';
+        if (versionRow) versionRow.classList.add('hidden');
+      } catch (_e) {}
       setCatPawOpenRemoteState('error', msg);
       return { ok: false, skipped: false, reason: 'error', error: e };
     }
@@ -1184,6 +1396,8 @@ export function initDashboardPage(bootstrap = {}) {
     });
   };
 
+
+
   adminNavs.forEach((nav) => {
     nav.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1230,27 +1444,30 @@ export function initDashboardPage(bootstrap = {}) {
     document.addEventListener('click', () => hideAllCustomDropdowns());
   };
 
-  const setupCustomSelectElement = (sel) => {
-    if (!sel || !sel.parentNode) return;
-    if (sel.dataset.customDropdownMounted === 'true') return;
-    sel.dataset.customDropdownMounted = 'true';
+	  const setupCustomSelectElement = (sel) => {
+	    if (!sel || !sel.parentNode) return;
+	    if (sel.dataset.customDropdownMounted === 'true') return;
+	    sel.dataset.customDropdownMounted = 'true';
 
-    const wrapper = document.createElement('div');
-    wrapper.className = 'custom-dropdown';
-    sel.classList.add('hidden-select');
-    sel.parentNode.insertBefore(wrapper, sel);
-    wrapper.appendChild(sel);
+	    const autoSizeMode = typeof sel.dataset.customDropdownAutosize === 'string' ? sel.dataset.customDropdownAutosize : '';
+	    const shouldAutoSizeToMax = autoSizeMode === 'max';
+
+	    const wrapper = document.createElement('div');
+	    wrapper.className = 'custom-dropdown';
+	    sel.classList.add('hidden-select');
+	    sel.parentNode.insertBefore(wrapper, sel);
+	    wrapper.appendChild(sel);
 
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'custom-dropdown-btn';
     const currentText =
       (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].text) || '请选择';
-    btn.textContent = currentText;
+	    btn.textContent = currentText;
 
-    const list = document.createElement('div');
-    list.className = 'custom-dropdown-list hidden';
-    Array.from(sel.options).forEach((opt) => {
+	    const list = document.createElement('div');
+	    list.className = 'custom-dropdown-list hidden';
+	    Array.from(sel.options).forEach((opt) => {
       const item = document.createElement('div');
       item.className = 'custom-dropdown-item';
       item.textContent = opt.text;
@@ -1268,16 +1485,81 @@ export function initDashboardPage(bootstrap = {}) {
       list.appendChild(item);
     });
 
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      ensureCustomDropdownDocBound();
-      const willOpen = list.classList.contains('hidden');
-      hideAllCustomDropdowns();
-      list.classList.toggle('hidden', !willOpen);
-    });
+	    btn.addEventListener('click', (e) => {
+	      e.stopPropagation();
+	      ensureCustomDropdownDocBound();
+	      const willOpen = list.classList.contains('hidden');
+	      if (willOpen && shouldAutoSizeToMax) {
+	        try {
+	          list.classList.remove('hidden');
+	          const prevVisibility = list.style.visibility;
+	          const prevPointer = list.style.pointerEvents;
+	          list.style.visibility = 'hidden';
+	          list.style.pointerEvents = 'none';
 
-    wrapper.appendChild(btn);
-    wrapper.appendChild(list);
+	          let maxW = 0;
+	          const btnW = typeof btn.scrollWidth === 'number' ? btn.scrollWidth : 0;
+	          if (btnW > maxW) maxW = btnW;
+	          list.querySelectorAll('.custom-dropdown-item').forEach((n) => {
+	            const w = typeof n.scrollWidth === 'number' ? n.scrollWidth : 0;
+	            if (w > maxW) maxW = w;
+	          });
+	          const nextW = Math.max(0, Math.ceil(maxW));
+	          if (nextW) wrapper.style.width = `${nextW}px`;
+
+	          list.style.visibility = prevVisibility;
+	          list.style.pointerEvents = prevPointer;
+	          list.classList.add('hidden');
+	        } catch (_e) {}
+	      }
+	      hideAllCustomDropdowns();
+	      list.classList.toggle('hidden', !willOpen);
+	    });
+
+	    wrapper.appendChild(btn);
+	    wrapper.appendChild(list);
+
+	    if (shouldAutoSizeToMax) {
+	      try {
+	        // Initial sizing so the button and the list share the same width.
+	        list.classList.remove('hidden');
+	        const prevVisibility = list.style.visibility;
+	        const prevPointer = list.style.pointerEvents;
+	        list.style.visibility = 'hidden';
+	        list.style.pointerEvents = 'none';
+
+	        let maxW = 0;
+	        const btnW = typeof btn.scrollWidth === 'number' ? btn.scrollWidth : 0;
+	        if (btnW > maxW) maxW = btnW;
+	        list.querySelectorAll('.custom-dropdown-item').forEach((n) => {
+	          const w = typeof n.scrollWidth === 'number' ? n.scrollWidth : 0;
+	          if (w > maxW) maxW = w;
+	        });
+	        const nextW = Math.max(0, Math.ceil(maxW));
+	        if (nextW) wrapper.style.width = `${nextW}px`;
+
+	        list.style.visibility = prevVisibility;
+	        list.style.pointerEvents = prevPointer;
+	        list.classList.add('hidden');
+	      } catch (_e) {}
+	    }
+	  };
+
+  const remountCustomSelectElement = (sel) => {
+    if (!sel) return;
+    const wrapper = sel.parentNode;
+    if (wrapper && wrapper.classList && wrapper.classList.contains('custom-dropdown')) {
+      const parent = wrapper.parentNode;
+      if (parent) parent.insertBefore(sel, wrapper);
+      wrapper.remove();
+    }
+    try {
+      delete sel.dataset.customDropdownMounted;
+    } catch (_e) {
+      if (sel.dataset) sel.dataset.customDropdownMounted = '';
+    }
+    sel.classList.remove('hidden-select');
+    setupCustomSelectElement(sel);
   };
 
   const setupCustomSelect = (selectId) => {
@@ -1287,6 +1569,8 @@ export function initDashboardPage(bootstrap = {}) {
 
   setupCustomSelect('doubanDataSelect');
   setupCustomSelect('doubanImgSelect');
+  setupCustomSelect('catPawOpenServerSelect');
+  setupCustomSelect('catPawOpenSyncFromServerSelect');
 
   const panSettingDefs = [
     { key: 'baidu', name: '百度', type: 'cookie' },
@@ -4190,13 +4474,508 @@ export function initDashboardPage(bootstrap = {}) {
     if (panelLoaded.interface || panelLoading.interface) return;
     panelLoading.interface = true;
     try {
-      const settings = await fetchSiteSettings();
-        if (settings) {
-          const catForm = document.getElementById('catPawOpenSettingsForm');
+	      const settings = await fetchSiteSettings();
+	        if (settings) {
+	          const catForm = document.getElementById('catPawOpenSettingsForm');
+	          const serverSelect = document.getElementById('catPawOpenServerSelect');
+	          const serverAddBtn = document.getElementById('catPawOpenServerAdd');
+          const serverDeleteBtn = document.getElementById('catPawOpenServerDelete');
+          const serverDeleteCancelBtn = document.getElementById('catPawOpenServerDeleteCancel');
+          const nameRow = document.getElementById('catPawOpenNameRow');
+          const apiRow = document.getElementById('catPawOpenApiRow');
+          const extrasEl = document.getElementById('catPawOpenSettingsExtras');
+          const nameInput = catForm ? catForm.querySelector('input[name="catPawOpenName"]') : null;
           const apiInput = catForm ? catForm.querySelector('input[name="catPawOpenApiBase"]') : null;
-          if (apiInput) apiInput.value = settings.catPawOpenApiBase || '';
-          catPawOpenSavedApiBaseNorm = normalizeCatPawOpenAdminBase(settings.catPawOpenApiBase || '');
-          syncCatPawOpenSettingsVisibility();
+          const syncConfigToOtherBtn = document.getElementById('catPawOpenSyncConfigToOtherBtn');
+          const syncConfigToOtherPicker = document.getElementById('catPawOpenSyncConfigToOtherPicker');
+          const syncConfigToOtherSelect = document.getElementById('catPawOpenSyncConfigToOtherSelect');
+          const syncConfigToOtherConfirm = document.getElementById('catPawOpenSyncConfigToOtherConfirm');
+          const syncConfigToOtherCancel = document.getElementById('catPawOpenSyncConfigToOtherCancel');
+          const syncConfigToOtherStatus = document.getElementById('catPawOpenSyncConfigToOtherStatus');
+
+          const setRowVisible = (el, visible) => {
+            if (!el || !el.classList) return;
+            el.classList.toggle('hidden', !visible);
+          };
+
+          const setInputEnabled = (el, enabled) => {
+            if (!el) return;
+            try {
+              el.disabled = !enabled;
+            } catch (_e) {}
+          };
+
+          const syncServerEditorVisibility = () => {
+            const hasServers = !!(catPawOpenServers && catPawOpenServers.length);
+            const showEditor = !!catPawOpenServerAddMode || hasServers;
+            setRowVisible(nameRow, showEditor);
+            setRowVisible(apiRow, showEditor);
+            setInputEnabled(nameInput, showEditor);
+            setInputEnabled(apiInput, showEditor);
+            const syncFromRow = document.getElementById('catPawOpenSyncFromServerRow');
+            if (!showEditor) setRowVisible(syncFromRow, false);
+            // Extras are only meaningful once a server exists and we're not in "add" mode.
+            setRowVisible(extrasEl, hasServers && !catPawOpenServerAddMode);
+          };
+
+          let catPawOpenServerDeleteConfirming = false;
+
+          const setDeleteConfirming = (value) => {
+            catPawOpenServerDeleteConfirming = !!value;
+            if (serverDeleteBtn) serverDeleteBtn.textContent = catPawOpenServerDeleteConfirming ? '确定' : '删除';
+            if (serverDeleteCancelBtn) serverDeleteCancelBtn.classList.toggle('hidden', !catPawOpenServerDeleteConfirming);
+          };
+
+          const syncDeleteButtonsVisibility = () => {
+            const selected = serverSelect ? String(serverSelect.value || '') : '';
+            const hasServers = !!(catPawOpenServers && catPawOpenServers.length);
+            const canShow = hasServers && !catPawOpenServerAddMode && !!selected && selected !== '__new__';
+            if (serverDeleteBtn) serverDeleteBtn.classList.toggle('hidden', !canShow);
+            if (!canShow) setDeleteConfirming(false);
+          };
+
+          const normalizeServers = (raw) => {
+            const list = Array.isArray(raw) ? raw : [];
+            const out = [];
+            list.forEach((it) => {
+              const n = it && typeof it.name === 'string' ? it.name.trim() : '';
+              const a = it && typeof it.apiBase === 'string' ? String(it.apiBase || '').trim() : '';
+              if (!n || !a) return;
+              out.push({ name: n, apiBase: a });
+            });
+            return out;
+          };
+
+          catPawOpenServers = normalizeServers(settings.catPawOpenServers);
+          if (!catPawOpenServers.length) {
+            const legacyName = typeof settings.catPawOpenName === 'string' ? settings.catPawOpenName.trim() : '';
+            const legacyBase = typeof settings.catPawOpenApiBase === 'string' ? settings.catPawOpenApiBase.trim() : '';
+            if (legacyName && legacyBase) catPawOpenServers = [{ name: legacyName, apiBase: legacyBase }];
+          }
+
+          const syncCustomDropdownDisplayOnly = (sel) => {
+            if (!sel) return;
+            const wrapper = sel.parentNode;
+            if (!(wrapper && wrapper.classList && wrapper.classList.contains('custom-dropdown'))) return;
+            const btn = wrapper.querySelector('.custom-dropdown-btn');
+            const list = wrapper.querySelector('.custom-dropdown-list');
+            const opt = sel.options[sel.selectedIndex];
+            if (btn) btn.textContent = (opt && opt.text) || '请选择';
+            if (list) {
+              list.querySelectorAll('.custom-dropdown-item').forEach((n) => {
+                const v = n && n.dataset ? n.dataset.value : '';
+                n.classList.toggle('active', v === sel.value);
+              });
+            }
+          };
+
+	          const setAddButtonLabel = (isAdd) => {
+	            if (!serverAddBtn) return;
+	            serverAddBtn.textContent = isAdd ? '取消' : '添加服务器';
+	          };
+
+          const setSyncConfigToOtherStatus = (msg) => {
+            if (!syncConfigToOtherStatus) return;
+            const text = typeof msg === 'string' ? msg.trim() : '';
+            syncConfigToOtherStatus.textContent = text;
+            syncConfigToOtherStatus.classList.toggle('hidden', !text);
+          };
+
+          const hideSyncConfigToOtherPicker = () => {
+            if (syncConfigToOtherPicker) syncConfigToOtherPicker.classList.add('hidden');
+            if (syncConfigToOtherSelect) syncConfigToOtherSelect.value = '';
+            if (syncConfigToOtherConfirm) syncConfigToOtherConfirm.disabled = true;
+            setSyncConfigToOtherStatus('');
+            try {
+              remountCustomSelectElement(syncConfigToOtherSelect);
+            } catch (_e) {}
+          };
+
+          const buildCatPawOpenRemoteSettingsPayload = () => {
+            const proxyInput = document.querySelector('#catPawOpenSettingsForm input[name=\"catPawOpenProxy\"]');
+            const proxy = proxyInput && typeof proxyInput.value === 'string' ? proxyInput.value : '';
+            const goProxyApiInput = document.querySelector('#catPawOpenSettingsForm input[name=\"catPawOpenGoProxyApi\"]');
+            const goProxyApi = goProxyApiInput && typeof goProxyApiInput.value === 'string' ? goProxyApiInput.value : '';
+            const panBuiltinInput = document.getElementById('catPawOpenPanBuiltinResolverEnabled');
+            const panBuiltinResolverEnabled = !!(panBuiltinInput && panBuiltinInput.checked);
+	            const rawItems = catPawOpenConfigListEditor ? catPawOpenConfigListEditor.getItems() : [];
+	            const onlineConfigs = Array.isArray(rawItems)
+	              ? rawItems
+	                  .map((it) => ({ name: String(it.name || ''), url: String(it.url || '') }))
+	                  .filter((it) => it.name && it.url)
+	              : [];
+	            return { proxy: String(proxy || ''), panBuiltinResolverEnabled, goProxyApi: String(goProxyApi || ''), onlineConfigs };
+	          };
+
+          const renderSyncConfigToOtherTargets = () => {
+            if (!syncConfigToOtherSelect) return;
+            const current = serverSelect ? String(serverSelect.value || '') : '';
+            const targets = (catPawOpenServers || []).filter((s) => s && s.name && s.name !== current);
+
+            syncConfigToOtherSelect.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = '请选择';
+            placeholder.selected = true;
+            syncConfigToOtherSelect.appendChild(placeholder);
+
+            targets.forEach((s) => {
+              const opt = document.createElement('option');
+              opt.value = s.name;
+              opt.textContent = s.name;
+              syncConfigToOtherSelect.appendChild(opt);
+            });
+
+            remountCustomSelectElement(syncConfigToOtherSelect);
+            syncCustomDropdownDisplayOnly(syncConfigToOtherSelect);
+            if (syncConfigToOtherConfirm) syncConfigToOtherConfirm.disabled = true;
+          };
+
+          const captureRemoteState = () => {
+            const remoteErrorEl = document.getElementById('catPawOpenRemoteError');
+            const remoteSettingsEl = document.getElementById('catPawOpenRemoteSettings');
+            const errorVisible = !!(remoteErrorEl && !remoteErrorEl.classList.contains('hidden') && remoteErrorEl.textContent);
+            if (errorVisible) {
+              return { state: 'error', message: String(remoteErrorEl.textContent || '') };
+            }
+            const ready = !!(remoteSettingsEl && !remoteSettingsEl.classList.contains('hidden'));
+            if (ready) return { state: 'ready', message: '' };
+            return { state: 'hidden', message: '' };
+          };
+
+          const renderServerOptions = (selectedKey) => {
+            if (!serverSelect) return;
+            const targetKey = typeof selectedKey === 'string' ? selectedKey : '';
+            const prev = serverSelect.value;
+            serverSelect.innerHTML = '';
+
+            if (catPawOpenServerAddMode) {
+              const opt = document.createElement('option');
+              opt.value = '__new__';
+              opt.textContent = '新建服务器';
+              opt.selected = true;
+              serverSelect.appendChild(opt);
+            }
+
+            if (!catPawOpenServers.length) {
+              if (!catPawOpenServerAddMode) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.disabled = true;
+                opt.selected = true;
+                opt.textContent = '暂无数据';
+                serverSelect.appendChild(opt);
+              }
+              remountCustomSelectElement(serverSelect);
+              return;
+            }
+
+            catPawOpenServers.forEach((s) => {
+              const opt = document.createElement('option');
+              opt.value = s.name;
+              opt.textContent = s.name;
+              serverSelect.appendChild(opt);
+            });
+
+            const next =
+              targetKey ||
+              prev ||
+              (catPawOpenServerAddMode ? '__new__' : '') ||
+              (catPawOpenServers[0] ? catPawOpenServers[0].name : '');
+            if (next) serverSelect.value = next;
+            remountCustomSelectElement(serverSelect);
+            syncCustomDropdownDisplayOnly(serverSelect);
+          };
+
+          const selectServer = async (key, { refreshRemote = true } = {}) => {
+            const k = typeof key === 'string' ? key : '';
+            const server = catPawOpenServers.find((s) => s && s.name === k) || catPawOpenServers[0];
+            if (!server) {
+              if (nameInput) nameInput.value = '';
+              if (apiInput) apiInput.value = '';
+              catPawOpenSavedApiBaseNorm = '';
+              syncCatPawOpenSettingsVisibility();
+              setCatPawOpenRemoteState('hidden');
+              syncServerEditorVisibility();
+              hideSyncConfigToOtherPicker();
+              return;
+            }
+            if (serverSelect) {
+              catPawOpenServerSelectSyncing = true;
+              serverSelect.value = server.name;
+              syncCustomDropdownDisplayOnly(serverSelect);
+              catPawOpenServerSelectSyncing = false;
+            }
+            if (nameInput) nameInput.value = server.name;
+            if (apiInput) apiInput.value = server.apiBase;
+            catPawOpenSavedApiBaseNorm = normalizeCatPawOpenAdminBase(server.apiBase || '');
+            syncCatPawOpenSettingsVisibility();
+            if (refreshRemote) {
+              await refreshCatPawOpenRemoteSettings(server.apiBase || '');
+            }
+            syncServerEditorVisibility();
+            hideSyncConfigToOtherPicker();
+          };
+
+	          renderServerOptions();
+	          if (catPawOpenServers.length) {
+	            await selectServer(catPawOpenServers[0].name, { refreshRemote: true });
+	          } else {
+            if (nameInput) nameInput.value = '';
+            if (apiInput) apiInput.value = '';
+            catPawOpenSavedApiBaseNorm = '';
+            syncCatPawOpenSettingsVisibility();
+            setCatPawOpenRemoteState('hidden');
+            syncServerEditorVisibility();
+	          }
+	          syncDeleteButtonsVisibility();
+
+	          const enterAddMode = () => {
+	            if (!serverSelect) return;
+	            catPawOpenServerAddMode = true;
+	            catPawOpenServerPrevSelectedKey = serverSelect.value || '';
+	            catPawOpenServerPrevRemoteState = captureRemoteState();
+	            setAddButtonLabel(true);
+	            syncDeleteButtonsVisibility();
+	            hideSyncConfigToOtherPicker();
+
+	            renderServerOptions('__new__');
+
+	            if (nameInput) nameInput.value = '';
+	            if (apiInput) apiInput.value = '';
+	            setCatPawOpenRemoteState('hidden');
+
+	            syncServerEditorVisibility();
+	            syncCatPawOpenSettingsVisibility();
+	            const syncWrap = document.getElementById('catPawOpenSyncSaveWrap');
+	            const syncInput = document.getElementById('catPawOpenSyncSave');
+	            if (syncWrap) syncWrap.classList.add('hidden');
+	            if (syncInput) {
+	              syncInput.checked = false;
+	              syncInput.disabled = true;
+	            }
+
+	            try {
+	              syncCatPawOpenServerAddModeButtons();
+	            } catch (_e) {}
+	          };
+
+	          const exitAddMode = async () => {
+	            if (!serverSelect) return;
+	            catPawOpenServerAddMode = false;
+	            setAddButtonLabel(false);
+	            hideSyncConfigToOtherPicker();
+
+	            renderServerOptions(catPawOpenServerPrevSelectedKey);
+
+	            if (catPawOpenServerPrevSelectedKey) {
+	              await selectServer(catPawOpenServerPrevSelectedKey, { refreshRemote: false });
+	            } else if (catPawOpenServers.length) {
+	              await selectServer(catPawOpenServers[0].name, { refreshRemote: false });
+	            }
+
+	            const syncInput = document.getElementById('catPawOpenSyncSave');
+	            if (syncInput) syncInput.disabled = false;
+
+	            setCatPawOpenRemoteState(catPawOpenServerPrevRemoteState.state, catPawOpenServerPrevRemoteState.message);
+	            syncCatPawOpenSettingsVisibility();
+	            syncServerEditorVisibility();
+	            syncDeleteButtonsVisibility();
+
+	            try {
+	              syncCatPawOpenServerAddModeButtons();
+	            } catch (_e) {}
+	          };
+
+	          cancelCatPawOpenServerAddMode = async () => {
+	            if (!catPawOpenServerAddMode) return;
+	            await exitAddMode();
+	          };
+
+	          bindOnce(serverSelect, () => {
+	            serverSelect.addEventListener('change', async () => {
+	              if (catPawOpenServerSelectSyncing) return;
+	              setDeleteConfirming(false);
+	              hideSyncConfigToOtherPicker();
+
+	              const k = serverSelect.value || '';
+	              if (catPawOpenServerAddMode) {
+	                if (!k || k === '__new__') return;
+
+	                catPawOpenServerAddMode = false;
+	                setAddButtonLabel(false);
+
+	                const syncInput = document.getElementById('catPawOpenSyncSave');
+	                if (syncInput) syncInput.disabled = false;
+
+	                renderServerOptions(k);
+
+	                const reusePrev = !!catPawOpenServerPrevSelectedKey && k === catPawOpenServerPrevSelectedKey;
+	                await selectServer(k, { refreshRemote: !reusePrev });
+	                if (reusePrev) {
+	                  setCatPawOpenRemoteState(catPawOpenServerPrevRemoteState.state, catPawOpenServerPrevRemoteState.message);
+	                }
+
+	                syncCatPawOpenSettingsVisibility();
+	                syncServerEditorVisibility();
+	                syncDeleteButtonsVisibility();
+
+	                try {
+	                  syncCatPawOpenServerAddModeButtons();
+	                } catch (_e) {}
+	                return;
+	              }
+
+	              await selectServer(k, { refreshRemote: true });
+	              syncServerEditorVisibility();
+	              syncDeleteButtonsVisibility();
+            });
+	          });
+
+	          bindOnce(serverAddBtn, () => {
+	            serverAddBtn.addEventListener('click', async () => {
+	              if (!serverSelect) return;
+	              if (!catPawOpenServerAddMode) enterAddMode();
+	              else await exitAddMode();
+	            });
+	          });
+
+	          bindOnce(syncConfigToOtherBtn, () => {
+            if (!syncConfigToOtherBtn) return;
+            syncConfigToOtherBtn.addEventListener('click', () => {
+              if (!syncConfigToOtherPicker || !syncConfigToOtherSelect) return;
+              const currentlyHidden = syncConfigToOtherPicker.classList.contains('hidden');
+              if (!currentlyHidden) {
+                hideSyncConfigToOtherPicker();
+                return;
+              }
+              renderSyncConfigToOtherTargets();
+              syncConfigToOtherPicker.classList.remove('hidden');
+            });
+          });
+
+          bindOnce(syncConfigToOtherSelect, () => {
+            if (!syncConfigToOtherSelect) return;
+            syncConfigToOtherSelect.addEventListener('change', () => {
+              const v = String(syncConfigToOtherSelect.value || '');
+              if (syncConfigToOtherConfirm) syncConfigToOtherConfirm.disabled = !v;
+              setSyncConfigToOtherStatus('');
+            });
+          });
+
+          bindOnce(syncConfigToOtherCancel, () => {
+            if (!syncConfigToOtherCancel) return;
+            syncConfigToOtherCancel.addEventListener('click', () => {
+              hideSyncConfigToOtherPicker();
+            });
+          });
+
+          bindOnce(syncConfigToOtherConfirm, () => {
+            if (!syncConfigToOtherConfirm) return;
+            syncConfigToOtherConfirm.addEventListener('click', async () => {
+              if (!syncConfigToOtherSelect) return;
+              const key = String(syncConfigToOtherSelect.value || '');
+              const server = (catPawOpenServers || []).find((s) => s && s.name === key);
+              if (!server) return;
+              const apiBase = server.apiBase || '';
+              const payload = buildCatPawOpenRemoteSettingsPayload();
+
+              const prevDisabled = {
+                btn: !!(syncConfigToOtherBtn && syncConfigToOtherBtn.disabled),
+                select: !!(syncConfigToOtherSelect && syncConfigToOtherSelect.disabled),
+                ok: !!syncConfigToOtherConfirm.disabled,
+                cancel: !!(syncConfigToOtherCancel && syncConfigToOtherCancel.disabled),
+              };
+
+              try {
+                if (syncConfigToOtherBtn) syncConfigToOtherBtn.disabled = true;
+                if (syncConfigToOtherSelect) syncConfigToOtherSelect.disabled = true;
+                if (syncConfigToOtherConfirm) syncConfigToOtherConfirm.disabled = true;
+                if (syncConfigToOtherCancel) syncConfigToOtherCancel.disabled = true;
+                setSyncConfigToOtherStatus('同步中...');
+
+                await requestCatPawOpenAdminJson({
+                  apiBase,
+                  path: 'admin/settings',
+                  method: 'PUT',
+                  body: payload,
+                  timeoutMs: 12000,
+                });
+
+                setSyncConfigToOtherStatus('同步成功');
+                setTimeout(() => {
+                  hideSyncConfigToOtherPicker();
+                }, 800);
+              } catch (e) {
+                const msg = e && e.message ? String(e.message) : '同步失败';
+                setSyncConfigToOtherStatus(msg);
+              } finally {
+                if (syncConfigToOtherBtn) syncConfigToOtherBtn.disabled = prevDisabled.btn;
+                if (syncConfigToOtherSelect) syncConfigToOtherSelect.disabled = prevDisabled.select;
+                if (syncConfigToOtherConfirm) syncConfigToOtherConfirm.disabled = prevDisabled.ok || !String(syncConfigToOtherSelect.value || '');
+                if (syncConfigToOtherCancel) syncConfigToOtherCancel.disabled = prevDisabled.cancel;
+              }
+            });
+          });
+
+          bindOnce(serverDeleteBtn, () => {
+            serverDeleteBtn.addEventListener('click', async () => {
+              const key = serverSelect ? String(serverSelect.value || '') : '';
+              if (!key || key === '__new__') return;
+              if (!catPawOpenServerDeleteConfirming) {
+                setDeleteConfirming(true);
+                syncDeleteButtonsVisibility();
+                return;
+              }
+
+              if (!serverDeleteBtn || serverDeleteBtn.disabled) return;
+              serverDeleteBtn.disabled = true;
+              if (serverDeleteCancelBtn) serverDeleteCancelBtn.disabled = true;
+              try {
+                const { resp, data } = await postForm('/dashboard/catpawopen/delete', { catPawOpenServerKey: key });
+                if (!(resp.ok && data && data.success)) {
+                  setCatPawOpenSaveStatus('error', (data && data.message) || '删除失败');
+                  setDeleteConfirming(false);
+                  syncDeleteButtonsVisibility();
+                  return;
+                }
+
+                catPawOpenServers = normalizeServers(data.servers);
+                catPawOpenServerAddMode = false;
+                setAddButtonLabel(false);
+                setDeleteConfirming(false);
+
+                renderServerOptions();
+                if (catPawOpenServers.length) {
+                  await selectServer(catPawOpenServers[0].name, { refreshRemote: true });
+                } else {
+                  if (nameInput) nameInput.value = '';
+                  if (apiInput) apiInput.value = '';
+                  catPawOpenSavedApiBaseNorm = '';
+                  syncCatPawOpenSettingsVisibility();
+                  setCatPawOpenRemoteState('hidden');
+                  syncServerEditorVisibility();
+                }
+                syncDeleteButtonsVisibility();
+                setCatPawOpenSaveStatus('success', '删除成功');
+                clearStatusLater(setCatPawOpenSaveStatus, 1200);
+              } catch (_e) {
+                setCatPawOpenSaveStatus('error', '删除失败');
+                setDeleteConfirming(false);
+                syncDeleteButtonsVisibility();
+              } finally {
+                serverDeleteBtn.disabled = false;
+                if (serverDeleteCancelBtn) serverDeleteCancelBtn.disabled = false;
+              }
+            });
+          });
+
+          bindOnce(serverDeleteCancelBtn, () => {
+            serverDeleteCancelBtn.addEventListener('click', () => {
+              setDeleteConfirming(false);
+              syncDeleteButtonsVisibility();
+            });
+          });
 
           const openListApiInput = openListSettingsForm
             ? openListSettingsForm.querySelector('input[name="openListApiBase"]')
@@ -4219,9 +4998,8 @@ export function initDashboardPage(bootstrap = {}) {
         );
         goProxyServers = parsedServers;
         renderGoProxyServerList();
-        await refreshCatPawOpenRemoteSettings(apiInput && typeof apiInput.value === 'string' ? apiInput.value : '');
-      }
-      panelLoaded.interface = true;
+	      }
+	      panelLoaded.interface = true;
     } finally {
       panelLoading.interface = false;
     }
@@ -4246,14 +5024,18 @@ export function initDashboardPage(bootstrap = {}) {
     });
   });
 
-  const catPawOpenForm = document.getElementById('catPawOpenSettingsForm');
-  const catPawOpenSaveStatus = document.getElementById('catPawOpenSaveStatus');
-  const setCatPawOpenSaveStatus = bindInlineStatus(catPawOpenSaveStatus);
-  const setCatPawOpenSaveStatusHtml = bindInlineStatusHtml(catPawOpenSaveStatus);
-  bindOnce(catPawOpenForm, () => {
+	  const catPawOpenForm = document.getElementById('catPawOpenSettingsForm');
+	  const catPawOpenSaveStatus = document.getElementById('catPawOpenSaveStatus');
+	  const setCatPawOpenSaveStatus = bindInlineStatus(catPawOpenSaveStatus);
+	  const setCatPawOpenSaveStatusHtml = bindInlineStatusHtml(catPawOpenSaveStatus);
+	  bindOnce(catPawOpenForm, () => {
     const apiInput = catPawOpenForm ? catPawOpenForm.querySelector('input[name="catPawOpenApiBase"]') : null;
-    catPawOpenConfigListEditor = initCatPawOpenConfigListEditor();
-    const syncSaveInput = document.getElementById('catPawOpenSyncSave');
+    const nameInput = catPawOpenForm ? catPawOpenForm.querySelector('input[name="catPawOpenName"]') : null;
+	    const serverSelect = document.getElementById('catPawOpenServerSelect');
+	    const serverAddBtn = document.getElementById('catPawOpenServerAdd');
+	    const serverAddCancelBottomBtn = document.getElementById('catPawOpenServerAddCancelBottom');
+	    catPawOpenConfigListEditor = initCatPawOpenConfigListEditor();
+	    const syncSaveInput = document.getElementById('catPawOpenSyncSave');
 
     catPawOpenSavedApiBaseNorm = normalizeCatPawOpenAdminBase(
       apiInput && typeof apiInput.value === 'string' ? apiInput.value : ''
@@ -4263,23 +5045,54 @@ export function initDashboardPage(bootstrap = {}) {
       apiInput.addEventListener('input', () => {
         syncCatPawOpenSettingsVisibility();
       });
-    }
+	    }
 
-    const submitBtn = catPawOpenForm ? catPawOpenForm.querySelector('button[type="submit"]') : null;
-    const submitBtnOriginalHtml = submitBtn ? submitBtn.innerHTML : '';
-    const setSubmitBtnLoading = (loading) => {
-      if (!submitBtn) return;
-      if (loading) {
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>`;
-      } else {
-        submitBtn.disabled = false;
-        submitBtn.innerHTML = submitBtnOriginalHtml || '保存';
-      }
-    };
+	    const submitBtn = catPawOpenForm ? catPawOpenForm.querySelector('button[type="submit"]') : null;
+	    const submitBtnOriginalHtml = submitBtn ? submitBtn.innerHTML : '';
+	    let submitBtnLoading = false;
+	    const getSubmitLabelHtml = () => (catPawOpenServerAddMode ? '添加' : submitBtnOriginalHtml || '保存');
+	    const setSubmitBtnLoading = (loading) => {
+	      if (!submitBtn) return;
+	      submitBtnLoading = !!loading;
+	      if (loading) {
+	        submitBtn.disabled = true;
+	        submitBtn.innerHTML = `<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>`;
+	      } else {
+	        submitBtn.disabled = false;
+	        submitBtn.innerHTML = getSubmitLabelHtml();
+	      }
+	    };
 
-    let checkingDotsTimer = null;
-    let restartDotsTimer = null;
+	    const syncServerAddModeButtons = () => {
+	      if (serverAddCancelBottomBtn) {
+	        serverAddCancelBottomBtn.classList.toggle('hidden', !catPawOpenServerAddMode);
+	        serverAddCancelBottomBtn.disabled = false;
+	      }
+	      if (submitBtn && !submitBtnLoading) submitBtn.innerHTML = getSubmitLabelHtml();
+	    };
+
+	    syncCatPawOpenServerAddModeButtons = syncServerAddModeButtons;
+	    syncServerAddModeButtons();
+
+	    bindOnce(serverAddCancelBottomBtn, () => {
+	      serverAddCancelBottomBtn.addEventListener('click', async () => {
+	        if (!catPawOpenServerAddMode) return;
+	        if (serverSelect && serverSelect.value) {
+	          // ensure custom dropdown highlights are not stuck
+	          try {
+	            serverSelect.blur();
+	          } catch (_e) {}
+	        }
+	        try {
+	          await cancelCatPawOpenServerAddMode();
+	        } catch (_e) {
+	          if (serverAddBtn) serverAddBtn.click();
+	        }
+	      });
+	    });
+
+	    let checkingDotsTimer = null;
+	    let restartDotsTimer = null;
     let restartPollTimer = null;
     let restartStartedAt = 0;
     let restartToken = 0;
@@ -4417,11 +5230,15 @@ export function initDashboardPage(bootstrap = {}) {
         setSubmitBtnLoading(true);
         setCatPawOpenSaveStatus('', '保存中...');
         try {
+          const selectedServerKeyBefore = serverSelect ? String(serverSelect.value || '') : '';
+          const isAddingServer = catPawOpenServerAddMode || selectedServerKeyBefore === '__new__';
+          const syncFromSelect = document.getElementById('catPawOpenSyncFromServerSelect');
+          const syncFromKey = syncFromSelect ? String(syncFromSelect.value || '') : '';
           const apiBaseRaw = apiInput && typeof apiInput.value === 'string' ? apiInput.value : '';
           const normalizedBase = normalizeCatPawOpenAdminBase(apiBaseRaw);
           const savedBaseBefore = catPawOpenSavedApiBaseNorm;
           const baseChanged = normalizedBase !== savedBaseBefore;
-          const wantsSyncSave = !!(syncSaveInput && syncSaveInput.checked);
+          const wantsSyncSave = !!(syncSaveInput && syncSaveInput.checked) && !isAddingServer;
 
           const { resp, data } = await postForm(catPawOpenForm.action, formToFields(catPawOpenForm));
           if (!(resp.ok && data && data.success)) {
@@ -4430,6 +5247,59 @@ export function initDashboardPage(bootstrap = {}) {
           }
           // "保存成功" only indicates the dashboard setting was persisted.
           setCatPawOpenSaveStatus('success', '保存成功');
+
+          // If we were adding a server, update the dropdown immediately to the saved name.
+          if (serverSelect && nameInput) {
+            const savedName = String(nameInput.value || '').trim();
+            const savedApi = normalizedBase || normalizeCatPawOpenAdminBase(apiInput && apiInput.value ? apiInput.value : '');
+            const rebuildServerOptions = (selectedKey) => {
+              if (!serverSelect) return;
+              serverSelect.innerHTML = '';
+              if (!catPawOpenServers.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.disabled = true;
+                opt.selected = true;
+                opt.textContent = '暂无数据';
+                serverSelect.appendChild(opt);
+                remountCustomSelectElement(serverSelect);
+                return;
+              }
+              catPawOpenServers.forEach((s) => {
+                const opt = document.createElement('option');
+                opt.value = s.name;
+                opt.textContent = s.name;
+                serverSelect.appendChild(opt);
+              });
+              serverSelect.value = selectedKey || (catPawOpenServers[0] ? catPawOpenServers[0].name : '');
+              remountCustomSelectElement(serverSelect);
+            };
+
+            if (isAddingServer && savedName) {
+              catPawOpenServerAddMode = false;
+              if (serverAddBtn) serverAddBtn.textContent = '添加服务器';
+
+              const entry = { name: savedName, apiBase: savedApi || '' };
+              const next = Array.isArray(catPawOpenServers) ? catPawOpenServers.slice() : [];
+              const existsIdx = next.findIndex((s) => s && s.name === savedName);
+              if (existsIdx >= 0) next[existsIdx] = entry;
+              else next.unshift(entry);
+              catPawOpenServers = next;
+
+              rebuildServerOptions(savedName);
+
+              const extrasEl = document.getElementById('catPawOpenSettingsExtras');
+              if (extrasEl) extrasEl.classList.remove('hidden');
+              if (syncSaveInput) syncSaveInput.disabled = false;
+            } else if (!isAddingServer && savedName) {
+              const next = Array.isArray(catPawOpenServers) ? catPawOpenServers.slice() : [];
+              const idx = next.findIndex((s) => s && s.name === selectedServerKeyBefore);
+              if (idx >= 0) next[idx] = { name: savedName, apiBase: savedApi || '' };
+              catPawOpenServers = next;
+
+              rebuildServerOptions(savedName);
+            }
+          }
 
           // If API base changed, hide previous remote block immediately and only show it again after the new server responds.
           if (baseChanged) {
@@ -4444,6 +5314,68 @@ export function initDashboardPage(bootstrap = {}) {
           if (apiInput) apiInput.value = normalizedBase;
           catPawOpenSavedApiBaseNorm = normalizedBase;
           syncCatPawOpenSettingsVisibility();
+
+          if ((isAddingServer || baseChanged) && syncFromKey) {
+            const resolveSourceApiBase = () => {
+              if (syncFromKey === '__current__') return savedBaseBefore;
+              const s = (catPawOpenServers || []).find((it) => it && it.name === syncFromKey);
+              return s && typeof s.apiBase === 'string' ? s.apiBase : '';
+            };
+            const sourceBase = normalizeCatPawOpenAdminBase(resolveSourceApiBase());
+            if (!sourceBase) {
+              setCatPawOpenSaveStatus('error', '同步来源服务器无效（已保存）');
+            } else {
+              try {
+                const sourceSettings = await requestCatPawOpenAdminJson({
+                  apiBase: sourceBase,
+                  path: 'admin/settings',
+                  method: 'GET',
+                  timeoutMs: 8000,
+                });
+                const proxy =
+                  sourceSettings && sourceSettings.settings && typeof sourceSettings.settings.proxy === 'string'
+                    ? sourceSettings.settings.proxy
+                    : '';
+                const goProxyApi =
+                  sourceSettings && sourceSettings.settings && typeof sourceSettings.settings.goProxyApi === 'string'
+                    ? sourceSettings.settings.goProxyApi
+                    : '';
+                const panBuiltinResolverEnabled = !!(
+                  sourceSettings &&
+                  sourceSettings.settings &&
+                  sourceSettings.settings.panBuiltinResolverEnabled
+                );
+                const onlineConfigs = Array.isArray(sourceSettings && sourceSettings.onlineConfigs)
+                  ? sourceSettings.onlineConfigs
+                      .map((it) => ({
+                        name: it && typeof it.name === 'string' ? it.name : '',
+                        url: it && typeof it.url === 'string' ? it.url : '',
+                      }))
+                      .filter((it) => it && it.name && it.url)
+                  : [];
+
+                await requestCatPawOpenAdminJson({
+                  apiBase: normalizedBase,
+                  path: 'admin/settings',
+                  method: 'PUT',
+                  timeoutMs: 12000,
+                  body: {
+                    proxy: String(proxy || ''),
+                    panBuiltinResolverEnabled,
+                    goProxyApi: String(goProxyApi || ''),
+                    onlineConfigs,
+                  },
+                });
+
+                await refreshCatPawOpenRemoteSettings(normalizedBase);
+                setCatPawOpenSaveStatus('success', '保存成功');
+                return;
+              } catch (err) {
+                const msg = err && err.message ? String(err.message) : '同步失败';
+                setCatPawOpenSaveStatus('error', `${msg}（已保存）`);
+              }
+            }
+          }
 
           if (baseChanged && !wantsSyncSave) {
             await refreshCatPawOpenRemoteSettings(normalizedBase);
@@ -4584,7 +5516,7 @@ export function initDashboardPage(bootstrap = {}) {
 	      if (goProxySaving) return;
 	      goProxySaving = true;
 	      setGoProxyStatus('', '保存中...');
-      try {
+	      try {
         const serversJson = JSON.stringify(goProxyServers || []);
         if (goProxyServersJsonInput) goProxyServersJsonInput.value = serversJson;
         const { resp, data } = await postForm(goProxySettingsForm.action, {
@@ -4604,6 +5536,7 @@ export function initDashboardPage(bootstrap = {}) {
       }
     });
   });
+
 
   const videoSourceSaveStatus = document.getElementById('videoSourceSaveStatus');
   const setVideoSourceSaveStatus = bindInlineStatus(videoSourceSaveStatus);
