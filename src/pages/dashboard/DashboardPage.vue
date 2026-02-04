@@ -483,14 +483,14 @@
 						                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">配置地址：</span>
 						                        <input id="catPawOpenConfigEditorUrl" class="tv-field" placeholder="https://example.com/xx.js" autocomplete="off" />
 						                      </div>
-						                      <div class="flex justify-start items-center gap-3 mt-3">
-						                        <button id="catPawOpenConfigEditorConfirm" class="btn-add" type="button">确定</button>
-						                        <button
-						                          id="catPawOpenConfigEditorCancel"
-						                          type="button"
-						                          class="px-4 py-2 rounded-full bg-gray-300/80 dark:bg-white/10 hover:bg-gray-400/70 dark:hover:bg-white/15 transition text-gray-800 dark:text-gray-200 text-sm font-semibold"
-						                        >取消</button>
-						                      </div>
+							                      <div class="flex justify-start items-center gap-3 mt-3">
+							                        <button id="catPawOpenConfigEditorConfirm" class="btn-add" type="button">确定</button>
+							                        <button
+							                          id="catPawOpenConfigEditorCancel"
+							                          type="button"
+							                          class="btn-ghost-blue"
+							                        >取消</button>
+							                      </div>
 						                      <div id="catPawOpenConfigEditorStatus" class="text-sm mt-2" hidden></div>
 						                    </div>
 						                    <div class="tv-panel tv-cpo-config-table overflow-x-auto">

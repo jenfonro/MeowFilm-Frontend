@@ -619,8 +619,12 @@ export function initDashboardPage(bootstrap = {}) {
         const out = new Map();
         Object.entries(obj).forEach(([k, v]) => {
           const url = normalizeHttpUrl(k);
-          const check = normalizeConfigCheckStatus(v);
-          if (url && check && check !== 'unchecked') out.set(url, check);
+          const val = v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+          const sRaw = val ? val.s || val.status || '' : v;
+          const pRaw = val ? val.p || val.phase || '' : '';
+          const check = normalizeConfigCheckStatus(sRaw);
+          const phase = normalizeConfigCheckPhase(pRaw);
+          if (url && check && check !== 'unchecked') out.set(url, { status: check, phase });
         });
         return out;
       } catch (_e) {
@@ -633,11 +637,22 @@ export function initDashboardPage(bootstrap = {}) {
         const obj = {};
         (map instanceof Map ? Array.from(map.entries()) : []).forEach(([k, v]) => {
           const url = normalizeHttpUrl(k);
-          const check = normalizeConfigCheckStatus(v);
-          if (url && check && check !== 'unchecked') obj[url] = check;
+          const val = v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+          const status = normalizeConfigCheckStatus(val ? val.status : v);
+          const phase = normalizeConfigCheckPhase(val ? val.phase : '');
+          if (url && status && status !== 'unchecked') obj[url] = { s: status, p: phase };
         });
         localStorage.setItem(CHECK_CACHE_KEY, JSON.stringify(obj));
       } catch (_e) {}
+    };
+
+    const readCheckCacheEntry = (url) => {
+      if (!(checkCache instanceof Map) || !url) return { status: 'unchecked', phase: '' };
+      const v = checkCache.get(url);
+      const val = v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+      const status = normalizeConfigCheckStatus(val ? val.status : v);
+      const phase = normalizeConfigCheckPhase(val ? val.phase : '');
+      return { status: status || 'unchecked', phase };
     };
 
     const normalizeConfigItem = (it) => {
@@ -645,8 +660,9 @@ export function initDashboardPage(bootstrap = {}) {
       const name = typeof obj.name === 'string' ? obj.name.trim() : '';
       const url = normalizeHttpUrl(typeof obj.url === 'string' ? obj.url : '');
       const check = normalizeConfigCheckStatus(obj.check);
+      const phase = normalizeConfigCheckPhase(obj.checkPhase || obj.phase || '');
       if (!url) return null;
-      return { name: name || '未命名', url, check };
+      return { name: name || '未命名', url, check, checkPhase: phase };
     };
 
     const parseInitialItems = () => {
@@ -719,7 +735,13 @@ export function initDashboardPage(bootstrap = {}) {
       const url = normalizeHttpUrl(catPawOpenConfigEditorUrl.value);
       const enabled = Boolean(nameRaw) && Boolean(url);
       catPawOpenConfigEditorConfirm.disabled = !enabled;
-      catPawOpenConfigEditorConfirm.classList.toggle('active', enabled);
+      if (enabled) {
+        catPawOpenConfigEditorConfirm.classList.add('btn-green');
+        catPawOpenConfigEditorConfirm.classList.remove('btn-add');
+      } else {
+        catPawOpenConfigEditorConfirm.classList.add('btn-add');
+        catPawOpenConfigEditorConfirm.classList.remove('btn-green');
+      }
     };
 
     const closeEditor = () => {
@@ -754,16 +776,7 @@ export function initDashboardPage(bootstrap = {}) {
     const mkBtn = (text, kind = '') => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      if (kind === 'green') {
-        btn.className =
-          'px-2 py-1 rounded-full border border-green-500 text-xs font-medium text-green-600 hover:bg-green-500/10 transition-colors duration-150';
-      } else if (kind === 'red') {
-        btn.className =
-          'px-2 py-1 rounded-full border border-red-500 text-xs font-medium text-red-600 hover:bg-red-500/10 transition-colors duration-150';
-      } else {
-        btn.className =
-          'px-2 py-1 rounded-full border border-gray-400 text-xs font-medium text-gray-700 hover:bg-gray-500/10 dark:border-white/20 dark:text-gray-100 dark:hover:bg-white/10 transition-colors duration-150';
-      }
+      btn.className = `action-btn ${kind === 'red' ? 'red' : 'blue'}`;
       btn.textContent = text;
       return btn;
     };
@@ -811,7 +824,7 @@ export function initDashboardPage(bootstrap = {}) {
         tr.appendChild(urlTd);
 
         const checkTd = createEl('td', { className: 'px-3 py-2 whitespace-nowrap' });
-        checkTd.appendChild(buildConfigCheckTag(it && it.check ? it.check : 'unchecked'));
+        checkTd.appendChild(buildConfigCheckTag(it && it.check ? it.check : 'unchecked', it && it.checkPhase ? it.checkPhase : ''));
         tr.appendChild(checkTd);
 
       const actionsTd = createEl('td', { className: 'px-3 py-2 whitespace-nowrap' });
@@ -890,9 +903,10 @@ export function initDashboardPage(bootstrap = {}) {
       if (editorMode === 'edit' && editorIndex >= 0 && items && items[editorIndex]) {
         const prev = items[editorIndex];
         const prevCheck = prev && typeof prev.check === 'string' ? prev.check : 'unchecked';
-        items = (items || []).map((x, i) => (i === editorIndex ? { name, url, check: prevCheck } : x));
+        const prevPhase = prev && typeof prev.checkPhase === 'string' ? prev.checkPhase : '';
+        items = (items || []).map((x, i) => (i === editorIndex ? { name, url, check: prevCheck, checkPhase: prevPhase } : x));
       } else {
-        items = (items || []).concat([{ name, url, check: 'unchecked' }]);
+        items = (items || []).concat([{ name, url, check: 'unchecked', checkPhase: '' }]);
       }
 
       closeEditor();
@@ -938,7 +952,7 @@ export function initDashboardPage(bootstrap = {}) {
           if (!it) return it;
           if (normalizeConfigCheckStatus(it.check) === 'checking') return it;
           changed = true;
-          return { ...it, check: 'checking' };
+          return { ...it, check: 'checking', checkPhase: '' };
         });
         if (changed) render();
       },
@@ -946,16 +960,24 @@ export function initDashboardPage(bootstrap = {}) {
         const prevChecksByUrl = new Map(
           (items || [])
             .filter((it) => it && typeof it.url === 'string')
-            .map((it) => [String(it.url || ''), typeof it.check === 'string' ? it.check : ''])
+            .map((it) => [
+              String(it.url || ''),
+              { status: typeof it.check === 'string' ? it.check : '', phase: typeof it.checkPhase === 'string' ? it.checkPhase : '' },
+            ])
         );
         const arr = Array.isArray(nextItems) ? nextItems : [];
         items = arr
           .map((it) => normalizeConfigItem(it))
           .filter(Boolean)
-          .map((it) => ({
-            ...it,
-            check: normalizeConfigCheckStatus(it.check || prevChecksByUrl.get(it.url) || (checkCache ? checkCache.get(it.url) : '') || ''),
-          }));
+          .map((it) => {
+            const prev = prevChecksByUrl.get(it.url);
+            const cached = readCheckCacheEntry(it.url);
+            const status = normalizeConfigCheckStatus(it.check || (prev && prev.status) || cached.status || '');
+            const phase = normalizeConfigCheckPhase(
+              normalizeConfigCheckStatus(status) === 'error' ? it.checkPhase || (prev && prev.phase) || cached.phase || '' : ''
+            );
+            return { ...it, check: status, checkPhase: phase };
+          });
         render();
       },
       setChecksFromResults: (results = []) => {
@@ -965,25 +987,31 @@ export function initDashboardPage(bootstrap = {}) {
           const obj = r && typeof r === 'object' ? r : {};
           const url = normalizeHttpUrl(typeof obj.url === 'string' ? obj.url : '');
           const status = normalizeConfigCheckStatus(obj && obj.status === 'pass' ? 'pass' : 'error');
-          if (url) statusByUrl.set(url, status);
+          const phase = normalizeConfigCheckPhase(obj && typeof obj.phase === 'string' ? obj.phase : '');
+          if (url) statusByUrl.set(url, { status, phase });
         });
         let changed = false;
         items = (items || []).map((it) => {
           if (!it) return it;
           const url = typeof it.url === 'string' ? it.url : '';
           if (!url || !statusByUrl.has(url)) return it;
-          const nextCheck = statusByUrl.get(url) || 'unchecked';
-          if (normalizeConfigCheckStatus(it.check) === nextCheck) return it;
+          const next = statusByUrl.get(url);
+          const nextCheck = normalizeConfigCheckStatus(next && next.status ? next.status : '') || 'unchecked';
+          const nextPhase = normalizeConfigCheckPhase(next && next.phase ? next.phase : '');
+          const prevCheck = normalizeConfigCheckStatus(it.check);
+          const prevPhase = normalizeConfigCheckPhase(it.checkPhase);
+          if (prevCheck === nextCheck && prevPhase === nextPhase) return it;
           changed = true;
-          return { ...it, check: nextCheck };
+          return { ...it, check: nextCheck, checkPhase: nextPhase };
         });
         try {
           if (!(checkCache instanceof Map)) checkCache = loadCheckCache();
           statusByUrl.forEach((v, k) => {
-            const check = normalizeConfigCheckStatus(v);
+            const check = normalizeConfigCheckStatus(v && v.status ? v.status : '');
+            const phase = normalizeConfigCheckPhase(v && v.phase ? v.phase : '');
             if (!k) return;
             if (!check || check === 'unchecked') checkCache.delete(k);
-            else checkCache.set(k, check);
+            else checkCache.set(k, { status: check, phase });
           });
           saveCheckCache(checkCache);
         } catch (_e) {}
@@ -1115,6 +1143,7 @@ export function initDashboardPage(bootstrap = {}) {
             name: it && typeof it.name === 'string' ? it.name : '',
             url: it && typeof it.url === 'string' ? it.url : '',
             check: it && typeof it.status === 'string' ? it.status : '',
+            phase: it && typeof it.phase === 'string' ? it.phase : '',
           }))
         );
       }
@@ -1462,15 +1491,15 @@ export function initDashboardPage(bootstrap = {}) {
 
       const tdActions = document.createElement('td');
       tdActions.className = 'px-3 py-2 whitespace-nowrap';
-      const actWrap = createEl('div', { className: 'flex items-center gap-2' });
+      const actWrap = createEl('div', { className: 'action-group' });
 
       const isEditingRow = !!(editingKey && baseKey && editingKey === baseKey);
-      const editBtn = createEl('button', { className: 'btn-ghost-blue', text: isEditingRow ? '取消' : '修改' });
+      const editBtn = createEl('button', { className: 'action-btn blue', text: isEditingRow ? '取消' : '修改' });
       editBtn.type = 'button';
       editBtn.setAttribute('data-goproxy-action', isEditingRow ? 'cancel' : 'edit');
       editBtn.setAttribute('data-goproxy-base', base);
 
-      const delBtn = createEl('button', { className: 'btn-ghost-red', text: '删除' });
+      const delBtn = createEl('button', { className: 'action-btn red', text: '删除' });
       delBtn.type = 'button';
       delBtn.setAttribute('data-goproxy-action', 'delete');
       delBtn.setAttribute('data-goproxy-base', base);
@@ -3195,10 +3224,25 @@ export function initDashboardPage(bootstrap = {}) {
     if (s === 'checking') return 'tag-gray';
     return 'tag-gray';
   };
-  const buildConfigCheckTag = (status) => {
+  const normalizeConfigCheckPhase = (phase) => {
+    const p = typeof phase === 'string' ? phase.trim().toLowerCase() : '';
+    if (p === 'download') return 'download';
+    if (p === 'runtime') return 'runtime';
+    return '';
+  };
+  const formatConfigCheckTextWithPhase = (status, phase) => {
+    const s = normalizeConfigCheckStatus(status);
+    if (s === 'error') {
+      const p = normalizeConfigCheckPhase(phase);
+      if (p === 'download') return '下载失败';
+      if (p === 'runtime') return '运行失败';
+    }
+    return formatConfigCheckText(s);
+  };
+  const buildConfigCheckTag = (status, phase) => {
     const span = document.createElement('span');
     span.className = `availability-tag ${configCheckClassFor(status)}`;
-    span.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>${formatConfigCheckText(status)}`;
+    span.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg>${formatConfigCheckTextWithPhase(status, phase)}`;
     return span;
   };
 
@@ -5445,7 +5489,7 @@ export function initDashboardPage(bootstrap = {}) {
               const next = Array.isArray(catPawOpenServers) ? catPawOpenServers.slice() : [];
               const existsIdx = next.findIndex((s) => s && s.name === savedName);
               if (existsIdx >= 0) next[existsIdx] = entry;
-              else next.unshift(entry);
+              else next.push(entry);
               catPawOpenServers = next;
 
               rebuildServerOptions(savedName);
