@@ -670,12 +670,13 @@
 		                          <th class="px-3 py-2 whitespace-nowrap">接口地址</th>
 		                          <th class="px-3 py-2 whitespace-nowrap">版本</th>
 		                          <th class="px-3 py-2 whitespace-nowrap">状态</th>
+		                          <th class="px-3 py-2 whitespace-nowrap">网盘启用</th>
 		                          <th class="px-3 py-2 whitespace-nowrap">操作</th>
 		                        </tr>
 		                      </thead>
 		                      <tbody class="divide-y divide-gray-100 dark:divide-gray-800" id="goProxyServerTableBody">
 		                        <tr>
-		                          <td class="px-3 py-2 text-gray-500 dark:text-gray-400" colspan="6">无数据</td>
+		                          <td class="px-3 py-2 text-gray-500 dark:text-gray-400" colspan="7">无数据</td>
 		                        </tr>
 		                      </tbody>
 		                    </table>

@@ -1385,6 +1385,43 @@ export function initDashboardPage(bootstrap = {}) {
     return span;
   };
 
+  const displayGoProxyBaseHost = (base) => {
+    const raw = typeof base === 'string' ? base.trim() : '';
+    if (!raw) return '';
+    try {
+      const u = new URL(raw);
+      const host = String(u.host || '').trim();
+      return host || raw;
+    } catch (_e) {
+      return raw;
+    }
+  };
+
+  const buildGoProxyPanSwitch = ({ label, base, panKey, checked }) => {
+    const wrap = createEl('div', { className: 'flex items-center gap-2' });
+    wrap.appendChild(
+      createEl('span', {
+        className: 'text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap',
+        text: String(label || ''),
+      })
+    );
+
+    const switchLabel = createEl('label', { className: 'enable-switch' });
+    switchLabel.title = String(label || '');
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = !!checked;
+    input.setAttribute('data-goproxy-pan', String(panKey || ''));
+    input.setAttribute('data-goproxy-base', String(base || ''));
+
+    const slider = createEl('span', { className: 'enable-slider' });
+    switchLabel.appendChild(input);
+    switchLabel.appendChild(slider);
+    wrap.appendChild(switchLabel);
+    return wrap;
+  };
+
   const guessGoProxyNameFromBase = (base) => {
     try {
       const u = new URL(base);
@@ -1450,7 +1487,7 @@ export function initDashboardPage(bootstrap = {}) {
       const tr = document.createElement('tr');
       const td = document.createElement('td');
       td.className = 'px-3 py-2 text-gray-500 dark:text-gray-400';
-      td.colSpan = 6;
+      td.colSpan = 7;
       td.textContent = '无数据';
       tr.appendChild(td);
       goProxyServerTableBody.appendChild(tr);
@@ -1477,7 +1514,7 @@ export function initDashboardPage(bootstrap = {}) {
 
       const tdBase = document.createElement('td');
       tdBase.className = 'px-3 py-2 font-mono whitespace-nowrap';
-      tdBase.textContent = base;
+      tdBase.textContent = displayGoProxyBaseHost(base);
 
       const tdVersion = document.createElement('td');
       tdVersion.className = 'px-3 py-2 whitespace-nowrap';
@@ -1488,6 +1525,14 @@ export function initDashboardPage(bootstrap = {}) {
       const tdStatus = document.createElement('td');
       tdStatus.className = 'px-3 py-2 whitespace-nowrap';
       tdStatus.appendChild(buildGoProxyProbeTag(state));
+
+      const tdPans = document.createElement('td');
+      tdPans.className = 'px-3 py-2 whitespace-nowrap';
+      const pansWrap = createEl('div', { className: 'flex items-center gap-4' });
+      const pans = server && typeof server.pans === 'object' && server.pans ? server.pans : {};
+      pansWrap.appendChild(buildGoProxyPanSwitch({ label: '百度', base, panKey: 'baidu', checked: !!pans.baidu }));
+      pansWrap.appendChild(buildGoProxyPanSwitch({ label: '夸克', base, panKey: 'quark', checked: !!pans.quark }));
+      tdPans.appendChild(pansWrap);
 
       const tdActions = document.createElement('td');
       tdActions.className = 'px-3 py-2 whitespace-nowrap';
@@ -1513,13 +1558,14 @@ export function initDashboardPage(bootstrap = {}) {
       tr.appendChild(tdBase);
       tr.appendChild(tdVersion);
       tr.appendChild(tdStatus);
+      tr.appendChild(tdPans);
       tr.appendChild(tdActions);
       goProxyServerTableBody.appendChild(tr);
 
       if (isEditingRow && goProxyServerEditor) {
         const editorRow = document.createElement('tr');
         const editorTd = document.createElement('td');
-        editorTd.colSpan = 6;
+        editorTd.colSpan = 7;
         editorTd.className = 'px-3 py-2';
         editorRow.appendChild(editorTd);
         try {
@@ -5923,6 +5969,23 @@ export function initDashboardPage(bootstrap = {}) {
           if (idx < 0) return;
           showEditorEdit(goProxyServers[idx]);
         }
+      });
+
+      goProxyServerTableBody.addEventListener('change', (e) => {
+        const input = e && e.target && e.target.closest ? e.target.closest('input[type="checkbox"][data-goproxy-pan]') : null;
+        if (!input) return;
+        const panKey = String(input.getAttribute('data-goproxy-pan') || '').trim();
+        const base = String(input.getAttribute('data-goproxy-base') || '');
+        const baseKey = base ? base.toLowerCase() : '';
+        if (!panKey || !baseKey) return;
+        const idx = findServerIndexByBaseKey(baseKey);
+        if (idx < 0) return;
+        const next = goProxyServers.slice();
+        const prev = next[idx] || {};
+        const prevPans = prev && typeof prev.pans === 'object' && prev.pans ? prev.pans : { baidu: true, quark: true };
+        next[idx] = { ...prev, pans: { ...prevPans, [panKey]: !!input.checked } };
+        goProxyServers = normalizeGoProxyServers(next);
+        writeGoProxyServersJson();
       });
     }
 
