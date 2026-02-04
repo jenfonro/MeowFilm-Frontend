@@ -87,20 +87,24 @@
 	                <div id="playerArea" class="transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 md:col-span-3">
                     <div class="tv-player-stack flex flex-col gap-2">
 	                    <div class="play-video-ratio rounded-xl overflow-hidden shadow-lg">
-	                      <div class="play-video-ratio__inner">
-		                        <ArtPlayer
-                            ref="artPlayerRef"
-		                          :url="playerUrl"
-		                          :headers="playerHeaders"
-		                          :title="displayTitle"
-		                          :autoplay="true"
-                            :show-buffer-ring="playerPhase === 'buffering'"
-		                          @loadedmetadata="onPlayerLoadedMetadata"
-                            @buffering="onPlayerBuffering"
-                            @playing="onPlayerPlaying"
-                            @firstframe="onPlayerFirstFrame"
-                            @error="onPlayerError"
-		                        />
+		                      <div class="play-video-ratio__inner">
+			                        <ArtPlayer
+                              ref="artPlayerRef"
+			                          :url="playerUrl"
+			                          :headers="playerHeaders"
+			                          :title="displayTitle"
+			                          :autoplay="true"
+                              :go-proxy-options="goProxyUiOptions"
+                              :go-proxy-selected-base="goProxyManualBase"
+                              :go-proxy-label="goProxyUiLabel"
+                              :show-buffer-ring="playerPhase === 'buffering'"
+			                          @loadedmetadata="onPlayerLoadedMetadata"
+                              @buffering="onPlayerBuffering"
+                              @playing="onPlayerPlaying"
+                              @firstframe="onPlayerFirstFrame"
+                              @error="onPlayerError"
+                              @goproxyselect="onGoProxySelect"
+			                        />
 	                      <div
 	                        v-show="playerPhase !== 'ready' && playerPhase !== 'buffering'"
 	                        class="play-player-overlay"
@@ -2311,16 +2315,38 @@ const normalizeGoProxyServers = (value) => {
   const out = [];
   const seen = new Set();
   for (const it of list) {
-    const base =
-      typeof it === 'string'
-        ? normalizeHttpBase(it)
-        : normalizeHttpBase(it && typeof it.base === 'string' ? it.base : '');
+    let base = '';
+    if (typeof it === 'string') {
+      base = normalizeHttpBase(it);
+    } else if (it && typeof it === 'object') {
+      const rawBase =
+        (typeof it.base === 'string' && it.base) ||
+        (typeof it.apiBase === 'string' && it.apiBase) ||
+        (typeof it.api === 'string' && it.api) ||
+        (typeof it.url === 'string' && it.url) ||
+        '';
+      base = normalizeHttpBase(rawBase);
+    }
     if (!base || seen.has(base)) continue;
     const pans = it && typeof it === 'object' && typeof it.pans === 'object' && it.pans ? it.pans : {};
     const hasBaidu = Object.prototype.hasOwnProperty.call(pans, 'baidu');
     const hasQuark = Object.prototype.hasOwnProperty.call(pans, 'quark');
     out.push({
       base,
+      label: (() => {
+        if (it && typeof it === 'object') {
+          const d = it.displayName != null ? String(it.displayName).trim() : '';
+          if (d) return d;
+          const n = it.name != null ? String(it.name).trim() : '';
+          if (n) return n;
+        }
+        try {
+          const u = new URL(base);
+          return u.host || base;
+        } catch (_e) {
+          return base;
+        }
+      })(),
       pans: {
         baidu: hasBaidu ? !!pans.baidu : true,
         quark: hasQuark ? !!pans.quark : true,
@@ -2330,6 +2356,20 @@ const normalizeGoProxyServers = (value) => {
   }
   return out;
 };
+
+const GO_PROXY_SELECTED_BASE_STORAGE_KEY = 'meowfilm:goproxy:selectedBase';
+
+const goProxyManualBase = ref('');
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    goProxyManualBase.value = normalizeHttpBase(window.localStorage.getItem(GO_PROXY_SELECTED_BASE_STORAGE_KEY) || '');
+  }
+} catch (_e) {
+  goProxyManualBase.value = '';
+}
+
+const goProxyInUseBase = ref('');
+const lastGoProxyCandidate = ref(null);
 
 const guessPreferredPanFromFlag = (flag) => {
   const raw = typeof flag === 'string' ? flag.trim() : '';
@@ -2516,6 +2556,16 @@ const pickGoProxyBaseForPlayback = async (pan = '') => {
     ? servers.filter((s) => !!(s && s.pans && s.pans[p]))
     : servers;
   if (!eligible.length) return '';
+
+  const manual = normalizeHttpBase(goProxyManualBase.value);
+  if (manual && eligible.some((s) => s && s.base === manual)) {
+    goProxyPickState.selectedBase = manual;
+    goProxyPickState.selectedPan = p;
+    goProxyPickState.inFlight = null;
+    goProxyPickState.inFlightPan = '';
+    return manual;
+  }
+
   const autoSelect = !!props.bootstrap?.settings?.goProxyAutoSelect;
   if (!autoSelect) return eligible[0].base;
 
@@ -2776,7 +2826,7 @@ const maybeUseCatM3U8ProxyForPlayback = async ({
 };
 
 const maybeUseGoProxyForPlayback = async (playUrl, playHeaders, preferredPan = '', enabled = false) => {
-  if (!enabled) return { url: playUrl, headers: playHeaders };
+  if (!enabled) return { url: playUrl, headers: playHeaders, goProxyBase: '' };
   const h = playHeaders && typeof playHeaders === 'object' ? playHeaders : {};
   const hasHeader = Object.keys(h).some((k) => {
     if (!k || typeof k !== 'string') return false;
@@ -2786,10 +2836,10 @@ const maybeUseGoProxyForPlayback = async (playUrl, playHeaders, preferredPan = '
     return String(v).trim();
   });
   // Only proxy when server explicitly returns playback headers (typical anti-leech/CORS cases).
-  if (!hasHeader) return { url: playUrl, headers: playHeaders };
+  if (!hasHeader) return { url: playUrl, headers: playHeaders, goProxyBase: '' };
 
   const base = await pickGoProxyBaseForPlayback(preferredPan);
-  if (!base) return { url: playUrl, headers: playHeaders };
+  if (!base) return { url: playUrl, headers: playHeaders, goProxyBase: '' };
   const { proxyUrl } = await registerGoProxyToken({ base, url: playUrl, headers: playHeaders });
 
   // Preserve format for token URLs that don't carry a suffix.
@@ -2809,7 +2859,78 @@ const maybeUseGoProxyForPlayback = async (playUrl, playHeaders, preferredPan = '
     }
   })();
 
-  return { url: decorated, headers: {} };
+  return { url: decorated, headers: {}, goProxyBase: base };
+};
+
+const goProxyUiOptions = computed(() => {
+  const enabled = !!props.bootstrap?.settings?.goProxyEnabled;
+  if (!enabled) return [];
+  const servers = normalizeGoProxyServers(props.bootstrap?.settings?.goProxyServers);
+  return servers.map((s) => ({ base: s.base, label: s.label }));
+});
+
+const goProxyUiLabel = computed(() => {
+  const enabled = !!props.bootstrap?.settings?.goProxyEnabled;
+  if (!enabled) return '';
+  const servers = normalizeGoProxyServers(props.bootstrap?.settings?.goProxyServers);
+  if (!servers.length) return '';
+
+  const inUse = normalizeHttpBase(goProxyInUseBase.value);
+  const manual = normalizeHttpBase(goProxyManualBase.value);
+  const active = inUse || manual;
+  if (active) {
+    const found = servers.find((s) => s && s.base === active);
+    if (found && found.label) return found.label;
+  }
+
+  return servers[0].label || 'GoProxy';
+});
+
+const onGoProxySelect = async (base) => {
+  const nextBase = normalizeHttpBase(base);
+  goProxyManualBase.value = nextBase;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (nextBase) window.localStorage.setItem(GO_PROXY_SELECTED_BASE_STORAGE_KEY, nextBase);
+      else window.localStorage.removeItem(GO_PROXY_SELECTED_BASE_STORAGE_KEY);
+    }
+  } catch (_e) {}
+
+  goProxyPickState.selectedBase = '';
+  goProxyPickState.selectedPan = '';
+  goProxyPickState.inFlight = null;
+  goProxyPickState.inFlightPan = '';
+
+  const candidate = lastGoProxyCandidate.value;
+  if (!candidate || !candidate.url) return;
+  if (!candidate.enabled) return;
+  try {
+    goProxyInUseBase.value = '';
+    const preferredPan = typeof candidate.preferredPan === 'string' ? candidate.preferredPan : '';
+    const out = await maybeUseGoProxyForPlayback(candidate.url, candidate.headers || {}, preferredPan, true);
+    if (out && typeof out === 'object') {
+      const u = typeof out.url === 'string' ? out.url.trim() : '';
+      if (u) {
+        playerMetaReady.value = false;
+        playerBuffering.value = false;
+        playerPlaybackStarted.value = false;
+        playerFirstFrameReady.value = false;
+        if (playerFirstFrameTimer) {
+          window.clearTimeout(playerFirstFrameTimer);
+          playerFirstFrameTimer = 0;
+        }
+        goProxyInUseBase.value = out.goProxyBase ? String(out.goProxyBase) : '';
+        playerUrl.value = u;
+        playerHeaders.value = out.headers && typeof out.headers === 'object' ? out.headers : {};
+        await nextTick();
+        try {
+          if (artPlayerRef.value && typeof artPlayerRef.value.tryAutoplay === 'function') await artPlayerRef.value.tryAutoplay();
+        } catch (_e) {}
+      }
+    }
+  } catch (e) {
+    console.warn('[GoProxy] switch failed:', e && e.message ? e.message : e);
+  }
 };
 
 const playRequestState = {
@@ -2988,10 +3109,18 @@ const requestPlay = async () => {
 
 	      try {
 	        const preferredPan = guessPreferredPanFromFlag(flag);
+          goProxyInUseBase.value = '';
+          lastGoProxyCandidate.value = {
+            url: finalUrl,
+            headers: finalHeaders,
+            preferredPan,
+            enabled: goProxyEnabled && !disableGoProxy,
+          };
 	        const out = await maybeUseGoProxyForPlayback(finalUrl, finalHeaders, preferredPan, goProxyEnabled && !disableGoProxy);
 	        if (out && typeof out === 'object') {
 	          if (typeof out.url === 'string' && out.url.trim()) finalUrl = out.url.trim();
 	          if (out.headers && typeof out.headers === 'object') finalHeaders = out.headers;
+            goProxyInUseBase.value = out.goProxyBase ? String(out.goProxyBase) : '';
 	        }
 	      } catch (e) {
         // Keep direct URL as fallback (GoProxy is best-effort on the client).

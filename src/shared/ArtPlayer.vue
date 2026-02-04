@@ -95,6 +95,29 @@
           </div>
 
           <div class="yt-pill yt-right">
+            <div v-if="goProxyOptions.length > 1" class="yt-proxy" ref="goProxyEl">
+              <button
+                class="yt-proxy__btn"
+                type="button"
+                :aria-label="`GoProxy：${goProxyLabel}`"
+                :data-open="goProxyMenuOpen ? 'true' : 'false'"
+                @click.stop="toggleGoProxyMenu"
+              >
+                {{ goProxyLabel }}
+              </button>
+              <div class="yt-proxy__menu" :class="{ 'yt-proxy__menu--open': goProxyMenuOpen }">
+                <button
+                  v-for="s in goProxyOptions"
+                  :key="s.base"
+                  type="button"
+                  class="yt-proxy__item"
+                  :data-active="s.base === goProxySelectedBase ? 'true' : 'false'"
+                  @click.stop="selectGoProxy(s.base)"
+                >
+                  {{ s.label }}
+                </button>
+              </div>
+            </div>
             <button
               class="yt-btn"
               type="button"
@@ -303,21 +326,25 @@
 	import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 	import Artplayer from 'artplayer';
 
-	const emit = defineEmits(['loadedmetadata', 'error', 'buffering', 'playing', 'firstframe']);
+		const emit = defineEmits(['loadedmetadata', 'error', 'buffering', 'playing', 'firstframe', 'goproxyselect']);
 
-const props = defineProps({
-  url: { type: String, default: '' },
-  poster: { type: String, default: '' },
-  headers: { type: Object, default: () => ({}) },
-  title: { type: String, default: '' },
-  autoplay: { type: Boolean, default: true },
-  showBufferRing: { type: Boolean, default: false },
-});
+	const props = defineProps({
+	  url: { type: String, default: '' },
+	  poster: { type: String, default: '' },
+	  headers: { type: Object, default: () => ({}) },
+	  title: { type: String, default: '' },
+	  autoplay: { type: Boolean, default: true },
+	  showBufferRing: { type: Boolean, default: false },
+	  goProxyOptions: { type: Array, default: () => [] }, // [{ base, label }]
+	  goProxySelectedBase: { type: String, default: '' },
+	  goProxyLabel: { type: String, default: '' },
+	});
 
-const container = ref(null);
-const shell = ref(null);
-const settingEl = ref(null);
-const teleportTarget = ref(null);
+	const container = ref(null);
+	const shell = ref(null);
+	const settingEl = ref(null);
+	const goProxyEl = ref(null);
+	const teleportTarget = ref(null);
 
 let art = null;
 let cleanupPipListeners = null;
@@ -339,18 +366,19 @@ const muted = ref(false);
 const buffering = ref(false);
 const playbackRate = ref(1);
 const aspectRatio = ref('default');
-const settingsOpen = ref(false);
-const volumeHover = ref(false);
-const uiVisible = ref(true);
-const desktopControlsVisible = ref(true);
-const isFullscreen = ref(false);
-const isPip = ref(false);
-const isMobile = ref(false);
-const isIos = ref(false);
-const overlayVisible = computed(() => {
-  if (isMobile.value) return uiVisible.value || !playing.value || settingsOpen.value;
-  return desktopControlsVisible.value || settingsOpen.value || !playing.value;
-});
+	const settingsOpen = ref(false);
+	const goProxyMenuOpen = ref(false);
+	const volumeHover = ref(false);
+	const uiVisible = ref(true);
+	const desktopControlsVisible = ref(true);
+	const isFullscreen = ref(false);
+	const isPip = ref(false);
+	const isMobile = ref(false);
+	const isIos = ref(false);
+	const overlayVisible = computed(() => {
+	  if (isMobile.value) return uiVisible.value || !playing.value || settingsOpen.value || goProxyMenuOpen.value;
+	  return desktopControlsVisible.value || settingsOpen.value || goProxyMenuOpen.value || !playing.value;
+	});
 
 let mediaQuery = null;
 const updateIsMobile = () => {
@@ -1352,17 +1380,17 @@ const toggleFullscreen = async () => {
 let hideTimer = 0;
 let desktopHideTimer = 0;
 
-const scheduleDesktopAutoHide = () => {
-  if (desktopHideTimer) window.clearTimeout(desktopHideTimer);
-  desktopHideTimer = 0;
-  if (!art) return;
-  if (!art.playing) return;
-  if (settingsOpen.value || buffering.value) return;
-  desktopHideTimer = window.setTimeout(() => {
-    if (!art) return;
-    if (art.playing && !settingsOpen.value && !buffering.value) desktopControlsVisible.value = false;
-  }, 2200);
-};
+	const scheduleDesktopAutoHide = () => {
+	  if (desktopHideTimer) window.clearTimeout(desktopHideTimer);
+	  desktopHideTimer = 0;
+	  if (!art) return;
+	  if (!art.playing) return;
+	  if (settingsOpen.value || goProxyMenuOpen.value || buffering.value) return;
+	  desktopHideTimer = window.setTimeout(() => {
+	    if (!art) return;
+	    if (art.playing && !settingsOpen.value && !goProxyMenuOpen.value && !buffering.value) desktopControlsVisible.value = false;
+	  }, 2200);
+	};
 
 const showUiTemporarily = () => {
   if (isMobile.value) {
@@ -1379,12 +1407,30 @@ const showUiTemporarily = () => {
   scheduleDesktopAutoHide();
 };
 
-const onDocDown = (e) => {
-  if (!settingsOpen.value) return;
-  const el = settingEl.value;
-  if (el && e && e.target && el.contains(e.target)) return;
-  settingsOpen.value = false;
-};
+	const onDocDown = (e) => {
+	  const target = e && e.target ? e.target : null;
+	  if (settingsOpen.value) {
+	    const el = settingEl.value;
+	    if (!(el && target && el.contains(target))) settingsOpen.value = false;
+	  }
+	  if (goProxyMenuOpen.value) {
+	    const el = goProxyEl.value;
+	    if (!(el && target && el.contains(target))) goProxyMenuOpen.value = false;
+	  }
+	};
+
+	const toggleGoProxyMenu = () => {
+	  if (!props.goProxyOptions || !props.goProxyOptions.length) return;
+	  settingsOpen.value = false;
+	  goProxyMenuOpen.value = !goProxyMenuOpen.value;
+	  showUiTemporarily();
+	};
+
+	const selectGoProxy = (base) => {
+	  goProxyMenuOpen.value = false;
+	  showUiTemporarily();
+	  emit('goproxyselect', typeof base === 'string' ? base : '');
+	};
 
 const closeArtPopups = (target) => {
   if (!art) return;
@@ -1909,6 +1955,85 @@ defineExpose({ destroy: destroyNow, pause, play, tryAutoplay });
 
 .yt-setting {
   position: relative;
+}
+
+.yt-proxy {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.yt-proxy__btn {
+  height: var(--yt-btn-size);
+  border-radius: 999px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.yt-proxy__btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.yt-proxy__btn[data-open='true'] {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.18);
+  color: rgba(74, 222, 128, 1);
+}
+
+.yt-proxy__menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  min-width: 160px;
+  border-radius: 14px;
+  padding: 8px;
+  background: rgba(18, 18, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55);
+  display: none;
+}
+
+.yt-proxy__menu--open {
+  display: block;
+}
+
+.yt-proxy__item {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.yt-proxy__item + .yt-proxy__item {
+  margin-top: 8px;
+}
+
+.yt-proxy__item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.yt-proxy__item[data-active='true'] {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.18);
+  color: rgba(74, 222, 128, 1);
 }
 
 .yt-setting__menu {
