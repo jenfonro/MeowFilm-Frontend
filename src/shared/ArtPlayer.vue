@@ -23,11 +23,16 @@
             min="0"
             :max="Math.max(duration, 0)"
             step="0.1"
-            :value="Math.min(currentTime, duration)"
+            :value="Math.min(displayTime, duration)"
             :disabled="!duration"
-            @mousedown.stop
+            @mousedown.stop="onSeekPointerDown"
+            @touchstart.stop="onSeekPointerDown"
             @click.stop
-            @input="onSeek"
+            @input="onSeekPreview"
+            @change="onSeekCommit"
+            @mouseup.stop="onSeekPointerUp"
+            @touchend.stop="onSeekPointerUp"
+            @blur="onSeekCancel"
           />
         </div>
         <div class="yt-row">
@@ -91,7 +96,7 @@
               </div>
             </div>
 
-            <div class="yt-time">{{ timeLabel }}</div>
+            <div class="yt-time">{{ displayTimeLabel }}</div>
           </div>
 
           <div class="yt-pill yt-right">
@@ -267,11 +272,16 @@
             min="0"
             :max="Math.max(duration, 0)"
             step="0.1"
-            :value="Math.min(currentTime, duration)"
+            :value="Math.min(displayTime, duration)"
             :disabled="!duration"
-            @mousedown.stop
+            @mousedown.stop="onSeekPointerDown"
+            @touchstart.stop="onSeekPointerDown"
             @click.stop
-            @input="onSeek"
+            @input="onSeekPreview"
+            @change="onSeekCommit"
+            @mouseup.stop="onSeekPointerUp"
+            @touchend.stop="onSeekPointerUp"
+            @blur="onSeekCancel"
           />
         </div>
 
@@ -361,6 +371,9 @@ const playing = ref(false);
 const currentTime = ref(0);
 const duration = ref(0);
 const bufferedEnd = ref(0);
+const scrubTime = ref(0);
+const scrubbing = ref(false);
+const pointerScrubbing = ref(false);
 const volume = ref(0.7);
 const muted = ref(false);
 const buffering = ref(false);
@@ -416,9 +429,11 @@ const formatTime = (sec) => {
 };
 
 const timeLabel = computed(() => `${formatTime(currentTime.value)} / ${formatTime(duration.value)}`);
+const displayTime = computed(() => (scrubbing.value ? scrubTime.value : currentTime.value));
+const displayTimeLabel = computed(() => `${formatTime(displayTime.value)} / ${formatTime(duration.value)}`);
 const progressFrac = computed(() => {
   const d = Number(duration.value);
-  const t = Number(currentTime.value);
+  const t = Number(displayTime.value);
   if (!Number.isFinite(d) || d <= 0) return 0;
   if (!Number.isFinite(t) || t <= 0) return 0;
   return Math.max(0, Math.min(1, t / d));
@@ -464,7 +479,6 @@ const computeBufferedEnd = () => {
     const b = v.buffered;
     if (!b || typeof b.length !== 'number' || b.length <= 0) return 0;
     const eps = 0.15;
-    let maxEnd = 0;
     let inRangeEnd = 0;
     for (let i = 0; i < b.length; i += 1) {
       let start = 0;
@@ -475,12 +489,14 @@ const computeBufferedEnd = () => {
       } catch (_e) {
         continue;
       }
-      if (Number.isFinite(end)) maxEnd = Math.max(maxEnd, end);
       if (Number.isFinite(start) && Number.isFinite(end) && t + eps >= start && t - eps <= end) {
         inRangeEnd = Math.max(inRangeEnd, end);
       }
     }
-    return inRangeEnd || maxEnd || 0;
+    // Only report the buffered range that actually covers the current playback position.
+    // (For disjoint ranges, using the global maxEnd is misleading and makes the UI look "buffered ahead"
+    // even when the current time is inside a gap.)
+    return inRangeEnd || 0;
   } catch (_e) {
     return 0;
   }
@@ -704,6 +720,9 @@ const destroyNow = () => {
   isPip.value = false;
   playing.value = false;
   bufferedEnd.value = 0;
+  scrubbing.value = false;
+  pointerScrubbing.value = false;
+  scrubTime.value = 0;
 };
 
 		const createCustomPlayer = {
@@ -733,6 +752,7 @@ const destroyNow = () => {
 				    const backBufferSeconds = isMobile.value ? 75 : 180;
 				    const maxBufferSizeBytes = isMobile.value ? 200 * 1000 * 1000 : 800 * 1000 * 1000;
 				    const hls = new Hls({
+		      enableWorker: true,
 		      maxBufferLength: bufferGoalSeconds,
 		      maxMaxBufferLength: bufferGoalSeconds * 2,
 		      backBufferLength: backBufferSeconds,
@@ -767,7 +787,9 @@ const destroyNow = () => {
 		    const flv = flvjs.createPlayer(
 	      { type: 'flv', isLive: false, url, withCredentials },
 	      {
-	        enableWorker: false,
+	        // Worker demuxing is important to keep playback stable when the main thread is busy
+	        // (e.g. DevTools open, background/occluded window, heavy UI).
+	        enableWorker: true,
 	        enableStashBuffer: true,
 	        stashInitialSize: 1024 * 1024,
 	        autoCleanupSourceBuffer: true,
@@ -1315,11 +1337,71 @@ const onVolume = (e) => {
   art.volume = Math.max(0, Math.min(1, v));
 };
 
-const onSeek = (e) => {
+const onSeekPointerDown = () => {
+  pointerScrubbing.value = true;
+};
+const onSeekPointerUp = () => {
+  pointerScrubbing.value = false;
+};
+
+const isBufferedAt = (sec) => {
+  try {
+    const v = art && art.video ? art.video : null;
+    if (!v) return false;
+    const b = v.buffered;
+    if (!b || typeof b.length !== 'number' || b.length <= 0) return false;
+    const t = Number(sec);
+    if (!Number.isFinite(t)) return false;
+    const eps = 0.25;
+    for (let i = 0; i < b.length; i += 1) {
+      const start = b.start(i);
+      const end = b.end(i);
+      if (Number.isFinite(start) && Number.isFinite(end) && t + eps >= start && t - eps <= end) return true;
+    }
+    return false;
+  } catch (_e) {
+    return false;
+  }
+};
+
+const onSeekPreview = (e) => {
+  const v = e && e.target ? Number(e.target.value) : NaN;
+  if (!Number.isFinite(v)) return;
+  if (!pointerScrubbing.value) {
+    onSeekCommit(e);
+    return;
+  }
+  scrubbing.value = true;
+  scrubTime.value = Math.max(0, Math.min(duration.value || 0, v));
+  showUiTemporarily();
+};
+
+const onSeekCommit = (e) => {
   const v = e && e.target ? Number(e.target.value) : NaN;
   if (!art || !Number.isFinite(v)) return;
-  art.currentTime = Math.max(0, Math.min(duration.value || 0, v));
+  const next = Math.max(0, Math.min(duration.value || 0, v));
+  pointerScrubbing.value = false;
+  scrubbing.value = false;
+  scrubTime.value = next;
+  if (!isBufferedAt(next)) setBuffering(true);
+  try {
+    const videoEl = art && art.video ? art.video : null;
+    if (videoEl && typeof videoEl.fastSeek === 'function') {
+      videoEl.fastSeek(next);
+    } else {
+      art.currentTime = next;
+    }
+  } catch (_e) {
+    try {
+      art.currentTime = next;
+    } catch (_ignored) {}
+  }
   scheduleBufferedSync();
+};
+
+const onSeekCancel = () => {
+  scrubbing.value = false;
+  pointerScrubbing.value = false;
 };
 
 const setRate = (r) => {
