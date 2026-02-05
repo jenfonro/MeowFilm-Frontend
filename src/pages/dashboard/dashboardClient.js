@@ -1772,6 +1772,7 @@ export function initDashboardPage(bootstrap = {}) {
     { key: 'tianyi', name: '天翼', type: 'account' },
     { key: '139', name: '移动', type: 'authorization' },
     { key: 'uc', name: 'UC', type: 'cookie' },
+    { key: 'uc_tv', name: 'UC_TV', type: 'uc_tv' },
     { key: 'pan123', name: '123', type: 'account' },
     { key: '115', name: '115', type: 'cookie' },
     { key: 'bili', name: 'Bilibili', type: 'cookie' },
@@ -2259,15 +2260,19 @@ export function initDashboardPage(bootstrap = {}) {
     return savePanSettings(key, 'authorization', { authorization: authorization != null ? String(authorization) : '' });
   };
 
-  const savePanQuarkTv = async (key, refreshToken, deviceId) => {
-    return savePanSettings(key, 'quark_tv', {
+  const savePanTv = async (key, tvType, refreshToken, deviceId) => {
+    const t = tvType === 'uc_tv' ? 'uc_tv' : 'quark_tv';
+    return savePanSettings(key, t, {
       refresh_token: refreshToken != null ? String(refreshToken) : '',
       device_id: deviceId != null ? String(deviceId) : '',
     });
   };
 
   const savePanSettings = async (key, type, fields) => {
-    const t = type === 'account' || type === 'authorization' || type === 'cookie' || type === 'quark_tv' ? type : 'cookie';
+    const t =
+      type === 'account' || type === 'authorization' || type === 'cookie' || type === 'quark_tv' || type === 'uc_tv'
+        ? type
+        : 'cookie';
     const payload = Object.assign({ key, type: t }, fields && typeof fields === 'object' ? fields : {});
     const { resp, data } = await postForm('/dashboard/pan/settings', payload);
     if (resp.ok && data && data.success) return { ok: true, settings: data.settings || {} };
@@ -2298,13 +2303,13 @@ export function initDashboardPage(bootstrap = {}) {
         // CatPawOpen `/admin/pan/sync` accepts:
         // - {cookie} or {username,password} for online runtime sync
         // - {authorization} for builtin 139 resolver
-        // - {refresh_token, device_id} for builtin quark_tv resolver
+        // - {refresh_token, device_id} for builtin quark_tv/uc_tv resolver
         // For "authorization" types, send it as a cookie-equivalent value.
         const payload = {};
         if (typ === 'account') {
           if (typeof cur.username === 'string') payload.username = cur.username;
           if (typeof cur.password === 'string') payload.password = cur.password;
-        } else if (typ === 'quark_tv') {
+        } else if (typ === 'quark_tv' || typ === 'uc_tv') {
           if (typeof cur.refresh_token === 'string') payload.refresh_token = cur.refresh_token;
           if (typeof cur.device_id === 'string') payload.device_id = cur.device_id;
         } else if (typ === 'authorization') {
@@ -2461,7 +2466,7 @@ export function initDashboardPage(bootstrap = {}) {
 	    if (!def) return;
 	    panSettingsContent.innerHTML = '';
 
-	    if (def.type === 'quark_tv') {
+	    if (def.type === 'quark_tv' || def.type === 'uc_tv') {
 	      const v = getPanSettingValue(def.key);
 	      const form = createEl('div', { className: 'space-y-4 max-w-[640px]' });
 
@@ -2474,7 +2479,7 @@ export function initDashboardPage(bootstrap = {}) {
 	      rtInput.type = 'text';
 	      rtInput.autocomplete = 'off';
 	      rtInput.value = (v.refresh_token || '').toString();
-	      rtInput.setAttribute('data-pan-quarktv-refresh-token', def.key);
+	      rtInput.setAttribute('data-pan-tv-refresh-token', def.key);
 	      rtRow.appendChild(rtLabel);
 	      rtRow.appendChild(rtInput);
 
@@ -2487,13 +2492,13 @@ export function initDashboardPage(bootstrap = {}) {
 	      devInput.type = 'text';
 	      devInput.autocomplete = 'off';
 	      devInput.value = (v.device_id || '').toString();
-	      devInput.setAttribute('data-pan-quarktv-device-id', def.key);
+	      devInput.setAttribute('data-pan-tv-device-id', def.key);
 	      devRow.appendChild(devLabel);
 	      devRow.appendChild(devInput);
 
 	      const saveBtn = createEl('button', { className: 'btn-green', text: '保存' });
 	      saveBtn.type = 'button';
-	      saveBtn.setAttribute('data-pan-action', 'save-quark-tv');
+	      saveBtn.setAttribute('data-pan-action', 'save-tv');
 	      saveBtn.setAttribute('data-pan-key', def.key);
 
 	      form.appendChild(rtRow);
@@ -2808,14 +2813,14 @@ export function initDashboardPage(bootstrap = {}) {
         return;
       }
 
-      if (action === 'save-quark-tv') {
-        const rtEl = panSettingsContent.querySelector(`input[data-pan-quarktv-refresh-token="${key}"]`);
-        const devEl = panSettingsContent.querySelector(`input[data-pan-quarktv-device-id="${key}"]`);
+      if (action === 'save-tv') {
+        const rtEl = panSettingsContent.querySelector(`input[data-pan-tv-refresh-token="${key}"]`);
+        const devEl = panSettingsContent.querySelector(`input[data-pan-tv-device-id="${key}"]`);
         const refreshToken = rtEl ? rtEl.value : '';
         const deviceId = devEl ? devEl.value : '';
         await savePanLoginSettingToServer({
           key,
-          save: () => savePanQuarkTv(key, refreshToken, deviceId),
+          save: () => savePanTv(key, def.type, refreshToken, deviceId),
         });
         return;
       }
