@@ -18,8 +18,6 @@ export function initDashboardPage(bootstrap = {}) {
   const panSettingsMoreMenu = document.getElementById('panSettingsMoreMenu');
   const panSettingsScrollLeft = document.getElementById('panSettingsScrollLeft');
   const panSettingsScrollRight = document.getElementById('panSettingsScrollRight');
-  const openListSettingsForm = document.getElementById('openListSettingsForm');
-  const openListSaveStatus = document.getElementById('openListSaveStatus');
 
   const goProxySettingsForm = document.getElementById('goProxySettingsForm');
   const goProxySaveStatus = document.getElementById('goProxySaveStatus');
@@ -1321,12 +1319,6 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const setGoProxyStatus = bindInlineStatus(goProxySaveStatus);
-  const setOpenListStatus = bindInlineStatus(openListSaveStatus);
-
-  const normalizeHttpBaseWithSlash = (value) => {
-    const b = normalizeHttpBase(value);
-    return b ? `${b}/` : '';
-  };
 
   const normalizeGoProxyProbeState = (v) => {
     const raw = typeof v === 'string' ? v.trim() : '';
@@ -5249,15 +5241,6 @@ export function initDashboardPage(bootstrap = {}) {
             });
           });
 
-          const openListApiInput = openListSettingsForm
-            ? openListSettingsForm.querySelector('input[name="openListApiBase"]')
-            : null;
-        if (openListApiInput) openListApiInput.value = settings.openListApiBase || '';
-        const openListTokenInput = openListSettingsForm
-          ? openListSettingsForm.querySelector('input[name="openListToken"]')
-          : null;
-        if (openListTokenInput) openListTokenInput.value = settings.openListToken || '';
-
         if (goProxyEnabledInput) goProxyEnabledInput.checked = !!settings.goProxyEnabled;
         if (goProxyAutoSelectInput) goProxyAutoSelectInput.checked = !!settings.goProxyAutoSelect;
         const parsedServers = normalizeGoProxyServers(
@@ -5698,39 +5681,6 @@ export function initDashboardPage(bootstrap = {}) {
           setSubmitBtnLoading(false);
         }
       });
-    });
-  });
-
-  bindOnce(openListSettingsForm, () => {
-    let openListSaving = false;
-    openListSettingsForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (openListSaving) return;
-      openListSaving = true;
-      setOpenListStatus('', '保存中...');
-      try {
-        const apiInput = openListSettingsForm.querySelector('input[name="openListApiBase"]');
-        const tokenInput = openListSettingsForm.querySelector('input[name="openListToken"]');
-
-        const apiBaseRaw = apiInput && typeof apiInput.value === 'string' ? apiInput.value : '';
-        const tokenRaw = tokenInput && typeof tokenInput.value === 'string' ? tokenInput.value : '';
-
-        const normalizedBaseWithSlash = normalizeHttpBaseWithSlash(apiBaseRaw);
-        if (apiInput) apiInput.value = normalizedBaseWithSlash;
-
-        const { resp, data } = await postForm(openListSettingsForm.action, formToFields(openListSettingsForm));
-        const savedOk = !!(resp && resp.ok && data && data.success);
-        if (!savedOk) {
-          setOpenListStatus('error', (data && data.message) || '保存失败');
-          return;
-        }
-
-        setOpenListStatus('success', '保存成功');
-      } catch (_e) {
-        setOpenListStatus('error', '保存失败');
-      } finally {
-        openListSaving = false;
-      }
     });
   });
 

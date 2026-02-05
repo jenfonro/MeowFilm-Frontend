@@ -684,38 +684,6 @@
 
 		              <div class="pt-1 flex justify-start">
 		                <button type="submit" class="btn-green">保存</button>
-		              </div>
-	            </form>
-	          </div>
-
-	          <div class="admin-card space-y-4">
-	            <div class="flex items-center gap-3">
-	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">OpenList 设置</div>
-	              <div id="openListSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
-	            </div>
-	            <form id="openListSettingsForm" method="post" action="/dashboard/openlist/save" class="space-y-4">
-	              <div>
-	                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">OpenList 服务器地址</label>
-	                <input
-	                  name="openListApiBase"
-	                  class="tv-field"
-	                  placeholder="http://127.0.0.1:5244/"
-	                  :value="bootstrap.settings.openListApiBase"
-	                >
-	              </div>
-	              <div>
-	                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">OpenList 令牌</label>
-	                <input
-	                  name="openListToken"
-	                  class="tv-field"
-	                  type="password"
-	                  autocomplete="off"
-	                  placeholder="token"
-	                  :value="bootstrap.settings.openListToken"
-	                >
-	              </div>
-	              <div class="pt-1 flex justify-start">
-	                <button type="submit" class="btn-green">保存</button>
 	              </div>
 	            </form>
 	          </div>
