@@ -872,6 +872,7 @@ html:not(.dark) body {
 .dark .tv-field-success{border-color:#4ade80;}
 .tv-row{display:flex;align-items:center;gap:.75rem;border-radius:.5rem;border:1px solid #e5e7eb;background:#f9fafb;padding:.5rem .75rem;}
 .dark .tv-row{border-color:rgba(255,255,255,.1);background:rgba(255,255,255,.05);}
+.tv-row-fit{width:fit-content;max-width:100%;box-sizing:border-box;flex-wrap:wrap;}
 
 /* CatPawOpen config list: make the outer panels shrink to the table width (no extra blank space). */
 .tv-cpo-config-shell{display:inline-block;max-width:100%;}

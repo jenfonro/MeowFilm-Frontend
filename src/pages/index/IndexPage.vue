@@ -163,7 +163,7 @@
 		                :data-search-thread-count="bootstrap.settings.searchThreadCount"
 		                :data-search-site-order="JSON.stringify(bootstrap.settings.searchSiteOrder || [])"
 		                :data-search-cover-site="bootstrap.settings.searchCoverSite || ''"
-		                :data-magic-aggregate-rules="JSON.stringify(bootstrap.settings.magicAggregateRules || [])"
+		                :data-magic-search-clean-rules="JSON.stringify(bootstrap.settings.magicAggregateRegexRules || [])"
 		              ></div>
 	            <div id="homeSegToggle" class="mb-8 flex justify-center">
 	              <div class="seg-toggle relative inline-flex bg-gray-300/80 rounded-full p-1">

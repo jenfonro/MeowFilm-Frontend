@@ -41,7 +41,7 @@ export function initSearchPage() {
   let searchCoverSiteKey = '';
   let siteOrderList = [];
   let siteOrderMap = new Map();
-  let magicAggregateRules = [];
+  let magicSearchCleanRules = [];
 
   const safeParseJsonArray = (text) => {
     try {
@@ -70,8 +70,10 @@ export function initSearchPage() {
 
     searchCoverSiteKey = ((configEl && configEl.getAttribute('data-search-cover-site')) || '').trim();
 
-    const magicRaw = (configEl && configEl.getAttribute('data-magic-aggregate-rules')) || '[]';
-    magicAggregateRules = safeParseJsonArray(magicRaw)
+    const magicRaw =
+      (configEl && (configEl.getAttribute('data-magic-search-clean-rules') || configEl.getAttribute('data-magic-aggregate-rules'))) ||
+      '[]';
+    magicSearchCleanRules = safeParseJsonArray(magicRaw)
       .map((x) => (typeof x === 'string' ? x.trim() : ''))
       .filter(Boolean);
   };

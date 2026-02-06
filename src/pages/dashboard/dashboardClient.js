@@ -63,10 +63,6 @@ export function initDashboardPage(bootstrap = {}) {
   const magicEpisodeCleanRegexRuleList = document.getElementById('magicEpisodeCleanRegexRuleList');
   const magicEpisodeCleanRegexRuleStatus = document.getElementById('magicEpisodeCleanRegexRuleStatus');
 
-  const magicAggregateRuleInput = document.getElementById('magicAggregateRuleInput');
-  const magicAggregateRuleAdd = document.getElementById('magicAggregateRuleAdd');
-  const magicAggregateRuleList = document.getElementById('magicAggregateRuleList');
-  const magicAggregateRuleStatus = document.getElementById('magicAggregateRuleStatus');
   const magicAggregateRuleTestInput = document.getElementById('magicAggregateRuleTestInput');
   const magicAggregateRuleTestBtn = document.getElementById('magicAggregateRuleTestBtn');
   const magicAggregateRuleTestOutput = document.getElementById('magicAggregateRuleTestOutput');
@@ -6293,10 +6289,9 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
-  // 魔法匹配：列表清洗正则 + 选集匹配规则
+  // 魔法匹配：剧集列表清理规则 + 集数匹配规则
   let magicEpisodeRules = [];
   let magicEpisodeCleanRegexRules = [];
-  let magicAggregateRules = [];
   let magicAggregateRegexRules = [];
   let magicSaving = false;
 
@@ -6462,28 +6457,13 @@ export function initDashboardPage(bootstrap = {}) {
       return;
     }
 
-    const keywordRules = Array.isArray(magicAggregateRules) ? magicAggregateRules : [];
     const regexRules = Array.isArray(magicAggregateRegexRules) ? magicAggregateRegexRules : [];
-    if (!keywordRules.length && !regexRules.length) {
+    if (!regexRules.length) {
       setMagicAggregateTestOutput('error', '无清洗规则');
       return;
     }
 
     let out = String(raw);
-
-    const tokens = [];
-    keywordRules.forEach((r) => {
-      const s = typeof r === 'string' ? r.trim() : '';
-      if (!s) return;
-      s.split(/[、,，\s]+/g)
-        .map((t) => t.trim())
-        .filter(Boolean)
-        .forEach((t) => tokens.push(t));
-    });
-    tokens.forEach((t) => {
-      if (!t) return;
-      out = out.split(t).join('');
-    });
 
     const failures = [];
     regexRules.forEach((rule, idx) => {
@@ -6508,13 +6488,12 @@ export function initDashboardPage(bootstrap = {}) {
 
   const fetchMagicSettings = async () => getSuccessJson('/dashboard/magic/settings');
 
-	  const saveMagicSettings = async (episodeCleanRegexRules, episodeRules, aggregateRules, aggregateRegexRules) => {
+	  const saveMagicSettings = async (episodeCleanRegexRules, episodeRules, aggregateRegexRules) => {
 	    const cleanRules = Array.isArray(episodeCleanRegexRules) ? episodeCleanRegexRules : [];
 	    const { resp, data } = await postJsonSafe('/dashboard/magic/settings', {
 	      episodeCleanRegex: cleanRules[0] || '',
 	      episodeCleanRegexRules: cleanRules,
 	      episodeRules,
-	      aggregateRules,
 	      aggregateRegexRules,
 	    });
 	    if (!resp.ok || !data || data.success !== true) {
@@ -6523,28 +6502,28 @@ export function initDashboardPage(bootstrap = {}) {
     return data;
   };
 
-	  const renderMagicRuleList = (listEl, rules, kind) => {
-	    if (!listEl) return;
-	    listEl.innerHTML = '';
-	    const list = Array.isArray(rules) ? rules : [];
-	    if (!list.length) {
-	      appendEmptyItem(listEl);
-	      return;
-	    }
+		  const renderMagicRuleList = (listEl, rules, kind) => {
+		    if (!listEl) return;
+		    listEl.innerHTML = '';
+		    const list = Array.isArray(rules) ? rules : [];
+		    if (!list.length) {
+		      appendEmptyItem(listEl);
+		      return;
+		    }
 
-	    list.forEach((rule, idx) => {
-	      const li = createEl('li', { className: 'tv-row' });
-	      const seq = createEl('span', { className: CLS.mutedMonoXs, text: `${idx + 1}.` });
+		    list.forEach((rule, idx) => {
+		      const li = createEl('li', { className: 'tv-row tv-row-fit' });
+		      const seq = createEl('span', { className: CLS.mutedMonoXs, text: `${idx + 1}.` });
 
-	      if (kind === 'episode') {
-	        const r = rule && typeof rule === 'object' ? rule : { pattern: '', replace: '', flags: '' };
+		      if (kind === 'episode') {
+		        const r = rule && typeof rule === 'object' ? rule : { pattern: '', replace: '', flags: '' };
 
-	        const inputs = createEl('div', { className: 'flex items-center gap-2 min-w-0' });
-	        setStyles(inputs, { flex: '0 0 50%', maxWidth: '50%', minWidth: '0' });
+		        const inputs = createEl('div', { className: 'flex items-center gap-2 min-w-0' });
+		        setStyles(inputs, { width: 'min(900px, 70vw)', maxWidth: '100%', minWidth: '240px' });
 
-	        const patternInput = createEl('input', { className: 'tv-field min-w-0' });
-	        setStyles(patternInput, { flex: '5 1 0', minWidth: '0' });
-	        patternInput.value = typeof r.pattern === 'string' ? r.pattern : '';
+		        const patternInput = createEl('input', { className: 'tv-field min-w-0' });
+		        setStyles(patternInput, { flex: '5 1 0', minWidth: '0' });
+		        patternInput.value = typeof r.pattern === 'string' ? r.pattern : '';
 	        patternInput.disabled = magicSaving;
 	        patternInput.setAttribute('data-magic-kind', kind);
 	        patternInput.setAttribute('data-magic-idx', String(idx));
@@ -6562,14 +6541,14 @@ export function initDashboardPage(bootstrap = {}) {
 	        inputs.appendChild(patternInput);
 	        inputs.appendChild(replaceInput);
 	        li.appendChild(seq);
-	        li.appendChild(inputs);
-	      } else {
-	        const inputs = createEl('div', { className: 'min-w-0' });
-	        setStyles(inputs, { flex: '0 0 50%', maxWidth: '50%', minWidth: '0' });
+		        li.appendChild(inputs);
+		      } else {
+		        const inputs = createEl('div', { className: 'min-w-0' });
+		        setStyles(inputs, { width: 'min(900px, 70vw)', maxWidth: '100%', minWidth: '240px' });
 
-	        const input = createEl('input', { className: 'tv-field min-w-0' });
-	        input.value = typeof rule === 'string' ? rule : '';
-	        input.disabled = magicSaving;
+		        const input = createEl('input', { className: 'tv-field min-w-0' });
+		        input.value = typeof rule === 'string' ? rule : '';
+		        input.disabled = magicSaving;
 	        input.setAttribute('data-magic-kind', kind);
 	        input.setAttribute('data-magic-idx', String(idx));
 	        inputs.appendChild(input);
@@ -6600,7 +6579,6 @@ export function initDashboardPage(bootstrap = {}) {
 	  const renderMagicPanels = () => {
 	    renderMagicRuleList(magicEpisodeCleanRegexRuleList, magicEpisodeCleanRegexRules, 'episodeCleanRegex');
 	    renderMagicRuleList(magicEpisodeRuleList, magicEpisodeRules, 'episode');
-	    renderMagicRuleList(magicAggregateRuleList, magicAggregateRules, 'aggregate');
 	    renderMagicRuleList(magicAggregateRegexRuleList, magicAggregateRegexRules, 'aggregateRegex');
 	    setMagicTestOutput('', '');
 	    setMagicAggregateTestOutput('', '');
@@ -6611,7 +6589,6 @@ export function initDashboardPage(bootstrap = {}) {
 	    magicSaving = true;
 	    setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '保存中...');
 	    setMagicStatus(magicEpisodeRuleStatus, '', '保存中...');
-	    setMagicStatus(magicAggregateRuleStatus, '', '保存中...');
 	    setMagicStatus(magicAggregateRegexRuleStatus, '', '保存中...');
 	    try {
 	      const episodeRulesForSave = (Array.isArray(magicEpisodeRules) ? magicEpisodeRules : [])
@@ -6620,7 +6597,6 @@ export function initDashboardPage(bootstrap = {}) {
 	      const data = await saveMagicSettings(
 	        magicEpisodeCleanRegexRules,
 	        episodeRulesForSave,
-	        magicAggregateRules,
 	        Array.isArray(magicAggregateRegexRules) ? magicAggregateRegexRules : []
 	      );
 	      magicEpisodeCleanRegexRules = Array.isArray(data.episodeCleanRegexRules)
@@ -6631,20 +6607,17 @@ export function initDashboardPage(bootstrap = {}) {
 	      magicEpisodeRules = Array.isArray(data.episodeRules)
 	        ? data.episodeRules.map(decodeEpisodeRule).filter(Boolean)
 	        : magicEpisodeRules;
-	      magicAggregateRules = Array.isArray(data.aggregateRules) ? data.aggregateRules : magicAggregateRules;
       magicAggregateRegexRules = Array.isArray(data.aggregateRegexRules)
         ? data.aggregateRegexRules
         : magicAggregateRegexRules;
 	      renderMagicPanels();
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, 'success', '已保存');
 	      setMagicStatus(magicEpisodeRuleStatus, 'success', '已保存');
-	      setMagicStatus(magicAggregateRuleStatus, 'success', '已保存');
 	      setMagicStatus(magicAggregateRegexRuleStatus, 'success', '已保存');
 	    } catch (err) {
 	      const msg = (err && err.message) || '保存失败';
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, 'error', msg);
 	      setMagicStatus(magicEpisodeRuleStatus, 'error', msg);
-	      setMagicStatus(magicAggregateRuleStatus, 'error', msg);
 	      setMagicStatus(magicAggregateRegexRuleStatus, 'error', msg);
 	    } finally {
 	      magicSaving = false;
@@ -6654,18 +6627,16 @@ export function initDashboardPage(bootstrap = {}) {
 
 	  const loadMagicPanel = async () => {
 	    if (panelLoaded.magic || panelLoading.magic) return;
-	    if (!magicEpisodeRuleList && !magicAggregateRuleList) return;
+	    if (!magicEpisodeRuleList && !magicAggregateRegexRuleList) return;
 	    panelLoading.magic = true;
 	    setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '加载中...');
 	    setMagicStatus(magicEpisodeRuleStatus, '', '加载中...');
-	    setMagicStatus(magicAggregateRuleStatus, '', '加载中...');
 	    setMagicStatus(magicAggregateRegexRuleStatus, '', '加载中...');
 	    try {
 	      const data = await fetchMagicSettings();
 	      if (!data) {
 	        setMagicStatus(magicEpisodeCleanRegexRuleStatus, 'error', '加载失败');
 	        setMagicStatus(magicEpisodeRuleStatus, 'error', '加载失败');
-	        setMagicStatus(magicAggregateRuleStatus, 'error', '加载失败');
 	        setMagicStatus(magicAggregateRegexRuleStatus, 'error', '加载失败');
 	        return;
       }
@@ -6677,12 +6648,10 @@ export function initDashboardPage(bootstrap = {}) {
 	        : typeof data.episodeCleanRegex === 'string' && data.episodeCleanRegex.trim()
 	          ? [data.episodeCleanRegex.trim()]
 	          : [];
-	      magicAggregateRules = Array.isArray(data.aggregateRules) ? data.aggregateRules : [];
 	      magicAggregateRegexRules = Array.isArray(data.aggregateRegexRules) ? data.aggregateRegexRules : [];
 	      renderMagicPanels();
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '');
 	      setMagicStatus(magicEpisodeRuleStatus, '', '');
-	      setMagicStatus(magicAggregateRuleStatus, '', '');
 	      setMagicStatus(magicAggregateRegexRuleStatus, '', '');
 	      panelLoaded.magic = true;
 	    } finally {
@@ -6730,17 +6699,6 @@ export function initDashboardPage(bootstrap = {}) {
 	    });
 	  }
 
-  if (magicAggregateRuleAdd && magicAggregateRuleInput) {
-    magicAggregateRuleAdd.addEventListener('click', async () => {
-      const v = (magicAggregateRuleInput.value || '').trim();
-      if (!v) return;
-      magicAggregateRuleInput.value = '';
-      magicAggregateRules = (Array.isArray(magicAggregateRules) ? magicAggregateRules : []).concat([v]);
-      renderMagicPanels();
-      await persistMagic();
-    });
-  }
-
   if (magicAggregateRegexRuleAdd && magicAggregateRegexRuleInput) {
     magicAggregateRegexRuleAdd.addEventListener('click', async () => {
       const v = normalizeAggregateRegexRuleInput(magicAggregateRegexRuleInput.value || '');
@@ -6783,7 +6741,6 @@ export function initDashboardPage(bootstrap = {}) {
 	    if (kind === 'episodeCleanRegex')
 	      magicEpisodeCleanRegexRules = magicEpisodeCleanRegexRules.filter((_r, i) => i !== idx);
 	    if (kind === 'episode') magicEpisodeRules = magicEpisodeRules.filter((_r, i) => i !== idx);
-	    if (kind === 'aggregate') magicAggregateRules = magicAggregateRules.filter((_r, i) => i !== idx);
 	    if (kind === 'aggregateRegex') magicAggregateRegexRules = magicAggregateRegexRules.filter((_r, i) => i !== idx);
 	    renderMagicPanels();
 	    await persistMagic();
@@ -6806,7 +6763,6 @@ export function initDashboardPage(bootstrap = {}) {
 	      renderMagicPanels();
 	      return;
 	    }
-	    if (kind === 'aggregate' && idx < magicAggregateRules.length) magicAggregateRules[idx] = val;
 	    if (kind === 'aggregateRegex' && idx < magicAggregateRegexRules.length) {
 	      magicAggregateRegexRules[idx] = normalizeAggregateRegexRuleInput(val);
 	      renderMagicPanels();
@@ -6830,10 +6786,6 @@ export function initDashboardPage(bootstrap = {}) {
 	    magicEpisodeRuleList.addEventListener('click', onMagicListClick);
 	    magicEpisodeRuleList.addEventListener('change', onMagicListChange);
 	  }
-  if (magicAggregateRuleList) {
-    magicAggregateRuleList.addEventListener('click', onMagicListClick);
-    magicAggregateRuleList.addEventListener('change', onMagicListChange);
-  }
   if (magicAggregateRegexRuleList) {
     magicAggregateRegexRuleList.addEventListener('click', onMagicListClick);
     magicAggregateRegexRuleList.addEventListener('change', onMagicListChange);
