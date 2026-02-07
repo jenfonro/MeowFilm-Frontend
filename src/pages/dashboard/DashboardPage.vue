@@ -697,9 +697,12 @@
 			          <div class="admin-card space-y-3">
 			            <div class="flex items-center gap-3">
 			              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能剧集列表</div>
+			              <button id="magicEpisodeDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
+			              <button id="magicEpisodeDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
+			              <button id="magicEpisodeDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
 			            </div>
 
-			            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">剧集列表清理规则</div>
+			            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">剧集列表净化规则</div>
 			            <div class="flex items-center gap-2">
 			              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
 			                <input
@@ -763,6 +766,9 @@
           <div class="admin-card space-y-3">
             <div class="flex items-center gap-3">
               <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能播放源设置</div>
+              <button id="smartPanDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
+              <button id="smartPanDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
+              <button id="smartPanDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
             </div>
 
             <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先匹配片源规则</div>
@@ -810,6 +816,9 @@
           <div class="admin-card space-y-3">
             <div class="flex items-center gap-3">
               <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">电影匹配设置</div>
+              <button id="magicMovieDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
+              <button id="magicMovieDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
+              <button id="magicMovieDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
             </div>
 
             <div class="text-sm font-medium text-gray-700 dark:text-gray-200">电影匹配规则</div>
@@ -844,9 +853,12 @@
           <div class="admin-card space-y-3">
             <div class="flex items-center gap-3">
               <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能搜索列表设置</div>
+              <button id="magicAggregateDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
+              <button id="magicAggregateDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
+              <button id="magicAggregateDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
             </div>
 
-            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">搜索列表清理规则</div>
+            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">搜索列表净化规则</div>
             <div class="flex items-center gap-2">
               <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
                 <input
@@ -864,15 +876,26 @@
 
             <div class="pt-2 border-t border-gray-200 dark:border-white/10 space-y-2">
               <div class="text-sm font-medium text-gray-700 dark:text-gray-200">规则测试</div>
-              <div class="flex items-center gap-2">
-                <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                  <input
-                    id="magicAggregateRuleTestInput"
-                    class="tv-field min-w-0"
-                    placeholder="仙逆 年番 更新至123集 (2023)"
-                  />
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                  <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                    <input
+                      id="magicAggregateRuleTestQueryInput"
+                      class="tv-field min-w-0"
+                      placeholder="搜索关键字（可选）"
+                    />
+                  </div>
                 </div>
-                <button id="magicAggregateRuleTestBtn" type="button" class="btn-green">测试</button>
+                <div class="flex items-center gap-2">
+                  <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                    <input
+                      id="magicAggregateRuleTestInput"
+                      class="tv-field min-w-0"
+                      placeholder="搜索结果标题（如：仙逆 年番 更新至123集 (2023)）"
+                    />
+                  </div>
+                  <button id="magicAggregateRuleTestBtn" type="button" class="btn-green">测试</button>
+                </div>
               </div>
               <div class="min-w-0" style="width: 50%; max-width: 50%;">
                 <div id="magicAggregateRuleTestOutput" class="text-xs hidden text-gray-600 dark:text-gray-300 truncate" style="width: 100%;"></div>

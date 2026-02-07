@@ -60,6 +60,9 @@ export function initDashboardPage(bootstrap = {}) {
   const magicEpisodeRuleTestOutput = document.getElementById('magicEpisodeRuleTestOutput');
   const magicEpisodeCleanRegexRuleInput = document.getElementById('magicEpisodeCleanRegexRuleInput');
   const magicEpisodeCleanRegexRuleAdd = document.getElementById('magicEpisodeCleanRegexRuleAdd');
+  const magicEpisodeDefaultsRestore = document.getElementById('magicEpisodeDefaultsRestore');
+  const magicEpisodeDefaultsRestoreConfirm = document.getElementById('magicEpisodeDefaultsRestoreConfirm');
+  const magicEpisodeDefaultsRestoreCancel = document.getElementById('magicEpisodeDefaultsRestoreCancel');
   const magicEpisodeCleanRegexRuleList = document.getElementById('magicEpisodeCleanRegexRuleList');
   const magicEpisodeCleanRegexRuleStatus = document.getElementById('magicEpisodeCleanRegexRuleStatus');
 
@@ -71,8 +74,12 @@ export function initDashboardPage(bootstrap = {}) {
   const magicMovieRuleTestInput = document.getElementById('magicMovieRuleTestInput');
   const magicMovieRuleTestBtn = document.getElementById('magicMovieRuleTestBtn');
   const magicMovieRuleTestOutput = document.getElementById('magicMovieRuleTestOutput');
+  const magicMovieDefaultsRestore = document.getElementById('magicMovieDefaultsRestore');
+  const magicMovieDefaultsRestoreConfirm = document.getElementById('magicMovieDefaultsRestoreConfirm');
+  const magicMovieDefaultsRestoreCancel = document.getElementById('magicMovieDefaultsRestoreCancel');
 
   const magicAggregateRuleTestInput = document.getElementById('magicAggregateRuleTestInput');
+  const magicAggregateRuleTestQueryInput = document.getElementById('magicAggregateRuleTestQueryInput');
   const magicAggregateRuleTestBtn = document.getElementById('magicAggregateRuleTestBtn');
   const magicAggregateRuleTestOutput = document.getElementById('magicAggregateRuleTestOutput');
 
@@ -80,12 +87,18 @@ export function initDashboardPage(bootstrap = {}) {
   const magicAggregateRegexRuleAdd = document.getElementById('magicAggregateRegexRuleAdd');
   const magicAggregateRegexRuleList = document.getElementById('magicAggregateRegexRuleList');
   const magicAggregateRegexRuleStatus = document.getElementById('magicAggregateRegexRuleStatus');
+  const magicAggregateDefaultsRestore = document.getElementById('magicAggregateDefaultsRestore');
+  const magicAggregateDefaultsRestoreConfirm = document.getElementById('magicAggregateDefaultsRestoreConfirm');
+  const magicAggregateDefaultsRestoreCancel = document.getElementById('magicAggregateDefaultsRestoreCancel');
 
   const smartSourcePriorityTokensInput = document.getElementById('smartSourcePriorityTokensInput');
   const smartPanMatchTokensInput = document.getElementById('smartPanMatchTokensInput');
   const smartPanExtractModeSelect = document.getElementById('smartPanExtractModeSelect');
   const smartPanSettingsSave = document.getElementById('smartPanSettingsSave');
   const smartPanSettingsStatus = document.getElementById('smartPanSettingsStatus');
+  const smartPanDefaultsRestore = document.getElementById('smartPanDefaultsRestore');
+  const smartPanDefaultsRestoreConfirm = document.getElementById('smartPanDefaultsRestoreConfirm');
+  const smartPanDefaultsRestoreCancel = document.getElementById('smartPanDefaultsRestoreCancel');
 
   const panelLoaded = {
     site: false,
@@ -6304,14 +6317,18 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
-  // 魔法匹配：剧集列表清理规则 + 集数匹配规则
+  // 魔法匹配：剧集列表净化规则 + 集数匹配规则
   let magicEpisodeRules = [];
   let magicEpisodeCleanRegexRules = [];
+  let episodeDefaultsConfirming = false;
   let magicMovieRules = [];
+  let movieDefaultsConfirming = false;
   let magicAggregateRegexRules = [];
+  let aggregateDefaultsConfirming = false;
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
   let smartPanExtractMode = 'rule-first';
+  let smartPanDefaultsConfirming = false;
   let magicSaving = false;
 
   const normalizeCommaTokenLine = (text) => {
@@ -6344,6 +6361,12 @@ export function initDashboardPage(bootstrap = {}) {
       smartPanExtractModeSelect.disabled = magicSaving;
     }
     if (smartPanSettingsSave) smartPanSettingsSave.disabled = magicSaving;
+    if (smartPanDefaultsRestore) smartPanDefaultsRestore.disabled = magicSaving;
+    if (smartPanDefaultsRestoreConfirm) smartPanDefaultsRestoreConfirm.disabled = magicSaving;
+    if (smartPanDefaultsRestoreCancel) smartPanDefaultsRestoreCancel.disabled = magicSaving;
+    if (smartPanDefaultsRestore) smartPanDefaultsRestore.classList.toggle('hidden', smartPanDefaultsConfirming);
+    if (smartPanDefaultsRestoreConfirm) smartPanDefaultsRestoreConfirm.classList.toggle('hidden', !smartPanDefaultsConfirming);
+    if (smartPanDefaultsRestoreCancel) smartPanDefaultsRestoreCancel.classList.toggle('hidden', !smartPanDefaultsConfirming);
   };
 
   // Normalize common escapes from pasted regex strings (e.g. `\\d` -> `\d`).
@@ -6558,6 +6581,7 @@ export function initDashboardPage(bootstrap = {}) {
 
   const runMagicAggregateRuleTest = () => {
     if (!magicAggregateRuleTestInput) return;
+    const query = (magicAggregateRuleTestQueryInput && magicAggregateRuleTestQueryInput.value ? magicAggregateRuleTestQueryInput.value : '').trim();
     const raw = (magicAggregateRuleTestInput.value || '').trim();
     if (!raw) {
       setMagicAggregateTestOutput('', '请输入文本');
@@ -6566,9 +6590,12 @@ export function initDashboardPage(bootstrap = {}) {
 
     const regexRules = Array.isArray(magicAggregateRegexRules) ? magicAggregateRegexRules : [];
     if (!regexRules.length) {
-      setMagicAggregateTestOutput('error', '无清洗规则');
+      setMagicAggregateTestOutput('error', '无净化规则');
       return;
     }
+
+    const qTrailingDigitsMatch = query.match(/(\d+)\s*$/);
+    const qTrailingDigits = qTrailingDigitsMatch ? String(qTrailingDigitsMatch[1] || '') : '';
 
     let out = String(raw);
 
@@ -6579,6 +6606,20 @@ export function initDashboardPage(bootstrap = {}) {
       try {
         const re = buildRegexFromInput(s, { defaultFlags: 'g', forceGlobal: true });
         if (!re) throw new Error('invalid');
+
+        if (qTrailingDigits) {
+          // Keep behavior aligned with search aggregation:
+          // if the keyword ends with digits, skip rules that only strip trailing digits.
+          try {
+            const t1 = `x${qTrailingDigits}`;
+            const t2 = `x${qTrailingDigits}y`;
+            const r1 = t1.replace(re, '');
+            const r2 = t2.replace(re, '');
+            const isTrailingDigitsRule = r1 === 'x' && r2 === t2;
+            if (isTrailingDigitsRule) return;
+          } catch (_e) {}
+        }
+
         out = out.replace(re, '');
       } catch (_e) {
         failures.push(`#${idx + 1} 正则无效`);
@@ -6608,7 +6649,9 @@ export function initDashboardPage(bootstrap = {}) {
 
     const display = normalizeAggregateDisplay(out);
     const key = normalizeAggregateKey(out);
-    setMagicAggregateTestOutput('success', `清洗后：${display}${key ? `（聚合Key：${key}）` : ''}`);
+    const suffix = key ? `（聚合Key：${key}）` : '';
+    const hint = qTrailingDigits ? `（搜索尾号保护：${qTrailingDigits}）` : '';
+    setMagicAggregateTestOutput('success', `净化后：${display}${suffix}${hint}`);
   };
 
   const fetchMagicSettings = async () => getSuccessJson('/dashboard/magic/settings');
@@ -6694,6 +6737,14 @@ export function initDashboardPage(bootstrap = {}) {
 	        save.setAttribute('data-magic-idx', String(idx));
 	        li.appendChild(save);
 	      }
+	      if (kind === 'episodeCleanRegex' || kind === 'aggregateRegex') {
+	        const save = createEl('button', { className: 'action-btn green', text: '保存' });
+	        save.type = 'button';
+	        save.disabled = magicSaving;
+	        save.setAttribute('data-magic-save', kind);
+	        save.setAttribute('data-magic-idx', String(idx));
+	        li.appendChild(save);
+	      }
 
 	      const del = createEl('button', { className: 'action-btn red', text: '删除' });
 	      del.type = 'button';
@@ -6711,6 +6762,24 @@ export function initDashboardPage(bootstrap = {}) {
 	    renderMagicRuleList(magicMovieRuleList, magicMovieRules, 'movie');
 	    renderMagicRuleList(magicAggregateRegexRuleList, magicAggregateRegexRules, 'aggregateRegex');
       renderSmartPanSettings();
+      if (magicEpisodeDefaultsRestore) magicEpisodeDefaultsRestore.disabled = magicSaving;
+      if (magicEpisodeDefaultsRestoreConfirm) magicEpisodeDefaultsRestoreConfirm.disabled = magicSaving;
+      if (magicEpisodeDefaultsRestoreCancel) magicEpisodeDefaultsRestoreCancel.disabled = magicSaving;
+      if (magicEpisodeDefaultsRestore) magicEpisodeDefaultsRestore.classList.toggle('hidden', episodeDefaultsConfirming);
+      if (magicEpisodeDefaultsRestoreConfirm) magicEpisodeDefaultsRestoreConfirm.classList.toggle('hidden', !episodeDefaultsConfirming);
+      if (magicEpisodeDefaultsRestoreCancel) magicEpisodeDefaultsRestoreCancel.classList.toggle('hidden', !episodeDefaultsConfirming);
+      if (magicMovieDefaultsRestore) magicMovieDefaultsRestore.disabled = magicSaving;
+      if (magicMovieDefaultsRestoreConfirm) magicMovieDefaultsRestoreConfirm.disabled = magicSaving;
+      if (magicMovieDefaultsRestoreCancel) magicMovieDefaultsRestoreCancel.disabled = magicSaving;
+      if (magicMovieDefaultsRestore) magicMovieDefaultsRestore.classList.toggle('hidden', movieDefaultsConfirming);
+      if (magicMovieDefaultsRestoreConfirm) magicMovieDefaultsRestoreConfirm.classList.toggle('hidden', !movieDefaultsConfirming);
+      if (magicMovieDefaultsRestoreCancel) magicMovieDefaultsRestoreCancel.classList.toggle('hidden', !movieDefaultsConfirming);
+      if (magicAggregateDefaultsRestore) magicAggregateDefaultsRestore.disabled = magicSaving;
+      if (magicAggregateDefaultsRestoreConfirm) magicAggregateDefaultsRestoreConfirm.disabled = magicSaving;
+      if (magicAggregateDefaultsRestoreCancel) magicAggregateDefaultsRestoreCancel.disabled = magicSaving;
+      if (magicAggregateDefaultsRestore) magicAggregateDefaultsRestore.classList.toggle('hidden', aggregateDefaultsConfirming);
+      if (magicAggregateDefaultsRestoreConfirm) magicAggregateDefaultsRestoreConfirm.classList.toggle('hidden', !aggregateDefaultsConfirming);
+      if (magicAggregateDefaultsRestoreCancel) magicAggregateDefaultsRestoreCancel.classList.toggle('hidden', !aggregateDefaultsConfirming);
 	    setMagicTestOutput('', '');
 	    setMagicMovieTestOutput('', '');
 	    setMagicAggregateTestOutput('', '');
@@ -6834,10 +6903,24 @@ export function initDashboardPage(bootstrap = {}) {
       magicEpisodeRules = (Array.isArray(magicEpisodeRules) ? magicEpisodeRules : []).concat([
         { pattern: p.pattern, replace, flags: p.flags || '' },
       ]);
+      episodeDefaultsConfirming = false;
       renderMagicPanels();
       await persistMagic();
     });
   }
+
+  const DEFAULT_EPISODE_RULES = [
+    {
+      pattern: '.*?([Ss]\\d{1,2})?(?:第\\s*(\\d{1,4})(?!\\d)\\s*(?:集|话)|[Ee][Pp]?\\s*(\\d{1,4})(?!\\d)).*?.*',
+      replace: '$1E$2$3',
+      flags: 'i',
+    },
+    {
+      pattern: '^[\\s\\[\\]\\(\\){}【】._-]*0*(\\d{1,4})(?!\\d)[\\s\\[\\]\\(\\){}【】._-]*(?:\\.[A-Za-z0-9]{1,6})?\\s*$',
+      replace: 'E$1',
+      flags: 'i',
+    },
+  ];
 
   if (magicEpisodeRuleTestBtn) {
     magicEpisodeRuleTestBtn.addEventListener('click', () => runMagicEpisodeRuleTest());
@@ -6861,6 +6944,42 @@ export function initDashboardPage(bootstrap = {}) {
       magicMovieRulePatternInput.value = '';
       magicMovieRuleReplaceInput.value = '';
       magicMovieRules = (Array.isArray(magicMovieRules) ? magicMovieRules : []).concat([{ pattern: p.pattern, replace, flags: p.flags || '' }]);
+      movieDefaultsConfirming = false;
+      renderMagicPanels();
+      await persistMagic();
+    });
+  }
+
+  const DEFAULT_MOVIE_RULES = [
+    {
+      pattern:
+        '^\\s*(?!.*(?:S\\d{1,2}\\s*E\\d{1,3}|第\\s*\\d+\\s*[集话期]|(?:^|[\\s._-])(?:EP?|E)\\s*\\d+(?:$|[\\s._-])))(?=.*\\b(?:19\\d{2}|20\\d{2})\\b).*\\.(?:mkv|mp4)\\s*$',
+      replace: '',
+      flags: 'i',
+    },
+  ];
+
+  if (magicMovieDefaultsRestore) {
+    magicMovieDefaultsRestore.addEventListener('click', () => {
+      if (magicSaving) return;
+      movieDefaultsConfirming = true;
+      renderMagicPanels();
+    });
+  }
+  if (magicMovieDefaultsRestoreCancel) {
+    magicMovieDefaultsRestoreCancel.addEventListener('click', () => {
+      if (magicSaving) return;
+      movieDefaultsConfirming = false;
+      renderMagicPanels();
+    });
+  }
+  if (magicMovieDefaultsRestoreConfirm) {
+    magicMovieDefaultsRestoreConfirm.addEventListener('click', async () => {
+      if (magicSaving) return;
+      movieDefaultsConfirming = false;
+      magicMovieRules = DEFAULT_MOVIE_RULES.map((r) => ({ ...r }));
+      if (magicMovieRulePatternInput) magicMovieRulePatternInput.value = '';
+      if (magicMovieRuleReplaceInput) magicMovieRuleReplaceInput.value = '';
       renderMagicPanels();
       await persistMagic();
     });
@@ -6886,10 +7005,45 @@ export function initDashboardPage(bootstrap = {}) {
 	      if (!v) return;
 	      magicEpisodeCleanRegexRuleInput.value = '';
 	      magicEpisodeCleanRegexRules = (Array.isArray(magicEpisodeCleanRegexRules) ? magicEpisodeCleanRegexRules : []).concat([v]);
+        episodeDefaultsConfirming = false;
 	      renderMagicPanels();
 	      await persistMagic();
 	    });
 	  }
+
+    const DEFAULT_EPISODE_CLEAN_RULES = [
+      String.raw`\[\s*\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)\s*\]|【[^】]*】`,
+      String.raw`(?:^|[\s\[\]\(\){}【】._-])(?:4k|8k|2160p|1080p|720p)(?=$|[\s\[\]\(\){}【】._-])`,
+      String.raw`高\s*码\s*(?:率|资源|直链)?|码\s*率`,
+    ];
+
+    if (magicEpisodeDefaultsRestore) {
+      magicEpisodeDefaultsRestore.addEventListener('click', () => {
+        if (magicSaving) return;
+        episodeDefaultsConfirming = true;
+        renderMagicPanels();
+      });
+    }
+    if (magicEpisodeDefaultsRestoreCancel) {
+      magicEpisodeDefaultsRestoreCancel.addEventListener('click', () => {
+        if (magicSaving) return;
+        episodeDefaultsConfirming = false;
+        renderMagicPanels();
+      });
+    }
+    if (magicEpisodeDefaultsRestoreConfirm) {
+      magicEpisodeDefaultsRestoreConfirm.addEventListener('click', async () => {
+        if (magicSaving) return;
+        episodeDefaultsConfirming = false;
+        magicEpisodeCleanRegexRules = DEFAULT_EPISODE_CLEAN_RULES.slice();
+        magicEpisodeRules = DEFAULT_EPISODE_RULES.map((r) => ({ ...r }));
+        if (magicEpisodeCleanRegexRuleInput) magicEpisodeCleanRegexRuleInput.value = '';
+        if (magicEpisodeRulePatternInput) magicEpisodeRulePatternInput.value = '';
+        if (magicEpisodeRuleReplaceInput) magicEpisodeRuleReplaceInput.value = '';
+        renderMagicPanels();
+        await persistMagic();
+      });
+    }
 
   if (magicAggregateRegexRuleAdd && magicAggregateRegexRuleInput) {
     magicAggregateRegexRuleAdd.addEventListener('click', async () => {
@@ -6897,6 +7051,42 @@ export function initDashboardPage(bootstrap = {}) {
       if (!v) return;
       magicAggregateRegexRuleInput.value = '';
       magicAggregateRegexRules = (Array.isArray(magicAggregateRegexRules) ? magicAggregateRegexRules : []).concat([v]);
+      aggregateDefaultsConfirming = false;
+      renderMagicPanels();
+      await persistMagic();
+    });
+  }
+
+  const DEFAULT_AGGREGATE_REGEX_RULES = [
+    String.raw`\([^)]*\)|（[^）]*）|\[[^\]]*\]|\{[^}]*\}|【[^】]*】`,
+    String.raw`(?<!新)年\s*番\s*\d+|(?<!新)年\s*番`,
+    String.raw`更新\s*中|(?:更新(?:至|到)?|更(?:至|到)?|更|首\s*更)\s*(?:EP|E)?\s*\d{1,4}\s*(?:集|话)?|首\s*更`,
+    String.raw`(?:HD\s*)?(?:4[kK]|8[kK])|(?:2160|1080|720)[pP]|国\s*漫|臻\s*彩|杜\s*比\s*音\s*效`,
+    String.raw`(?:19\d{2}|20\d{2})(?=\s*(?:(?:HD\s*)?(?:4[kK]|8[kK])|(?:更新|更)))`,
+    String.raw`最\s*新\s*(?:一\s*集|更\s*新)`,
+    String.raw`(?<=\D)\d{1,4}$`,
+  ];
+
+  if (magicAggregateDefaultsRestore) {
+    magicAggregateDefaultsRestore.addEventListener('click', () => {
+      if (magicSaving) return;
+      aggregateDefaultsConfirming = true;
+      renderMagicPanels();
+    });
+  }
+  if (magicAggregateDefaultsRestoreCancel) {
+    magicAggregateDefaultsRestoreCancel.addEventListener('click', () => {
+      if (magicSaving) return;
+      aggregateDefaultsConfirming = false;
+      renderMagicPanels();
+    });
+  }
+  if (magicAggregateDefaultsRestoreConfirm) {
+    magicAggregateDefaultsRestoreConfirm.addEventListener('click', async () => {
+      if (magicSaving) return;
+      aggregateDefaultsConfirming = false;
+      magicAggregateRegexRules = DEFAULT_AGGREGATE_REGEX_RULES.slice();
+      if (magicAggregateRegexRuleInput) magicAggregateRegexRuleInput.value = '';
       renderMagicPanels();
       await persistMagic();
     });
@@ -6915,10 +7105,48 @@ export function initDashboardPage(bootstrap = {}) {
       }
     });
   }
+  if (magicAggregateRuleTestQueryInput) {
+    magicAggregateRuleTestQueryInput.addEventListener('keydown', (e) => {
+      if (!e) return;
+      const key = e.key || '';
+      if (key === 'Enter') {
+        e.preventDefault();
+        runMagicAggregateRuleTest();
+      }
+    });
+  }
 
   if (smartPanSettingsSave) {
     smartPanSettingsSave.addEventListener('click', async () => {
       if (magicSaving) return;
+      renderMagicPanels();
+      await persistMagic();
+    });
+  }
+
+  const DEFAULT_SMART_SOURCE_PRIORITY_TOKENS = ['60fps', '60帧', '4K', '2160P'];
+  const DEFAULT_SMART_PAN_MATCH_TOKENS = ['天意', '逸动', '夸父', '优夕', '百度'];
+
+  if (smartPanDefaultsRestore) {
+    smartPanDefaultsRestore.addEventListener('click', () => {
+      if (magicSaving) return;
+      smartPanDefaultsConfirming = true;
+      renderMagicPanels();
+    });
+  }
+  if (smartPanDefaultsRestoreCancel) {
+    smartPanDefaultsRestoreCancel.addEventListener('click', () => {
+      if (magicSaving) return;
+      smartPanDefaultsConfirming = false;
+      renderMagicPanels();
+    });
+  }
+  if (smartPanDefaultsRestoreConfirm) {
+    smartPanDefaultsRestoreConfirm.addEventListener('click', async () => {
+      if (magicSaving) return;
+      smartPanDefaultsConfirming = false;
+      smartSourcePriorityTokens = DEFAULT_SMART_SOURCE_PRIORITY_TOKENS.slice();
+      smartPanMatchTokens = DEFAULT_SMART_PAN_MATCH_TOKENS.slice();
       renderMagicPanels();
       await persistMagic();
     });
@@ -6990,13 +7218,11 @@ export function initDashboardPage(bootstrap = {}) {
 	    if (kind === 'aggregateRegex' && idx < magicAggregateRegexRules.length) {
 	      magicAggregateRegexRules[idx] = normalizeAggregateRegexRuleInput(val);
 	      renderMagicPanels();
-	      await persistMagic();
 	      return;
 	    }
 	    if (kind === 'episodeCleanRegex' && idx < magicEpisodeCleanRegexRules.length) {
 	      magicEpisodeCleanRegexRules[idx] = normalizeAggregateRegexRuleInput(val);
 	      renderMagicPanels();
-	      await persistMagic();
 	      return;
 	    }
 	    await persistMagic();
