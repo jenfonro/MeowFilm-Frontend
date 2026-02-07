@@ -63,6 +63,15 @@ export function initDashboardPage(bootstrap = {}) {
   const magicEpisodeCleanRegexRuleList = document.getElementById('magicEpisodeCleanRegexRuleList');
   const magicEpisodeCleanRegexRuleStatus = document.getElementById('magicEpisodeCleanRegexRuleStatus');
 
+  const magicMovieRulePatternInput = document.getElementById('magicMovieRulePatternInput');
+  const magicMovieRuleReplaceInput = document.getElementById('magicMovieRuleReplaceInput');
+  const magicMovieRuleAdd = document.getElementById('magicMovieRuleAdd');
+  const magicMovieRuleList = document.getElementById('magicMovieRuleList');
+  const magicMovieRuleStatus = document.getElementById('magicMovieRuleStatus');
+  const magicMovieRuleTestInput = document.getElementById('magicMovieRuleTestInput');
+  const magicMovieRuleTestBtn = document.getElementById('magicMovieRuleTestBtn');
+  const magicMovieRuleTestOutput = document.getElementById('magicMovieRuleTestOutput');
+
   const magicAggregateRuleTestInput = document.getElementById('magicAggregateRuleTestInput');
   const magicAggregateRuleTestBtn = document.getElementById('magicAggregateRuleTestBtn');
   const magicAggregateRuleTestOutput = document.getElementById('magicAggregateRuleTestOutput');
@@ -6298,6 +6307,7 @@ export function initDashboardPage(bootstrap = {}) {
   // 魔法匹配：剧集列表清理规则 + 集数匹配规则
   let magicEpisodeRules = [];
   let magicEpisodeCleanRegexRules = [];
+  let magicMovieRules = [];
   let magicAggregateRegexRules = [];
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
@@ -6419,6 +6429,7 @@ export function initDashboardPage(bootstrap = {}) {
   const setMagicStatus = (el, type, text) => setInlineStatus(el, type, text);
 
   const setMagicTestOutput = bindInlineStatus(magicEpisodeRuleTestOutput);
+  const setMagicMovieTestOutput = bindInlineStatus(magicMovieRuleTestOutput);
   const setMagicAggregateTestOutput = bindInlineStatus(magicAggregateRuleTestOutput);
 
   const normalizeReplaceTemplate = (replaceRaw) => {
@@ -6490,6 +6501,61 @@ export function initDashboardPage(bootstrap = {}) {
     setMagicTestOutput('error', '未命中');
   };
 
+  const runMagicMovieRuleTest = () => {
+    if (!magicMovieRuleTestInput) return;
+    const filename = (magicMovieRuleTestInput.value || '').trim();
+    if (!filename) {
+      setMagicMovieTestOutput('', '请输入文件名');
+      return;
+    }
+
+    const list = Array.isArray(magicMovieRules) ? magicMovieRules : [];
+    if (!list.length) {
+      setMagicMovieTestOutput('error', '无匹配规则');
+      return;
+    }
+
+    const failures = [];
+    for (let i = 0; i < list.length; i += 1) {
+      const rule = list[i] && typeof list[i] === 'object' ? list[i] : null;
+      const pattern = rule && typeof rule.pattern === 'string' ? rule.pattern.trim() : '';
+      if (!pattern) continue;
+      const flags = rule && typeof rule.flags === 'string' && rule.flags.trim() ? rule.flags.trim() : 'i';
+      let re = null;
+      try {
+        re = new RegExp(pattern, flags);
+      } catch (_e) {
+        failures.push(`#${i + 1} 正则无效`);
+        continue;
+      }
+      if (!re.test(filename)) continue;
+
+      const replace = normalizeReplaceTemplate(rule && typeof rule.replace === 'string' ? rule.replace : '');
+      if (!replace) {
+        setMagicMovieTestOutput('success', `命中第 ${i + 1} 条：未设置 replace（无改写）`);
+        return;
+      }
+      let out = '';
+      try {
+        out = filename.replace(re, replace);
+      } catch (_e) {
+        out = '';
+      }
+      if (!out) {
+        setMagicMovieTestOutput('error', `命中第 ${i + 1} 条，但改写失败`);
+        return;
+      }
+      setMagicMovieTestOutput('success', `命中第 ${i + 1} 条：${out}`);
+      return;
+    }
+
+    if (failures.length) {
+      setMagicMovieTestOutput('error', `未命中（${failures.join('，')}）`);
+      return;
+    }
+    setMagicMovieTestOutput('error', '未命中');
+  };
+
   const runMagicAggregateRuleTest = () => {
     if (!magicAggregateRuleTestInput) return;
     const raw = (magicAggregateRuleTestInput.value || '').trim();
@@ -6529,12 +6595,13 @@ export function initDashboardPage(bootstrap = {}) {
 
   const fetchMagicSettings = async () => getSuccessJson('/dashboard/magic/settings');
 
-	  const saveMagicSettings = async (episodeCleanRegexRules, episodeRules, aggregateRegexRules, smartSettings = {}) => {
+	  const saveMagicSettings = async (episodeCleanRegexRules, episodeRules, movieRules, aggregateRegexRules, smartSettings = {}) => {
 	    const cleanRules = Array.isArray(episodeCleanRegexRules) ? episodeCleanRegexRules : [];
 	    const { resp, data } = await postJsonSafe('/dashboard/magic/settings', {
 	      episodeCleanRegex: cleanRules[0] || '',
 	      episodeCleanRegexRules: cleanRules,
 	      episodeRules,
+        movieRules,
 	      aggregateRegexRules,
         smartSourcePriorityTokens: Array.isArray(smartSettings.smartSourcePriorityTokens) ? smartSettings.smartSourcePriorityTokens : [],
         smartPanMatchTokens: Array.isArray(smartSettings.smartPanMatchTokens) ? smartSettings.smartPanMatchTokens : [],
@@ -6559,7 +6626,7 @@ export function initDashboardPage(bootstrap = {}) {
 		      const li = createEl('li', { className: 'tv-row tv-row-fit' });
 		      const seq = createEl('span', { className: CLS.mutedMonoXs, text: `${idx + 1}.` });
 
-		      if (kind === 'episode') {
+		      if (kind === 'episode' || kind === 'movie') {
 		        const r = rule && typeof rule === 'object' ? rule : { pattern: '', replace: '', flags: '' };
 
 		        const inputs = createEl('div', { className: 'flex items-center gap-2 min-w-0' });
@@ -6601,7 +6668,7 @@ export function initDashboardPage(bootstrap = {}) {
 	        li.appendChild(inputs);
 	      }
 
-	      if (kind === 'episode') {
+	      if (kind === 'episode' || kind === 'movie') {
 	        const save = createEl('button', { className: 'action-btn green', text: '保存' });
 	        save.type = 'button';
 	        save.disabled = magicSaving;
@@ -6623,9 +6690,11 @@ export function initDashboardPage(bootstrap = {}) {
 	  const renderMagicPanels = () => {
 	    renderMagicRuleList(magicEpisodeCleanRegexRuleList, magicEpisodeCleanRegexRules, 'episodeCleanRegex');
 	    renderMagicRuleList(magicEpisodeRuleList, magicEpisodeRules, 'episode');
+	    renderMagicRuleList(magicMovieRuleList, magicMovieRules, 'movie');
 	    renderMagicRuleList(magicAggregateRegexRuleList, magicAggregateRegexRules, 'aggregateRegex');
       renderSmartPanSettings();
 	    setMagicTestOutput('', '');
+	    setMagicMovieTestOutput('', '');
 	    setMagicAggregateTestOutput('', '');
 	  };
 
@@ -6634,6 +6703,7 @@ export function initDashboardPage(bootstrap = {}) {
 	    magicSaving = true;
 	    setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '保存中...');
 	    setMagicStatus(magicEpisodeRuleStatus, '', '保存中...');
+	    setMagicStatus(magicMovieRuleStatus, '', '保存中...');
 	    setMagicStatus(magicAggregateRegexRuleStatus, '', '保存中...');
       setMagicStatus(smartPanSettingsStatus, '', '保存中...');
 	    try {
@@ -6644,9 +6714,13 @@ export function initDashboardPage(bootstrap = {}) {
 	      const episodeRulesForSave = (Array.isArray(magicEpisodeRules) ? magicEpisodeRules : [])
 	        .map(encodeEpisodeRule)
 	        .filter(Boolean);
+        const movieRulesForSave = (Array.isArray(magicMovieRules) ? magicMovieRules : [])
+          .map(encodeEpisodeRule)
+          .filter(Boolean);
 	      const data = await saveMagicSettings(
 	        magicEpisodeCleanRegexRules,
 	        episodeRulesForSave,
+          movieRulesForSave,
 	        Array.isArray(magicAggregateRegexRules) ? magicAggregateRegexRules : [],
           { smartSourcePriorityTokens, smartPanMatchTokens, smartPanExtractMode }
 	      );
@@ -6658,6 +6732,9 @@ export function initDashboardPage(bootstrap = {}) {
 	      magicEpisodeRules = Array.isArray(data.episodeRules)
 	        ? data.episodeRules.map(decodeEpisodeRule).filter(Boolean)
 	        : magicEpisodeRules;
+        magicMovieRules = Array.isArray(data.movieRules)
+          ? data.movieRules.map(decodeEpisodeRule).filter(Boolean)
+          : magicMovieRules;
       magicAggregateRegexRules = Array.isArray(data.aggregateRegexRules)
         ? data.aggregateRegexRules
         : magicAggregateRegexRules;
@@ -6667,12 +6744,14 @@ export function initDashboardPage(bootstrap = {}) {
 	      renderMagicPanels();
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, 'success', '已保存');
 	      setMagicStatus(magicEpisodeRuleStatus, 'success', '已保存');
+	      setMagicStatus(magicMovieRuleStatus, 'success', '已保存');
 	      setMagicStatus(magicAggregateRegexRuleStatus, 'success', '已保存');
         setMagicStatus(smartPanSettingsStatus, 'success', '已保存');
 	    } catch (err) {
 	      const msg = (err && err.message) || '保存失败';
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, 'error', msg);
 	      setMagicStatus(magicEpisodeRuleStatus, 'error', msg);
+	      setMagicStatus(magicMovieRuleStatus, 'error', msg);
 	      setMagicStatus(magicAggregateRegexRuleStatus, 'error', msg);
         setMagicStatus(smartPanSettingsStatus, 'error', msg);
 	    } finally {
@@ -6683,10 +6762,11 @@ export function initDashboardPage(bootstrap = {}) {
 
 	  const loadMagicPanel = async () => {
 	    if (panelLoaded.magic || panelLoading.magic) return;
-	    if (!magicEpisodeRuleList && !magicAggregateRegexRuleList) return;
+	    if (!magicEpisodeRuleList && !magicMovieRuleList && !magicAggregateRegexRuleList) return;
 	    panelLoading.magic = true;
 	    setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '加载中...');
 	    setMagicStatus(magicEpisodeRuleStatus, '', '加载中...');
+	    setMagicStatus(magicMovieRuleStatus, '', '加载中...');
 	    setMagicStatus(magicAggregateRegexRuleStatus, '', '加载中...');
       setMagicStatus(smartPanSettingsStatus, '', '加载中...');
 	    try {
@@ -6694,6 +6774,7 @@ export function initDashboardPage(bootstrap = {}) {
 	      if (!data) {
 	        setMagicStatus(magicEpisodeCleanRegexRuleStatus, 'error', '加载失败');
 	        setMagicStatus(magicEpisodeRuleStatus, 'error', '加载失败');
+	        setMagicStatus(magicMovieRuleStatus, 'error', '加载失败');
 	        setMagicStatus(magicAggregateRegexRuleStatus, 'error', '加载失败');
           setMagicStatus(smartPanSettingsStatus, 'error', '加载失败');
 	        return;
@@ -6701,6 +6782,9 @@ export function initDashboardPage(bootstrap = {}) {
 	      magicEpisodeRules = Array.isArray(data.episodeRules)
 	        ? data.episodeRules.map(decodeEpisodeRule).filter(Boolean)
 	        : [];
+        magicMovieRules = Array.isArray(data.movieRules)
+          ? data.movieRules.map(decodeEpisodeRule).filter(Boolean)
+          : [];
 	      magicEpisodeCleanRegexRules = Array.isArray(data.episodeCleanRegexRules)
 	        ? data.episodeCleanRegexRules
 	        : typeof data.episodeCleanRegex === 'string' && data.episodeCleanRegex.trim()
@@ -6713,6 +6797,7 @@ export function initDashboardPage(bootstrap = {}) {
 	      renderMagicPanels();
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '');
 	      setMagicStatus(magicEpisodeRuleStatus, '', '');
+	      setMagicStatus(magicMovieRuleStatus, '', '');
 	      setMagicStatus(magicAggregateRegexRuleStatus, '', '');
         setMagicStatus(smartPanSettingsStatus, '', '');
 	      panelLoaded.magic = true;
@@ -6746,6 +6831,33 @@ export function initDashboardPage(bootstrap = {}) {
       if (key === 'Enter') {
         e.preventDefault();
         runMagicEpisodeRuleTest();
+      }
+    });
+  }
+
+  if (magicMovieRuleAdd && magicMovieRulePatternInput && magicMovieRuleReplaceInput) {
+    magicMovieRuleAdd.addEventListener('click', async () => {
+      const p = normalizePatternInput(magicMovieRulePatternInput.value || '');
+      if (!p) return;
+      const replace = (magicMovieRuleReplaceInput.value || '').trim();
+      magicMovieRulePatternInput.value = '';
+      magicMovieRuleReplaceInput.value = '';
+      magicMovieRules = (Array.isArray(magicMovieRules) ? magicMovieRules : []).concat([{ pattern: p.pattern, replace, flags: p.flags || '' }]);
+      renderMagicPanels();
+      await persistMagic();
+    });
+  }
+
+  if (magicMovieRuleTestBtn) {
+    magicMovieRuleTestBtn.addEventListener('click', () => runMagicMovieRuleTest());
+  }
+  if (magicMovieRuleTestInput) {
+    magicMovieRuleTestInput.addEventListener('keydown', (e) => {
+      if (!e) return;
+      const key = e.key || '';
+      if (key === 'Enter') {
+        e.preventDefault();
+        runMagicMovieRuleTest();
       }
     });
   }
@@ -6825,6 +6937,7 @@ export function initDashboardPage(bootstrap = {}) {
 	    if (kind === 'episodeCleanRegex')
 	      magicEpisodeCleanRegexRules = magicEpisodeCleanRegexRules.filter((_r, i) => i !== idx);
 	    if (kind === 'episode') magicEpisodeRules = magicEpisodeRules.filter((_r, i) => i !== idx);
+	    if (kind === 'movie') magicMovieRules = magicMovieRules.filter((_r, i) => i !== idx);
 	    if (kind === 'aggregateRegex') magicAggregateRegexRules = magicAggregateRegexRules.filter((_r, i) => i !== idx);
 	    renderMagicPanels();
 	    await persistMagic();
@@ -6844,6 +6957,15 @@ export function initDashboardPage(bootstrap = {}) {
 	      if (field === 'replace') r.replace = val;
 	      else r.pattern = normalizeRegexText(val);
 	      magicEpisodeRules[idx] = r;
+	      renderMagicPanels();
+	      return;
+	    }
+	    if (kind === 'movie' && idx < magicMovieRules.length) {
+	      const field = (input.getAttribute('data-magic-field') || '').trim();
+	      const r = magicMovieRules[idx] && typeof magicMovieRules[idx] === 'object' ? magicMovieRules[idx] : {};
+	      if (field === 'replace') r.replace = val;
+	      else r.pattern = normalizeRegexText(val);
+	      magicMovieRules[idx] = r;
 	      renderMagicPanels();
 	      return;
 	    }
@@ -6870,6 +6992,10 @@ export function initDashboardPage(bootstrap = {}) {
 	    magicEpisodeRuleList.addEventListener('click', onMagicListClick);
 	    magicEpisodeRuleList.addEventListener('change', onMagicListChange);
 	  }
+    if (magicMovieRuleList) {
+      magicMovieRuleList.addEventListener('click', onMagicListClick);
+      magicMovieRuleList.addEventListener('change', onMagicListChange);
+    }
   if (magicAggregateRegexRuleList) {
     magicAggregateRegexRuleList.addEventListener('click', onMagicListClick);
     magicAggregateRegexRuleList.addEventListener('change', onMagicListChange);

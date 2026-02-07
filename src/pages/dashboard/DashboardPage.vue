@@ -762,45 +762,6 @@
 
           <div class="admin-card space-y-3">
             <div class="flex items-center gap-3">
-              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能搜索列表设置</div>
-            </div>
-
-            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">搜索列表清理规则</div>
-            <div class="flex items-center gap-2">
-              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                <input
-                  id="magicAggregateRegexRuleInput"
-                  class="tv-field min-w-0"
-                  placeholder="\\(\\d{4}\\)|\\[.*?\\]|更新至\\d+集"
-                />
-              </div>
-              <button id="magicAggregateRegexRuleAdd" type="button" class="btn-green">添加</button>
-            </div>
-            <div id="magicAggregateRegexRuleStatus" class="text-xs hidden"></div>
-            <ul id="magicAggregateRegexRuleList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
-              <li class="text-gray-500 dark:text-gray-400">无数据</li>
-            </ul>
-
-            <div class="pt-2 border-t border-gray-200 dark:border-white/10 space-y-2">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">规则测试</div>
-              <div class="flex items-center gap-2">
-                <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                  <input
-                    id="magicAggregateRuleTestInput"
-                    class="tv-field min-w-0"
-                    placeholder="仙逆 年番 更新至123集 (2023)"
-                  />
-                </div>
-                <button id="magicAggregateRuleTestBtn" type="button" class="btn-green">测试</button>
-              </div>
-              <div class="min-w-0" style="width: 50%; max-width: 50%;">
-                <div id="magicAggregateRuleTestOutput" class="text-xs hidden text-gray-600 dark:text-gray-300 truncate" style="width: 100%;"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="admin-card space-y-3">
-            <div class="flex items-center gap-3">
               <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能播放源设置</div>
             </div>
 
@@ -843,6 +804,79 @@
             <div id="smartPanSettingsStatus" class="text-xs hidden"></div>
             <div class="text-xs text-gray-500 dark:text-gray-400">
               说明：用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。
+            </div>
+          </div>
+
+          <div class="admin-card space-y-3">
+            <div class="flex items-center gap-3">
+              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">电影匹配设置</div>
+            </div>
+
+            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">电影匹配规则</div>
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                  <input id="magicMovieRulePatternInput" class="tv-field min-w-0" placeholder="^(?!.*S\\d{1,2}\\s*E\\d{1,3}).*?\\.(mkv|mp4)$" />
+                  <input id="magicMovieRuleReplaceInput" class="tv-field min-w-0" placeholder="replace（可空）" />
+                </div>
+                <button id="magicMovieRuleAdd" type="button" class="btn-green">添加</button>
+              </div>
+            </div>
+            <div id="magicMovieRuleStatus" class="text-xs hidden"></div>
+            <ul id="magicMovieRuleList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+              <li class="text-gray-500 dark:text-gray-400">无数据</li>
+            </ul>
+
+            <div class="pt-2 border-t border-gray-200 dark:border-white/10 space-y-2">
+              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">规则测试</div>
+              <div class="flex items-center gap-2">
+                <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                  <input id="magicMovieRuleTestInput" class="tv-field min-w-0" placeholder="Hamnet (2025) (1080p WEB-DL).mkv" />
+                </div>
+                <button id="magicMovieRuleTestBtn" type="button" class="btn-green">测试</button>
+              </div>
+              <div class="min-w-0" style="width: 50%; max-width: 50%;">
+                <div id="magicMovieRuleTestOutput" class="text-xs hidden text-gray-600 dark:text-gray-300 truncate" style="width: 100%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card space-y-3">
+            <div class="flex items-center gap-3">
+              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能搜索列表设置</div>
+            </div>
+
+            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">搜索列表清理规则</div>
+            <div class="flex items-center gap-2">
+              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                <input
+                  id="magicAggregateRegexRuleInput"
+                  class="tv-field min-w-0"
+                  placeholder="\\(\\d{4}\\)|\\[.*?\\]|更新至\\d+集"
+                />
+              </div>
+              <button id="magicAggregateRegexRuleAdd" type="button" class="btn-green">添加</button>
+            </div>
+            <div id="magicAggregateRegexRuleStatus" class="text-xs hidden"></div>
+            <ul id="magicAggregateRegexRuleList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+              <li class="text-gray-500 dark:text-gray-400">无数据</li>
+            </ul>
+
+            <div class="pt-2 border-t border-gray-200 dark:border-white/10 space-y-2">
+              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">规则测试</div>
+              <div class="flex items-center gap-2">
+                <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                  <input
+                    id="magicAggregateRuleTestInput"
+                    class="tv-field min-w-0"
+                    placeholder="仙逆 年番 更新至123集 (2023)"
+                  />
+                </div>
+                <button id="magicAggregateRuleTestBtn" type="button" class="btn-green">测试</button>
+              </div>
+              <div class="min-w-0" style="width: 50%; max-width: 50%;">
+                <div id="magicAggregateRuleTestOutput" class="text-xs hidden text-gray-600 dark:text-gray-300 truncate" style="width: 100%;"></div>
+              </div>
             </div>
           </div>
         </section>
