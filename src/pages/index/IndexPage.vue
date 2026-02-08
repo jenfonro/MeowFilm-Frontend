@@ -164,8 +164,7 @@
 		                :data-search-site-order="JSON.stringify(bootstrap.settings.searchSiteOrder || [])"
 		                :data-search-cover-site="bootstrap.settings.searchCoverSite || ''"
 		                :data-magic-search-clean-rules="JSON.stringify(bootstrap.settings.magicAggregateRegexRules || [])"
-		                :data-tmdb-enabled="bootstrap.settings.tmdbEnabled ? '1' : '0'"
-		                :data-tmdb-smart-search-enabled="bootstrap.settings.tmdbSmartSearchEnabled ? '1' : '0'"
+		                :data-search-display-mode="bootstrap.settings.searchDisplayMode || 'sites'"
 		              ></div>
 	            <div id="homeSegToggle" class="mb-8 flex justify-center">
 	              <div class="seg-toggle relative inline-flex bg-gray-300/80 rounded-full p-1">

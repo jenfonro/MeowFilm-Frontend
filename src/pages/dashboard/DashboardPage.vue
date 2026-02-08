@@ -14,31 +14,31 @@
         <div v-if="bootstrap.user.role === 'admin'" class="space-y-1">
         <a data-admin="site" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-          <span class="nav-label">站点设置</span>
+          <span class="nav-label">全局设置</span>
         </a>
         <a data-admin="user" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-          <span class="nav-label">用户管理</span>
+          <span class="nav-label">用户设置</span>
         </a>
-	        <a data-admin="pan" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
-	          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-cloud h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h.79a4.5 4.5 0 1 1 1 9Z"></path></svg>
-	          <span class="nav-label">网盘设置</span>
-	        </a>
-	        <a data-admin="interface" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
-	          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-link-2 h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M15 7h3a5 5 0 0 1 0 10h-3"></path><path d="M9 17H6a5 5 0 0 1 0-10h3"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
-	          <span class="nav-label">接口设置</span>
-	        </a>
-	        <a data-admin="video" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
-	          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-film h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M7 3v18"></path><path d="M3 7.5h4"></path><path d="M3 12h18"></path><path d="M3 16.5h4"></path><path d="M17 3v18"></path><path d="M17 7.5h4"></path><path d="M17 16.5h4"></path></svg>
-	          <span class="nav-label">视频源管理</span>
-	        </a>
-	        <a data-admin="tmdb" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
-	          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
-	          <span class="nav-label">TMDB 设置</span>
-	        </a>
+        <a data-admin="pan" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-cloud h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h.79a4.5 4.5 0 1 1 1 9Z"></path></svg>
+          <span class="nav-label">网盘设置</span>
+        </a>
+        <a data-admin="interface" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-link-2 h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M15 7h3a5 5 0 0 1 0 10h-3"></path><path d="M9 17H6a5 5 0 0 1 0-10h3"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
+          <span class="nav-label">接口设置</span>
+        </a>
+        <a data-admin="video" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-film h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M7 3v18"></path><path d="M3 7.5h4"></path><path d="M3 12h18"></path><path d="M3 16.5h4"></path><path d="M17 3v18"></path><path d="M17 7.5h4"></path><path d="M17 16.5h4"></path></svg>
+          <span class="nav-label">视频源管理</span>
+        </a>
         <a data-admin="magic" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>
           <span class="nav-label">魔法匹配设置</span>
+        </a>
+        <a data-admin="tmdb" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
+          <span class="nav-label">TMDB 设置</span>
         </a>
         </div>
       </nav>
@@ -50,70 +50,206 @@
           <div class="text-lg font-semibold text-gray-700">非管理员用户</div>
           <div class="text-sm text-gray-500">当前账号没有访问管理后台的权限。</div>
         </div>
-        <section v-if="bootstrap.user.role === 'admin'" id="adminSite" class="admin-panel">
-          <form id="siteSettingsForm" method="post" action="/dashboard/site/save" class="space-y-4">
-            <h3 class="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4 flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings h-5 w-5 text-gray-600 dark:text-gray-300"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-              站点设置
-            </h3>
-	            <div>
-	              <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">站点名称</label>
-	              <input name="siteName" class="tv-field"
-	                     :value="bootstrap.siteName"
-	                     placeholder="站点名称">
-	            </div>
-	            <div id="doubanSettings" class="space-y-4">
-	            <div>
-	              <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣数据代理</label>
-	              <select name="doubanDataProxy" id="doubanDataSelect" class="custom-select tv-field">
-                <option value="direct" :selected="bootstrap.settings.doubanDataProxy === 'direct'">直连（浏览器直接请求豆瓣）</option>
-                <option value="cors" :selected="bootstrap.settings.doubanDataProxy === 'cors'">Cors Proxy By Zwei</option>
-                <option value="cdn-tx" :selected="bootstrap.settings.doubanDataProxy === 'cdn-tx'">豆瓣 CDN By CMLiussss（腾讯云）</option>
-                <option value="cdn-ali" :selected="bootstrap.settings.doubanDataProxy === 'cdn-ali'">豆瓣 CDN By CMLiussss（阿里云）</option>
-                <option value="custom" :selected="bootstrap.settings.doubanDataProxy === 'custom'">自定义代理</option>
-              </select>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">选择获取豆瓣数据的方式</p>
-              <div id="doubanDataCustom" class="mt-2" :class="{ hidden: bootstrap.settings.doubanDataProxy !== 'custom' }">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣代理地址</label>
-                <input name="doubanDataCustom" class="tv-field"
-                       placeholder="例如：https://proxy.example.com/fetch?url="
-                       :value="bootstrap.settings.doubanDataCustom">
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义代理服务器地址</p>
+        <section v-if="bootstrap.user.role === 'admin'" id="adminSite" class="admin-panel space-y-6">
+          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings h-5 w-5 text-gray-600 dark:text-gray-300"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            全局设置
+          </div>
+
+          <form id="siteSettingsForm" method="post" action="/dashboard/site/save">
+            <div class="admin-card space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">站点设置</div>
+                <div id="saveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
               </div>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理</label>
-              <select name="doubanImgProxy" id="doubanImgSelect" class="custom-select tv-field">
-                <option value="direct-browser" :selected="bootstrap.settings.doubanImgProxy === 'direct-browser'">直连（浏览器直接请求豆瓣）</option>
-                <option value="server-proxy" :selected="bootstrap.settings.doubanImgProxy === 'server-proxy'">服务器代理（由服务器代理请求豆瓣）</option>
-                <option value="douban-cdn-ali" :selected="bootstrap.settings.doubanImgProxy === 'douban-cdn-ali'">豆瓣官方精品 CDN（阿里云）</option>
-                <option value="cdn-tx" :selected="bootstrap.settings.doubanImgProxy === 'cdn-tx'">豆瓣 CDN By CMLiussss（腾讯云）</option>
-                <option value="cdn-ali" :selected="bootstrap.settings.doubanImgProxy === 'cdn-ali'">豆瓣 CDN By CMLiussss（阿里云）</option>
-                <option value="custom" :selected="bootstrap.settings.doubanImgProxy === 'custom'">自定义代理</option>
-              </select>
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">选择获取豆瓣图片的方式</p>
-              <div id="doubanImgCustom" class="mt-2" :class="{ hidden: bootstrap.settings.doubanImgProxy !== 'custom' }">
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理地址</label>
-                <input name="doubanImgCustom" class="tv-field"
-                       placeholder="例如：https://proxy.example.com/fetch?url="
-                       :value="bootstrap.settings.doubanImgCustom">
-                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义图片代理服务器地址</p>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">站点名称</label>
+                <input name="siteName" class="tv-field" :value="bootstrap.siteName" placeholder="站点名称" />
               </div>
-            </div>
-            </div>
-            <div class="pt-2 flex justify-start">
-              <div class="flex flex-col gap-2">
-                <button type="submit" class="btn-green">保存</button>
-                <div id="saveStatus" class="text-sm hidden"></div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">搜索展示设置</label>
+                <select name="searchDisplayMode" id="searchDisplayModeSelect" class="custom-select tv-field">
+                  <option value="tmdb">TMDB</option>
+                  <option value="sites" selected>视频源</option>
+                  <option value="both">展示两者</option>
+                </select>
+                <div id="searchDisplayModeError" class="text-xs hidden mt-1"></div>
+              </div>
+              <div id="doubanSettings" class="space-y-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣数据代理</label>
+                  <select name="doubanDataProxy" id="doubanDataSelect" class="custom-select tv-field">
+                    <option value="direct" :selected="bootstrap.settings.doubanDataProxy === 'direct'">直连（浏览器直接请求豆瓣）</option>
+                    <option value="cors" :selected="bootstrap.settings.doubanDataProxy === 'cors'">Cors Proxy By Zwei</option>
+                    <option value="cdn-tx" :selected="bootstrap.settings.doubanDataProxy === 'cdn-tx'">豆瓣 CDN By CMLiussss（腾讯云）</option>
+                    <option value="cdn-ali" :selected="bootstrap.settings.doubanDataProxy === 'cdn-ali'">豆瓣 CDN By CMLiussss（阿里云）</option>
+                    <option value="custom" :selected="bootstrap.settings.doubanDataProxy === 'custom'">自定义代理</option>
+                  </select>
+                  <div id="doubanDataCustom" class="mt-2" :class="{ hidden: bootstrap.settings.doubanDataProxy !== 'custom' }">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣代理地址</label>
+                    <input
+                      name="doubanDataCustom"
+                      class="tv-field"
+                      placeholder="例如：https://proxy.example.com/fetch?url="
+                      :value="bootstrap.settings.doubanDataCustom"
+                    />
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义代理服务器地址</p>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理</label>
+                  <select name="doubanImgProxy" id="doubanImgSelect" class="custom-select tv-field">
+                    <option value="direct-browser" :selected="bootstrap.settings.doubanImgProxy === 'direct-browser'">直连（浏览器直接请求豆瓣）</option>
+                    <option value="server-proxy" :selected="bootstrap.settings.doubanImgProxy === 'server-proxy'">服务器代理（由服务器代理请求豆瓣）</option>
+                    <option value="douban-cdn-ali" :selected="bootstrap.settings.doubanImgProxy === 'douban-cdn-ali'">豆瓣官方精品 CDN（阿里云）</option>
+                    <option value="cdn-tx" :selected="bootstrap.settings.doubanImgProxy === 'cdn-tx'">豆瓣 CDN By CMLiussss（腾讯云）</option>
+                    <option value="cdn-ali" :selected="bootstrap.settings.doubanImgProxy === 'cdn-ali'">豆瓣 CDN By CMLiussss（阿里云）</option>
+                    <option value="custom" :selected="bootstrap.settings.doubanImgProxy === 'custom'">自定义代理</option>
+                  </select>
+                  <div id="doubanImgCustom" class="mt-2" :class="{ hidden: bootstrap.settings.doubanImgProxy !== 'custom' }">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理地址</label>
+                    <input
+                      name="doubanImgCustom"
+                      class="tv-field"
+                      placeholder="例如：https://proxy.example.com/fetch?url="
+                      :value="bootstrap.settings.doubanImgCustom"
+                    />
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义图片代理服务器地址</p>
+                  </div>
+                </div>
               </div>
             </div>
           </form>
+
+          <div class="admin-card space-y-4">
+            <div class="flex items-center gap-3">
+              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能设置</div>
+              <div id="smartSettingsStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
+            </div>
+
+            <div class="space-y-3">
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">智能搜索片源进行播放</div>
+                <div>
+                  <label class="enable-switch" title="智能搜索片源进行播放">
+                    <input id="smartPlayEnabled" type="checkbox" />
+                    <span class="enable-slider"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">智能选集列表生成</div>
+                <div>
+                  <label class="enable-switch" title="智能选集列表生成">
+                    <input id="smartListEnabled" type="checkbox" />
+                    <span class="enable-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card space-y-4">
+            <div class="flex items-center gap-3">
+              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">偏好设置</div>
+              <button id="smartPanDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
+              <button id="smartPanDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
+              <button id="smartPanDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
+            </div>
+
+            <div class="space-y-3">
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">画质设置</div>
+                <select id="smartQualityPref" class="tv-field min-w-0">
+                  <option value="4k_high_bitrate">4K高码率</option>
+                  <option value="4k_1080p">4K</option>
+                  <option value="8k">8K（慎用）</option>
+                  <option value="">未设置</option>
+                </select>
+              </div>
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">帧率设置</div>
+                <select id="smartFpsPref" class="tv-field min-w-0">
+                  <option value="">未设置</option>
+                  <option value="60">60帧</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
+              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先匹配片源规则</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                <input
+                  id="smartSourcePriorityTokensInput"
+                  class="tv-field min-w-0"
+                  placeholder="DDP,H.265"
+                />
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
+              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">网盘匹配规则</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                <input
+                  id="smartPanMatchTokensInput"
+                  class="tv-field min-w-0"
+                  placeholder="百度,夸克,天翼,UC,115"
+                />
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
+              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">片源提取优先设置</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
+                <select id="smartPanExtractModeSelect" class="tv-field min-w-0">
+                  <option value="quality-first">画质优先</option>
+                  <option value="rule-first">规则优先</option>
+                  <option value="pan-first">网盘优先</option>
+                </select>
+              </div>
+            </div>
+            <div class="space-y-2">
+              <label class="inline-flex w-fit items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                <input
+                  id="smartBalanceQuality"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-gray-300 dark:border-white/20 text-green-600 focus:ring-green-500"
+                />
+                <span>兼顾画质</span>
+              </label>
+              <label class="inline-flex w-fit items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                <input
+                  id="smartBalanceFps"
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-gray-300 dark:border-white/20 text-green-600 focus:ring-green-500"
+                />
+                <span>兼顾帧率</span>
+              </label>
+            </div>
+            <div id="smartPanSettingsStatus" class="text-xs hidden"></div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              说明：用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。
+            </div>
+          </div>
+
+          <div class="pt-1 flex justify-start">
+            <div class="flex flex-col gap-2">
+              <button id="globalSettingsSave" type="button" class="btn-green">保存</button>
+              <div id="globalSettingsSaveStatus" class="text-sm hidden"></div>
+            </div>
+          </div>
         </section>
         <section v-if="bootstrap.user.role === 'admin'" id="adminUser" class="admin-panel hidden space-y-4">
           <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users h-5 w-5 text-gray-600 dark:text-gray-300"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-            用户配置
-          </div>
+	            用户设置
+	          </div>
           <div class="stat-card">
             <div id="userCount" class="stat-main" v-text="bootstrap.userCount"></div>
             <div class="stat-label">总用户数</div>
@@ -292,10 +428,16 @@
 	                    </button>
 	                  </div>
 	                </div>
-	                <div
-	                  id="videoSourceListSaveStatus"
-	                  class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"
-	                ></div>
+	                <div class="flex items-center gap-2 min-w-0">
+	                  <div
+	                    id="videoSourceImportSummary"
+	                    class="text-xs whitespace-nowrap text-gray-500 dark:text-gray-400 hidden"
+	                  ></div>
+	                  <div
+	                    id="videoSourceListSaveStatus"
+	                    class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"
+	                  ></div>
+	                </div>
 	              </div>
 	              <div class="max-h-[60vh] overflow-y-auto tv-panel">
 	                <div
@@ -706,28 +848,6 @@
 
 	            <form id="tmdbSettingsForm" class="space-y-4">
 	              <div class="space-y-1">
-	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">启用 TMDB</div>
-	                <div>
-	                  <label class="enable-switch" title="启用 TMDB">
-	                    <input id="tmdbEnabled" type="checkbox" />
-	                    <span class="enable-slider"></span>
-	                  </label>
-	                </div>
-	                <div class="text-xs text-gray-500 dark:text-gray-400">开启后可在搜索页使用 TMDB 结果。</div>
-	              </div>
-
-	              <div class="space-y-1">
-	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">智能播放（TMDB 优先搜索）</div>
-	                <div>
-	                  <label class="enable-switch" title="智能播放（TMDB 优先搜索）">
-	                    <input id="tmdbSmartSearchEnabled" type="checkbox" />
-	                    <span class="enable-slider"></span>
-	                  </label>
-	                </div>
-	                <div class="text-xs text-gray-500 dark:text-gray-400">开启后搜索页会先请求 TMDB 混合搜索并生成卡片。</div>
-	              </div>
-
-	              <div class="space-y-1">
 	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Read Access Token（v4）</div>
 	                <input id="tmdbV4Token" class="tv-field" type="password" placeholder="可选：v4 Token（推荐）" autocomplete="off" />
 	                <div class="text-xs text-gray-500 dark:text-gray-400">建议使用 v4 Token（Bearer）。也可仅填 v3 Key。</div>
@@ -837,56 +957,6 @@
 	                <div id="magicEpisodeRuleTestOutput" class="text-xs hidden text-gray-600 dark:text-gray-300 truncate" style="width: 100%;"></div>
 	              </div>
 	            </div>
-          </div>
-
-          <div class="admin-card space-y-3">
-            <div class="flex items-center gap-3">
-              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能播放源设置</div>
-              <button id="smartPanDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
-              <button id="smartPanDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
-              <button id="smartPanDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
-            </div>
-
-            <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先匹配片源规则</div>
-            <div class="flex items-center gap-2">
-              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                <input
-                  id="smartSourcePriorityTokensInput"
-                  class="tv-field min-w-0"
-                  placeholder="60fps,4K"
-                />
-              </div>
-            </div>
-
-            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">网盘匹配规则</div>
-            </div>
-            <div class="flex items-center gap-2">
-              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                <input
-                  id="smartPanMatchTokensInput"
-                  class="tv-field min-w-0"
-                  placeholder="百度,夸克,天翼,UC,115"
-                />
-              </div>
-            </div>
-
-            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">提取优先级</div>
-            </div>
-            <div class="flex items-center gap-2">
-              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                <select id="smartPanExtractModeSelect" class="tv-field min-w-0">
-                  <option value="rule-first">规则优先</option>
-                  <option value="pan-first">网盘优先</option>
-                </select>
-              </div>
-              <button id="smartPanSettingsSave" type="button" class="btn-green">保存</button>
-            </div>
-            <div id="smartPanSettingsStatus" class="text-xs hidden"></div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">
-              说明：用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。
-            </div>
           </div>
 
           <div class="admin-card space-y-3">

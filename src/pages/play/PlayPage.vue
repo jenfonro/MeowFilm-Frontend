@@ -2089,6 +2089,26 @@ const compiledMagicMovieRules = computed(() => {
 
 const hasMagicEpisodeRules = computed(() => compiledMagicEpisodeRules.value.length > 0);
 
+const smartPlayEnabledSetting = computed(() => {
+  const raw = props.bootstrap?.settings?.smartPlayEnabled;
+  return raw !== false;
+});
+
+const smartListEnabledSetting = computed(() => {
+  const raw = props.bootstrap?.settings?.smartListEnabled;
+  return raw !== false;
+});
+
+const smartQualityPrefSetting = computed(() => {
+  const raw = props.bootstrap?.settings?.smartQualityPref;
+  return typeof raw === 'string' ? raw.trim() : '';
+});
+
+const smartFpsPrefSetting = computed(() => {
+  const raw = props.bootstrap?.settings?.smartFpsPref;
+  return typeof raw === 'string' ? raw.trim() : '';
+});
+
 const smartSourcePriorityTokensSetting = computed(() => {
   const list = props.bootstrap?.settings?.smartSourcePriorityTokens;
   if (!Array.isArray(list)) return [];
@@ -2107,17 +2127,29 @@ const smartPanExtractModeSetting = computed(() => {
 });
 
 const compiledSmartSourcePriorityTokens = computed(() => {
+  if (!smartPlayEnabledSetting.value) return [];
   const list = Array.isArray(smartSourcePriorityTokensSetting.value) ? smartSourcePriorityTokensSetting.value : [];
+  const prefix = [];
+  const q = smartQualityPrefSetting.value;
+  if (q === '4k_high_bitrate') prefix.push('4k', '2160p', '高码率', '码率');
+  else if (q === '4k_1080p') prefix.push('4k', '2160p', '1080p');
+  else if (q === '8k') prefix.push('8k', '4k', '2160p', '1080p');
+
+  const fps = smartFpsPrefSetting.value;
+  if (fps === '60') prefix.unshift('60fps', '60帧');
+
   const out = [];
   const seen = new Set();
-  list.forEach((t) => {
+  const add = (t) => {
     const s = typeof t === 'string' ? t.trim() : '';
     if (!s) return;
     const key = s.toLowerCase();
     if (!key || seen.has(key)) return;
     seen.add(key);
     out.push(key);
-  });
+  };
+  prefix.forEach(add);
+  list.forEach(add);
   return out;
 });
 
@@ -2432,6 +2464,7 @@ const extractSeasonEpisodeFromCandidates = (candidates, rules, cleanRules) => {
 };
 
 const smartPanEpisodes = computed(() => {
+  if (!smartListEnabledSetting.value) return [];
   if (!hasMagicEpisodeRules.value) return [];
 
   const panTokenOrder = compiledSmartPanMatchTokens.value;
@@ -2650,6 +2683,7 @@ const extractMovieSignatureParts = (textLower) => {
 };
 
 const smartMovieEpisodes = computed(() => {
+  if (!smartListEnabledSetting.value) return [];
   if (contentKind.value !== 'movie') return [];
   const rules = compiledMagicMovieRules.value;
   if (!Array.isArray(rules) || !rules.length) return [];

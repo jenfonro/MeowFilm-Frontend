@@ -3,6 +3,7 @@ export function initDashboardPage(bootstrap = {}) {
   const panels = document.querySelectorAll('.admin-panel');
   const videoSourceList = document.getElementById('videoSourceList');
   const videoSourceListSaveStatus = document.getElementById('videoSourceListSaveStatus');
+  const videoSourceImportSummary = document.getElementById('videoSourceImportSummary');
   const videoSourceBulkActions = document.getElementById('videoSourceBulkActions');
   const videoSourceBulkEnable = document.getElementById('videoSourceBulkEnable');
   const videoSourceBulkDisable = document.getElementById('videoSourceBulkDisable');
@@ -91,6 +92,11 @@ export function initDashboardPage(bootstrap = {}) {
   const magicAggregateDefaultsRestoreConfirm = document.getElementById('magicAggregateDefaultsRestoreConfirm');
   const magicAggregateDefaultsRestoreCancel = document.getElementById('magicAggregateDefaultsRestoreCancel');
 
+  const searchDisplayModeSelect = document.getElementById('searchDisplayModeSelect');
+  const searchDisplayModeError = document.getElementById('searchDisplayModeError');
+  const globalSettingsSave = document.getElementById('globalSettingsSave');
+  const globalSettingsSaveStatus = document.getElementById('globalSettingsSaveStatus');
+
   const smartSourcePriorityTokensInput = document.getElementById('smartSourcePriorityTokensInput');
   const smartPanMatchTokensInput = document.getElementById('smartPanMatchTokensInput');
   const smartPanExtractModeSelect = document.getElementById('smartPanExtractModeSelect');
@@ -99,11 +105,15 @@ export function initDashboardPage(bootstrap = {}) {
   const smartPanDefaultsRestore = document.getElementById('smartPanDefaultsRestore');
   const smartPanDefaultsRestoreConfirm = document.getElementById('smartPanDefaultsRestoreConfirm');
   const smartPanDefaultsRestoreCancel = document.getElementById('smartPanDefaultsRestoreCancel');
+  const smartSettingsStatus = document.getElementById('smartSettingsStatus');
+  const smartSettingsSave = document.getElementById('smartSettingsSave');
+  const smartPlayEnabledInput = document.getElementById('smartPlayEnabled');
+  const smartListEnabledInput = document.getElementById('smartListEnabled');
+  const smartQualityPrefSelect = document.getElementById('smartQualityPref');
+  const smartFpsPrefSelect = document.getElementById('smartFpsPref');
 
   const tmdbSettingsForm = document.getElementById('tmdbSettingsForm');
   const tmdbSaveStatus = document.getElementById('tmdbSaveStatus');
-  const tmdbEnabledInput = document.getElementById('tmdbEnabled');
-  const tmdbSmartSearchEnabledInput = document.getElementById('tmdbSmartSearchEnabled');
   const tmdbV4TokenInput = document.getElementById('tmdbV4Token');
   const tmdbV3KeyInput = document.getElementById('tmdbV3Key');
   const tmdbLanguageInput = document.getElementById('tmdbLanguage');
@@ -303,6 +313,114 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const bindInlineStatusHtml = (el) => (type, html) => setInlineStatusHtml(el, type, html);
+
+  const ensureToastContainer = () => {
+    const existing = document.getElementById('mfToastContainer');
+    if (existing) return existing;
+    const el = document.createElement('div');
+    el.id = 'mfToastContainer';
+    el.className = 'mf-toast-container';
+    document.body.appendChild(el);
+    return el;
+  };
+
+  const toastIconSvg = (type) => {
+    if (type === 'success') {
+      return `<svg class="mf-toast-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>`;
+    }
+    if (type === 'error') {
+      return `<svg class="mf-toast-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>`;
+    }
+    return `<svg class="mf-toast-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16v-4"/><path d="M12 8h.01"/><circle cx="12" cy="12" r="10"/></svg>`;
+  };
+
+  let lastToastKey = '';
+  let lastToastAt = 0;
+  const toast = (type, message, { durationMs = 2600 } = {}) => {
+    const msg = message != null ? String(message) : '';
+    if (!msg) return;
+    const now = Date.now();
+    const key = `${type}:${msg}`;
+    if (key === lastToastKey && now - lastToastAt < 600) return;
+    lastToastKey = key;
+    lastToastAt = now;
+
+    const container = ensureToastContainer();
+    const el = document.createElement('div');
+    const t = type === 'success' || type === 'error' ? type : 'info';
+    el.className = `mf-toast mf-toast--${t}`;
+    el.innerHTML = `
+      <div class="mf-toast-bar"></div>
+      ${toastIconSvg(t)}
+      <div class="mf-toast-body"><div class="mf-toast-text"></div></div>
+      <button type="button" class="mf-toast-close" aria-label="关闭">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+    `;
+    const textEl = el.querySelector('.mf-toast-text');
+    if (textEl) textEl.textContent = msg;
+    const closeBtn = el.querySelector('button.mf-toast-close');
+    const remove = () => {
+      el.style.animation = 'mfToastOut 140ms ease-in forwards';
+      setTimeout(() => {
+        try {
+          el.remove();
+        } catch (_e) {}
+      }, 160);
+    };
+    if (closeBtn) closeBtn.addEventListener('click', remove);
+    container.appendChild(el);
+    const ms = Number.isFinite(Number(durationMs)) ? Math.max(600, Math.trunc(Number(durationMs))) : 2600;
+    setTimeout(remove, ms);
+  };
+
+  const notify = {
+    success: (msg, opts) => toast('success', msg, opts),
+    error: (msg, opts) => toast('error', msg, opts),
+    info: (msg, opts) => toast('info', msg, opts),
+  };
+
+  const setButtonLoading = (btn, loading, { loadingText = '' } = {}) => {
+    if (!btn) return;
+    const isLoading = !!loading;
+    if (btn.dataset && btn.dataset.mfOriginalHtml == null) {
+      btn.dataset.mfOriginalHtml = btn.innerHTML;
+    }
+    const original = btn.dataset ? btn.dataset.mfOriginalHtml || '' : btn.innerHTML;
+    if (isLoading) {
+      btn.disabled = true;
+      btn.innerHTML = `<span class="inline-flex items-center gap-2">
+        <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+        ${loadingText ? `<span>${String(loadingText)}</span>` : ''}
+      </span>`;
+      return;
+    }
+    btn.disabled = false;
+    btn.innerHTML = original || btn.innerHTML;
+  };
+
+  const setImportSummary = (text, { keepMs = 6000 } = {}) => {
+    if (!videoSourceImportSummary) return;
+    const t = text != null ? String(text) : '';
+    if (!t) {
+      videoSourceImportSummary.textContent = '';
+      videoSourceImportSummary.classList.add('hidden');
+      return;
+    }
+    videoSourceImportSummary.textContent = t;
+    videoSourceImportSummary.classList.remove('hidden');
+    const ms = Number.isFinite(Number(keepMs)) ? Math.max(800, Math.trunc(Number(keepMs))) : 6000;
+    setTimeout(() => {
+      if (!videoSourceImportSummary) return;
+      if (videoSourceImportSummary.textContent === t) {
+        videoSourceImportSummary.textContent = '';
+        videoSourceImportSummary.classList.add('hidden');
+      }
+    }, ms);
+  };
 
   const bindOnce = (el, fn) => {
     if (!el) return false;
@@ -1798,6 +1916,7 @@ export function initDashboardPage(bootstrap = {}) {
 
   setupCustomSelect('doubanDataSelect');
   setupCustomSelect('doubanImgSelect');
+  setupCustomSelect('searchDisplayModeSelect');
   setupCustomSelect('catPawOpenServerSelect');
   setupCustomSelect('catPawOpenSyncFromServerSelect');
 
@@ -1968,8 +2087,8 @@ export function initDashboardPage(bootstrap = {}) {
           baiduQrState.imageUrl = '';
           baiduQrState.qid = '';
           baiduQrState.expiresAt = 0;
-          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
-          clearStatusLater(setPanSettingsStatus, 2200);
+          setPanSettingsStatus('', '');
+          notify.success('Cookie已获取并自动保存成功');
           renderPanSettingsContent();
           return;
         }
@@ -2033,8 +2152,8 @@ export function initDashboardPage(bootstrap = {}) {
           quarkQrState.imageUrl = '';
           quarkQrState.qid = '';
           quarkQrState.expiresAt = 0;
-          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
-          clearStatusLater(setPanSettingsStatus, 2200);
+          setPanSettingsStatus('', '');
+          notify.success('Cookie已获取并自动保存成功');
           renderPanSettingsContent();
           return;
         }
@@ -2098,8 +2217,8 @@ export function initDashboardPage(bootstrap = {}) {
           ucQrState.imageUrl = '';
           ucQrState.qid = '';
           ucQrState.expiresAt = 0;
-          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
-          clearStatusLater(setPanSettingsStatus, 2200);
+          setPanSettingsStatus('', '');
+          notify.success('Cookie已获取并自动保存成功');
           renderPanSettingsContent();
           return;
         }
@@ -2163,8 +2282,8 @@ export function initDashboardPage(bootstrap = {}) {
           pan115QrState.imageUrl = '';
           pan115QrState.qid = '';
           pan115QrState.expiresAt = 0;
-          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
-          clearStatusLater(setPanSettingsStatus, 2200);
+          setPanSettingsStatus('', '');
+          notify.success('Cookie已获取并自动保存成功');
           renderPanSettingsContent();
           return;
         }
@@ -2228,8 +2347,8 @@ export function initDashboardPage(bootstrap = {}) {
           biliQrState.imageUrl = '';
           biliQrState.qid = '';
           biliQrState.expiresAt = 0;
-          setPanSettingsStatus('', 'Cookie已获取并自动保存成功');
-          clearStatusLater(setPanSettingsStatus, 2200);
+          setPanSettingsStatus('', '');
+          notify.success('Cookie已获取并自动保存成功');
           renderPanSettingsContent();
           return;
         }
@@ -2369,18 +2488,30 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
-  const savePanLoginSettingToServer = async ({ key, save }) => {
-    setPanSettingsStatus('', '保存中...');
-    const result = await (typeof save === 'function' ? save() : null);
+  const savePanLoginSettingToServer = async ({ key, save, actionEl }) => {
+    const btn = actionEl && actionEl.tagName ? actionEl : null;
+    setButtonLoading(btn, true, { loadingText: '保存中' });
+    setPanSettingsStatus('', '');
+    try {
+      const result = await (typeof save === 'function' ? save() : null);
 
-    if (result && result.settings) panLoginSettings = result.settings;
-    if (key) loadedPanSettingKeys.add(key);
+      if (result && result.settings) panLoginSettings = result.settings;
+      if (key) loadedPanSettingKeys.add(key);
 
-    if (result && result.ok) {
-      setPanSettingsStatus('success', '保存成功');
-      setTimeout(() => setPanSettingsStatus('', ''), 1200);
-    } else {
-      setPanSettingsStatus('error', (result && result.message) || '保存失败');
+      if (result && result.ok) {
+        setPanSettingsStatus('', '');
+        notify.success('保存成功');
+        return;
+      }
+      const msg = (result && result.message) || '保存失败';
+      setPanSettingsStatus('error', msg);
+      notify.error(msg);
+    } catch (e) {
+      const msg = (e && e.message) ? String(e.message) : '保存失败';
+      setPanSettingsStatus('error', msg);
+      notify.error(msg);
+    } finally {
+      setButtonLoading(btn, false);
     }
   };
 
@@ -2844,6 +2975,7 @@ export function initDashboardPage(bootstrap = {}) {
         const value = textarea ? textarea.value : '';
         await savePanLoginSettingToServer({
           key,
+          actionEl,
           save: () => savePanCookie(key, value),
         });
         return;
@@ -2856,6 +2988,7 @@ export function initDashboardPage(bootstrap = {}) {
         const deviceId = devEl ? devEl.value : '';
         await savePanLoginSettingToServer({
           key,
+          actionEl,
           save: () => savePanTv(key, def.type, refreshToken, deviceId),
         });
         return;
@@ -2866,6 +2999,7 @@ export function initDashboardPage(bootstrap = {}) {
         const value = textarea ? textarea.value : '';
         await savePanLoginSettingToServer({
           key,
+          actionEl,
           save: () => savePanAuthorization(key, value),
         });
         return;
@@ -3043,6 +3177,7 @@ export function initDashboardPage(bootstrap = {}) {
         const password = passwordEl ? passwordEl.value : '';
         await savePanLoginSettingToServer({
           key,
+          actionEl,
           save: () => savePanAccount(key, username, password),
         });
         return;
@@ -3725,6 +3860,7 @@ export function initDashboardPage(bootstrap = {}) {
       parsed = JSON.parse(text);
     } catch (_e) {
       setVideoSourceListStatus('error', 'JSON 解析失败');
+      notify.error('JSON 解析失败');
       return;
     }
 
@@ -3732,6 +3868,7 @@ export function initDashboardPage(bootstrap = {}) {
       normalizeImportedVideoSourcePayload(parsed);
     if (!Array.isArray(importedSites) || importedSites.length === 0) {
       setVideoSourceListStatus('error', '导入数据无站点');
+      notify.error('导入数据无站点');
       return;
     }
 
@@ -3750,6 +3887,7 @@ export function initDashboardPage(bootstrap = {}) {
     }
     if (existing.size === 0) {
       setVideoSourceListStatus('error', '当前站点列表为空，请先导入站源');
+      notify.error('当前站点列表为空，请先导入站源');
       return;
     }
 
@@ -3801,6 +3939,7 @@ export function initDashboardPage(bootstrap = {}) {
     const keys = Object.keys(desiredStatus);
     if (keys.length === 0) {
       setVideoSourceListStatus('error', '没有可导入的站点（key 不匹配当前列表）');
+      notify.error('没有可导入的站点（key 不匹配当前列表）');
       return;
     }
 
@@ -3824,7 +3963,7 @@ export function initDashboardPage(bootstrap = {}) {
       orderKeys = desiredOrder.map((it) => it.key).filter(Boolean);
     }
 
-    setVideoSourceListStatus('', '导入中...');
+    setVideoSourceListStatus('', '');
     try {
       // Restore availability + error first (may have side effects we override below).
       await postForm('/dashboard/video/source/sites/check', {
@@ -3856,13 +3995,15 @@ export function initDashboardPage(bootstrap = {}) {
       }
       renderVideoSourceList(data && Array.isArray(data.sites) ? data.sites : []);
 
-      setVideoSourceListStatus('success', `导入完成（${keys.length} 个站点）`);
-      clearStatusLater(setVideoSourceListStatus, 1800);
+      setVideoSourceListStatus('', '');
+      setImportSummary(`已导入 ${keys.length} 个站点`);
+      notify.success(`导入成功（${keys.length} 个站点）`);
     } catch (e) {
       const status = e && typeof e.status === 'number' ? e.status : 0;
       const msg = e && e.message ? String(e.message) : '导入失败';
       if (status) setVideoSourceListStatus('error', `HTTP ${status}：${msg}`);
       else setVideoSourceListStatus('error', msg);
+      notify.error(status ? `HTTP ${status}：${msg}` : msg);
     }
   };
 
@@ -3897,12 +4038,15 @@ export function initDashboardPage(bootstrap = {}) {
     input.addEventListener('change', async () => {
       const file = input.files && input.files[0] ? input.files[0] : null;
       if (!file) return;
+      setButtonLoading(videoSourceJsonImport, true, { loadingText: '导入中' });
       try {
         const text = await file.text();
         await restoreVideoSourceSitesFromJson(text);
       } catch (_e) {
         setVideoSourceListStatus('error', '读取文件失败');
+        notify.error('读取文件失败');
       } finally {
+        setButtonLoading(videoSourceJsonImport, false);
         try {
           input.value = '';
         } catch (_e) {}
@@ -4410,15 +4554,19 @@ export function initDashboardPage(bootstrap = {}) {
       });
       renderVideoSourceList(currentVideoSourceSites);
       if (errCount <= 0) {
-        setVideoSourceListStatus('success', '保存成功');
-        clearStatusLater(setVideoSourceListStatus, 1200);
+        setVideoSourceListStatus('', '');
+        notify.success('保存成功');
       } else if (okCount > 0) {
-        setVideoSourceListStatus('error', `部分失败：${errCount}/${keys.length}`);
+        const msg = `部分失败：${errCount}/${keys.length}`;
+        setVideoSourceListStatus('error', msg);
+        notify.error(msg);
       } else {
         setVideoSourceListStatus('error', '保存失败');
+        notify.error('保存失败');
       }
     } catch (_e) {
       setVideoSourceListStatus('error', '保存失败');
+      notify.error('保存失败');
     } finally {
       if (videoSourceBulkCheckDisable) videoSourceBulkCheckDisable.disabled = false;
       if (videoSourceBulkEnable) videoSourceBulkEnable.disabled = false;
@@ -4435,15 +4583,12 @@ export function initDashboardPage(bootstrap = {}) {
     if (videoSourceBulkCheckDisable) videoSourceBulkCheckDisable.disabled = true;
     if (videoSourceBulkEnable) videoSourceBulkEnable.disabled = true;
     if (videoSourceBulkDisable) videoSourceBulkDisable.disabled = true;
-    setVideoSourceListStatus('', `检测中... 0/${keys.length}`);
+    const formatCheckingText = (progress, total, counts) =>
+      `检测中：有效${counts.valid} 无效${counts.invalid} 跳过${counts.skipped} 分类异常${counts.categoryErr} 搜索异常${counts.searchErr} （${progress}/${total}）`;
+    const counts = { valid: 0, invalid: 0, skipped: 0, categoryErr: 0, searchErr: 0 };
+    setVideoSourceListStatus('', formatCheckingText(0, keys.length, counts));
     try {
-      let validCount = 0;
-      let invalidCount = 0;
-      let categoryErrCount = 0;
-      let searchErrCount = 0;
-      let skippedCount = 0;
       for (let i = 0; i < keys.length; i += 1) {
-        setVideoSourceListStatus('', `检测中... ${i + 1}/${keys.length}`);
         // eslint-disable-next-line no-await-in-loop
         const result = await checkVideoSourceSites([keys[i]]);
         if (result && result.ok) {
@@ -4453,21 +4598,24 @@ export function initDashboardPage(bootstrap = {}) {
             result.results && result.results[keys[i]]
               ? normalizeAvailability(result.results[keys[i]])
               : 'unchecked';
-          if (status === 'valid') validCount += 1;
-          else if (status === 'invalid') invalidCount += 1;
-          else if (status === 'category_error') categoryErrCount += 1;
-          else if (status === 'search_error') searchErrCount += 1;
-          else if (status === 'skipped') skippedCount += 1;
+          if (status === 'valid') counts.valid += 1;
+          else if (status === 'invalid') counts.invalid += 1;
+          else if (status === 'category_error') counts.categoryErr += 1;
+          else if (status === 'search_error') counts.searchErr += 1;
+          else if (status === 'skipped') counts.skipped += 1;
         } else {
-          invalidCount += 1;
+          counts.invalid += 1;
         }
+        setVideoSourceListStatus('', formatCheckingText(i + 1, keys.length, counts));
       }
       setVideoSourceListStatus(
-        invalidCount > 0 ? 'error' : 'success',
-        `检测完成：有效${validCount} 无效${invalidCount} 跳过${skippedCount} 分类异常${categoryErrCount} 搜索异常${searchErrCount}`
+        counts.invalid > 0 ? 'error' : 'success',
+        `检测完成：有效${counts.valid} 无效${counts.invalid} 跳过${counts.skipped} 分类异常${counts.categoryErr} 搜索异常${counts.searchErr}`
       );
+      notify.info('检测完成');
     } catch (_e) {
       setVideoSourceListStatus('error', '检测失败');
+      notify.error('检测失败');
     } finally {
       if (videoSourceBulkCheckDisable) videoSourceBulkCheckDisable.disabled = false;
       if (videoSourceBulkEnable) videoSourceBulkEnable.disabled = false;
@@ -4517,7 +4665,7 @@ export function initDashboardPage(bootstrap = {}) {
       const prevValue = !nextValue;
 
       target.disabled = true;
-      setVideoSourceListStatus('', '保存中...');
+      setVideoSourceListStatus('', '');
       try {
         const result = await (typeof save === 'function' ? save(key, nextValue) : null);
         if (result && result.ok) {
@@ -4525,16 +4673,19 @@ export function initDashboardPage(bootstrap = {}) {
             if (!s || s.key !== key) return s;
             return typeof updateSite === 'function' ? updateSite(s, result) : s;
           });
-          setVideoSourceListStatus('success', '保存成功');
+          setVideoSourceListStatus('', '');
+          notify.success('保存成功');
           renderVideoSourceList(currentVideoSourceSites);
-          clearStatusLater(setVideoSourceListStatus, 1200);
         } else {
           target.checked = prevValue;
-          setVideoSourceListStatus('error', (result && result.message) || '保存失败');
+          const msg = (result && result.message) || '保存失败';
+          setVideoSourceListStatus('error', msg);
+          notify.error(msg);
         }
       } catch (_err) {
         target.checked = prevValue;
         setVideoSourceListStatus('error', '保存失败');
+        notify.error('保存失败');
       } finally {
         target.disabled = false;
       }
@@ -4571,17 +4722,20 @@ export function initDashboardPage(bootstrap = {}) {
       renderVideoSourceList(currentVideoSourceSites);
 
       btn.disabled = true;
-      setVideoSourceListStatus('', '保存中...');
+      setVideoSourceListStatus('', '');
       try {
         const result = await saveVideoSourceOrder(currentVideoSourceSites);
         if (result && result.ok) {
-          setVideoSourceListStatus('success', '保存成功');
-          clearStatusLater(setVideoSourceListStatus, 1200);
+          setVideoSourceListStatus('', '');
+          notify.success('保存成功');
         } else {
-          setVideoSourceListStatus('error', (result && result.message) || '保存失败');
+          const msg = (result && result.message) || '保存失败';
+          setVideoSourceListStatus('error', msg);
+          notify.error(msg);
         }
       } catch (_err) {
         setVideoSourceListStatus('error', '保存失败');
+        notify.error('保存失败');
       } finally {
         btn.disabled = false;
       }
@@ -4881,9 +5035,8 @@ export function initDashboardPage(bootstrap = {}) {
 
           const setSyncConfigToOtherStatus = (msg) => {
             if (!syncConfigToOtherStatus) return;
-            const text = typeof msg === 'string' ? msg.trim() : '';
-            syncConfigToOtherStatus.textContent = text;
-            syncConfigToOtherStatus.classList.toggle('hidden', !text);
+            syncConfigToOtherStatus.textContent = '';
+            syncConfigToOtherStatus.classList.add('hidden');
           };
 
           const hideSyncConfigToOtherPicker = () => {
@@ -5197,7 +5350,8 @@ export function initDashboardPage(bootstrap = {}) {
                 if (syncConfigToOtherSelect) syncConfigToOtherSelect.disabled = true;
                 if (syncConfigToOtherConfirm) syncConfigToOtherConfirm.disabled = true;
                 if (syncConfigToOtherCancel) syncConfigToOtherCancel.disabled = true;
-                setSyncConfigToOtherStatus('同步中...');
+                setSyncConfigToOtherStatus('');
+                setButtonLoading(syncConfigToOtherConfirm, true);
 
                 await requestCatPawOpenAdminJson({
                   apiBase,
@@ -5207,14 +5361,17 @@ export function initDashboardPage(bootstrap = {}) {
                   timeoutMs: 12000,
                 });
 
-                setSyncConfigToOtherStatus('同步成功');
+                setSyncConfigToOtherStatus('');
+                notify.success('同步成功');
                 setTimeout(() => {
                   hideSyncConfigToOtherPicker();
                 }, 800);
               } catch (e) {
                 const msg = e && e.message ? String(e.message) : '同步失败';
-                setSyncConfigToOtherStatus(msg);
+                setSyncConfigToOtherStatus('');
+                notify.error(msg);
               } finally {
+                setButtonLoading(syncConfigToOtherConfirm, false);
                 if (syncConfigToOtherBtn) syncConfigToOtherBtn.disabled = prevDisabled.btn;
                 if (syncConfigToOtherSelect) syncConfigToOtherSelect.disabled = prevDisabled.select;
                 if (syncConfigToOtherConfirm) syncConfigToOtherConfirm.disabled = prevDisabled.ok || !String(syncConfigToOtherSelect.value || '');
@@ -5262,8 +5419,8 @@ export function initDashboardPage(bootstrap = {}) {
                   syncServerEditorVisibility();
                 }
                 syncDeleteButtonsVisibility();
-                setCatPawOpenSaveStatus('success', '删除成功');
-                clearStatusLater(setCatPawOpenSaveStatus, 1200);
+                setCatPawOpenSaveStatus('', '');
+                notify.success('删除成功');
               } catch (_e) {
                 setCatPawOpenSaveStatus('error', '删除失败');
                 setDeleteConfirming(false);
@@ -5306,13 +5463,24 @@ export function initDashboardPage(bootstrap = {}) {
     siteForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       await withDatasetLock(siteForm, 'pending', async () => {
-        setSiteSaveStatus('', '保存中...');
+        const submitBtn = siteForm.querySelector('button[type="submit"]');
+        setButtonLoading(submitBtn, true, { loadingText: '保存中' });
+        setSiteSaveStatus('', '');
         try {
           const { resp, data } = await postForm(siteForm.action, formToFields(siteForm));
-          if (resp.ok && data && data.success) setSiteSaveStatus('success', '保存成功');
-          else setSiteSaveStatus('error', (data && data.message) || '保存失败');
+          if (resp.ok && data && data.success) {
+            setSiteSaveStatus('', '');
+            notify.success('保存成功');
+          } else {
+            const msg = (data && data.message) || '保存失败';
+            setSiteSaveStatus('', '');
+            notify.error(msg);
+          }
         } catch (_err) {
-          setSiteSaveStatus('error', '保存失败');
+          setSiteSaveStatus('', '');
+          notify.error('保存失败');
+        } finally {
+          setButtonLoading(submitBtn, false);
         }
       });
     });
@@ -5320,8 +5488,19 @@ export function initDashboardPage(bootstrap = {}) {
 
 	  const catPawOpenForm = document.getElementById('catPawOpenSettingsForm');
 	  const catPawOpenSaveStatus = document.getElementById('catPawOpenSaveStatus');
-	  const setCatPawOpenSaveStatus = bindInlineStatus(catPawOpenSaveStatus);
-	  const setCatPawOpenSaveStatusHtml = bindInlineStatusHtml(catPawOpenSaveStatus);
+    const stripHtml = (input) => String(input || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+	  const setCatPawOpenSaveStatus = (type, text) => {
+      setInlineStatus(catPawOpenSaveStatus, '', '');
+      const t = text != null ? String(text).trim() : '';
+      if (!t) return;
+      if (type === 'error') notify.error(t);
+    };
+	  const setCatPawOpenSaveStatusHtml = (type, html) => {
+      setInlineStatusHtml(catPawOpenSaveStatus, '', '');
+      const t = stripHtml(html);
+      if (!t) return;
+      if (type === 'error') notify.error(t);
+    };
 	  bindOnce(catPawOpenForm, () => {
     const apiInput = catPawOpenForm ? catPawOpenForm.querySelector('input[name="catPawOpenApiBase"]') : null;
     const nameInput = catPawOpenForm ? catPawOpenForm.querySelector('input[name="catPawOpenName"]') : null;
@@ -5484,11 +5663,12 @@ export function initDashboardPage(bootstrap = {}) {
       syncPanLoginBtn.addEventListener('click', async (e) => {
         e.preventDefault();
         await withDatasetLock(syncPanLoginBtn, 'pending', async () => {
-          setSyncPanLoginStatus('', '同步中...');
+          setSyncPanLoginStatus('', '');
+          setButtonLoading(syncPanLoginBtn, true, { loadingText: '同步中' });
           try {
             const sync = await syncAllPanLoginSettingsToCatPawOpen();
             if (sync && sync.ok === false && sync.skipped === true && sync.reason === 'unconfigured') {
-              setSyncPanLoginStatus('error', 'CatPawOpen 接口地址未设置');
+              notify.error('CatPawOpen 接口地址未设置');
               return;
             }
 
@@ -5496,22 +5676,23 @@ export function initDashboardPage(bootstrap = {}) {
             const failCount = sync && typeof sync.failCount === 'number' ? sync.failCount : 0;
 
             if (sync && sync.ok === false) {
-              setSyncPanLoginStatus('error', `同步完成：成功 ${okCount}，失败 ${failCount}`);
+              notify.error(`同步完成：成功 ${okCount}，失败 ${failCount}`);
               return;
             }
             if (!okCount && !failCount) {
-              setSyncPanLoginStatus('success', '无可同步账号');
-              setTimeout(() => setSyncPanLoginStatus('', ''), 1200);
+              notify.info('无可同步账号');
               return;
             }
             if (failCount > 0) {
-              setSyncPanLoginStatus('error', `同步完成：成功 ${okCount}，失败 ${failCount}`);
+              notify.error(`同步完成：成功 ${okCount}，失败 ${failCount}`);
               return;
             }
-            setSyncPanLoginStatus('success', `同步完成：成功 ${okCount}`);
-            setTimeout(() => setSyncPanLoginStatus('', ''), 1200);
+            notify.success(`同步完成：成功 ${okCount}`);
           } catch (_err) {
-            setSyncPanLoginStatus('error', '同步失败');
+            notify.error('同步失败');
+          } finally {
+            setButtonLoading(syncPanLoginBtn, false);
+            setSyncPanLoginStatus('', '');
           }
         });
       });
@@ -5523,6 +5704,7 @@ export function initDashboardPage(bootstrap = {}) {
         stopRestartWatch();
         setSubmitBtnLoading(true);
         setCatPawOpenSaveStatus('', '保存中...');
+        let shouldToastSuccess = false;
         try {
           const selectedServerKeyBefore = serverSelect ? String(serverSelect.value || '') : '';
           const isAddingServer = catPawOpenServerAddMode || selectedServerKeyBefore === '__new__';
@@ -5539,8 +5721,8 @@ export function initDashboardPage(bootstrap = {}) {
             setCatPawOpenSaveStatus('error', (data && data.message) || '保存失败');
             return;
           }
-          // "保存成功" only indicates the dashboard setting was persisted.
-          setCatPawOpenSaveStatus('success', '保存成功');
+          // Dashboard setting persisted; toast only after the whole workflow completes.
+          setCatPawOpenSaveStatus('', '');
 
           // If we were adding a server, update the dropdown immediately to the saved name.
           if (serverSelect && nameInput) {
@@ -5602,6 +5784,7 @@ export function initDashboardPage(bootstrap = {}) {
 
           if (!normalizedBase) {
             await refreshCatPawOpenRemoteSettings(apiBaseRaw);
+            shouldToastSuccess = true;
             return;
           }
 
@@ -5662,7 +5845,8 @@ export function initDashboardPage(bootstrap = {}) {
                 });
 
                 await refreshCatPawOpenRemoteSettings(normalizedBase);
-                setCatPawOpenSaveStatus('success', '保存成功');
+                setCatPawOpenSaveStatus('', '');
+                shouldToastSuccess = true;
                 return;
               } catch (err) {
                 const msg = err && err.message ? String(err.message) : '同步失败';
@@ -5673,6 +5857,7 @@ export function initDashboardPage(bootstrap = {}) {
 
           if (baseChanged && !wantsSyncSave) {
             await refreshCatPawOpenRemoteSettings(normalizedBase);
+            shouldToastSuccess = true;
             return;
           }
 
@@ -5697,6 +5882,7 @@ export function initDashboardPage(bootstrap = {}) {
             const canSync = !!(remoteSettingsEl && !remoteSettingsEl.classList.contains('hidden'));
             if (!canSync) {
               await refreshCatPawOpenRemoteSettings(normalizedBase);
+              shouldToastSuccess = true;
               return;
             }
           }
@@ -5714,12 +5900,14 @@ export function initDashboardPage(bootstrap = {}) {
             renderCheckingStatus({ failed: true });
             return;
           }
-          setCatPawOpenSaveStatus('success', '保存成功');
+          setCatPawOpenSaveStatus('', '');
+          shouldToastSuccess = true;
         } catch (_err) {
           stopRestartWatch();
           setCatPawOpenSaveStatus('error', '保存失败');
         } finally {
           setSubmitBtnLoading(false);
+          if (shouldToastSuccess) notify.success('保存成功');
         }
       });
     });
@@ -5977,7 +6165,9 @@ export function initDashboardPage(bootstrap = {}) {
 	      e.preventDefault();
 	      if (goProxySaving) return;
 	      goProxySaving = true;
-	      setGoProxyStatus('', '保存中...');
+        const submitBtn = goProxySettingsForm.querySelector('button[type="submit"]');
+        setButtonLoading(submitBtn, true, { loadingText: '保存中' });
+	      setGoProxyStatus('', '');
 	      try {
         const serversJson = writeGoProxyServersJson();
         const { resp, data } = await postForm(goProxySettingsForm.action, {
@@ -5986,14 +6176,19 @@ export function initDashboardPage(bootstrap = {}) {
           goProxyServersJson: serversJson,
         });
         if (resp.ok && data && data.success) {
-          setGoProxyStatus('success', '保存成功');
+          setGoProxyStatus('', '');
+          notify.success('保存成功');
         } else {
-          setGoProxyStatus('error', (data && data.message) || '保存失败');
+          const msg = (data && data.message) || '保存失败';
+          setGoProxyStatus('', '');
+          notify.error(msg);
         }
 	      } catch (_e) {
-        setGoProxyStatus('error', '保存失败');
+        setGoProxyStatus('', '');
+        notify.error('保存失败');
       } finally {
         goProxySaving = false;
+        setButtonLoading(submitBtn, false);
       }
     });
 
@@ -6011,10 +6206,11 @@ export function initDashboardPage(bootstrap = {}) {
     const apiBase = await resolveCatPawOpenApiBase();
     const normalizedBase = normalizeCatPawOpenAdminBase(apiBase);
     if (!normalizedBase) {
-      setVideoSourceSaveStatus('error', 'CatPawOpen 接口地址未设置');
+      setVideoSourceSaveStatus('', '');
+      notify.error('CatPawOpen 接口地址未设置');
       return;
     }
-    setVideoSourceSaveStatus('', '导入中...');
+    setVideoSourceSaveStatus('', '');
     try {
 	      const fullConfig = await requestCatPawOpenAdminJson({
 	        apiBase: normalizedBase,
@@ -6031,7 +6227,8 @@ export function initDashboardPage(bootstrap = {}) {
         }))
         .filter((s) => s.key && s.api);
       if (!sitesPayload.length) {
-        setVideoSourceSaveStatus('error', '未获取到站源');
+        setVideoSourceSaveStatus('', '');
+        notify.error('未获取到站源');
         return;
       }
 	      const { resp: r2, data: d2 } = await postForm('/dashboard/video/source/sites/import', {
@@ -6083,13 +6280,18 @@ export function initDashboardPage(bootstrap = {}) {
 	        } catch (_e) {
 	          renderVideoSourceList(d2.sites);
 	        }
-	        setVideoSourceSaveStatus('success', '导入成功');
-	        clearStatusLater(setVideoSourceSaveStatus, 1200);
+          setVideoSourceSaveStatus('', '');
+          const count = Array.isArray(d2.sites) ? d2.sites.length : sitesPayload.length;
+          setImportSummary(`已导入 ${count} 个站点`);
+          notify.success(`导入成功（${count} 个站点）`);
 	        return;
 	      }
-      setVideoSourceSaveStatus('error', (d2 && d2.message) || '导入失败');
+      const msg = (d2 && d2.message) || '导入失败';
+      setVideoSourceSaveStatus('', '');
+      notify.error(msg);
     } catch (_e) {
-      setVideoSourceSaveStatus('error', '导入失败');
+      setVideoSourceSaveStatus('', '');
+      notify.error('导入失败');
     }
   };
 
@@ -6097,13 +6299,11 @@ export function initDashboardPage(bootstrap = {}) {
     videoSourceImportFromCatPawOpenBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       await withDatasetLock(videoSourceImportFromCatPawOpenBtn, 'pending', async () => {
-        videoSourceImportFromCatPawOpenBtn.disabled = true;
-        videoSourceImportFromCatPawOpenBtn.classList.add('opacity-60', 'cursor-not-allowed');
+        setButtonLoading(videoSourceImportFromCatPawOpenBtn, true, { loadingText: '导入中' });
         try {
           await importVideoSourceSitesFromCatPawOpen();
         } finally {
-          videoSourceImportFromCatPawOpenBtn.disabled = false;
-          videoSourceImportFromCatPawOpenBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+          setButtonLoading(videoSourceImportFromCatPawOpenBtn, false);
         }
       });
     });
@@ -6281,6 +6481,30 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const fetchSiteSettings = async () => getSuccessJson('/dashboard/site/settings');
+  const fetchTMDBSettings = async () => getSuccessJson('/dashboard/tmdb/settings');
+
+  let tmdbSettingsCache = null;
+  let tmdbSettingsCachePromise = null;
+  const getTMDBSettingsCached = async ({ force = false } = {}) => {
+    if (!force) {
+      if (tmdbSettingsCache && typeof tmdbSettingsCache === 'object') return tmdbSettingsCache;
+      if (tmdbSettingsCachePromise) return tmdbSettingsCachePromise;
+    }
+
+    tmdbSettingsCachePromise = (async () => {
+      const data = await fetchTMDBSettings();
+      tmdbSettingsCache = data && typeof data === 'object' ? data : null;
+      tmdbSettingsCachePromise = null;
+      return tmdbSettingsCache;
+    })();
+
+    try {
+      return await tmdbSettingsCachePromise;
+    } catch (e) {
+      tmdbSettingsCachePromise = null;
+      throw e;
+    }
+  };
 
   const setInputValueByName = (name, value) => {
     const el = document.querySelector(`input[name="${name}"]`);
@@ -6288,7 +6512,7 @@ export function initDashboardPage(bootstrap = {}) {
     el.value = value != null ? String(value) : '';
   };
 
-  const syncCustomSelectValue = (selectId, value) => {
+  const syncCustomSelectValue = (selectId, value, { dispatch = true } = {}) => {
     const sel = document.getElementById(selectId);
     if (!sel) return;
     sel.value = value != null ? String(value) : '';
@@ -6307,7 +6531,30 @@ export function initDashboardPage(bootstrap = {}) {
       }
     }
 
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    if (dispatch) sel.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  const setSearchDisplayModeError = bindInlineStatus(searchDisplayModeError);
+  const validateSearchDisplayModeToken = async () => {
+    if (!searchDisplayModeSelect) return true;
+    const mode = (searchDisplayModeSelect.value || '').trim();
+    const needsTMDB = mode === 'tmdb' || mode === 'both';
+    if (!needsTMDB) return true;
+
+    let s = null;
+    try {
+      s = await getTMDBSettingsCached();
+    } catch (_e) {
+      s = null;
+    }
+    const token = s && typeof s.v4Token === 'string' ? s.v4Token.trim() : '';
+    if (token) {
+      setSearchDisplayModeError('', '');
+      return true;
+    }
+    setSearchDisplayModeError('error', 'TMDB Token为空');
+    syncCustomSelectValue('searchDisplayModeSelect', 'sites', { dispatch: false });
+    return false;
   };
 
   const loadSitePanel = async () => {
@@ -6320,10 +6567,15 @@ export function initDashboardPage(bootstrap = {}) {
       setInputValueByName('siteName', settings.siteName || '');
       setInputValueByName('doubanDataCustom', settings.doubanDataCustom || '');
       setInputValueByName('doubanImgCustom', settings.doubanImgCustom || '');
+      syncCustomSelectValue('searchDisplayModeSelect', settings.searchDisplayMode || 'sites');
       syncCustomSelectValue('doubanDataSelect', settings.doubanDataProxy || 'direct');
       syncCustomSelectValue('doubanImgSelect', settings.doubanImgProxy || 'direct-browser');
 
+      await validateSearchDisplayModeToken();
+
       panelLoaded.site = true;
+      // Smart settings now live under "全局设置".
+      await loadSmartPanel();
     } finally {
       panelLoading.site = false;
     }
@@ -6337,11 +6589,18 @@ export function initDashboardPage(bootstrap = {}) {
   let movieDefaultsConfirming = false;
   let magicAggregateRegexRules = [];
   let aggregateDefaultsConfirming = false;
+  let magicSaving = false;
+
+  // 智能设置
+  let smartPlayEnabled = true;
+  let smartListEnabled = true;
+  let smartQualityPref = '';
+  let smartFpsPref = '';
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
   let smartPanExtractMode = 'rule-first';
   let smartPanDefaultsConfirming = false;
-  let magicSaving = false;
+  let smartSaving = false;
 
   const normalizeCommaTokenLine = (text) => {
     const raw = typeof text === 'string' ? text : String(text || '');
@@ -6360,22 +6619,30 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const renderSmartPanSettings = () => {
+    if (smartQualityPrefSelect) {
+      smartQualityPrefSelect.value = smartQualityPref || '';
+      smartQualityPrefSelect.disabled = smartSaving;
+    }
+    if (smartFpsPrefSelect) {
+      smartFpsPrefSelect.value = smartFpsPref || '';
+      smartFpsPrefSelect.disabled = smartSaving;
+    }
     if (smartSourcePriorityTokensInput) {
       smartSourcePriorityTokensInput.value = Array.isArray(smartSourcePriorityTokens) ? smartSourcePriorityTokens.join(',') : '';
-      smartSourcePriorityTokensInput.disabled = magicSaving;
+      smartSourcePriorityTokensInput.disabled = smartSaving;
     }
     if (smartPanMatchTokensInput) {
       smartPanMatchTokensInput.value = Array.isArray(smartPanMatchTokens) ? smartPanMatchTokens.join(',') : '';
-      smartPanMatchTokensInput.disabled = magicSaving;
+      smartPanMatchTokensInput.disabled = smartSaving;
     }
     if (smartPanExtractModeSelect) {
       smartPanExtractModeSelect.value = smartPanExtractMode === 'pan-first' ? 'pan-first' : 'rule-first';
-      smartPanExtractModeSelect.disabled = magicSaving;
+      smartPanExtractModeSelect.disabled = smartSaving;
     }
-    if (smartPanSettingsSave) smartPanSettingsSave.disabled = magicSaving;
-    if (smartPanDefaultsRestore) smartPanDefaultsRestore.disabled = magicSaving;
-    if (smartPanDefaultsRestoreConfirm) smartPanDefaultsRestoreConfirm.disabled = magicSaving;
-    if (smartPanDefaultsRestoreCancel) smartPanDefaultsRestoreCancel.disabled = magicSaving;
+    if (smartPanSettingsSave) smartPanSettingsSave.disabled = smartSaving;
+    if (smartPanDefaultsRestore) smartPanDefaultsRestore.disabled = smartSaving;
+    if (smartPanDefaultsRestoreConfirm) smartPanDefaultsRestoreConfirm.disabled = smartSaving;
+    if (smartPanDefaultsRestoreCancel) smartPanDefaultsRestoreCancel.disabled = smartSaving;
     if (smartPanDefaultsRestore) smartPanDefaultsRestore.classList.toggle('hidden', smartPanDefaultsConfirming);
     if (smartPanDefaultsRestoreConfirm) smartPanDefaultsRestoreConfirm.classList.toggle('hidden', !smartPanDefaultsConfirming);
     if (smartPanDefaultsRestoreCancel) smartPanDefaultsRestoreCancel.classList.toggle('hidden', !smartPanDefaultsConfirming);
@@ -6773,7 +7040,6 @@ export function initDashboardPage(bootstrap = {}) {
 	    renderMagicRuleList(magicEpisodeRuleList, magicEpisodeRules, 'episode');
 	    renderMagicRuleList(magicMovieRuleList, magicMovieRules, 'movie');
 	    renderMagicRuleList(magicAggregateRegexRuleList, magicAggregateRegexRules, 'aggregateRegex');
-      renderSmartPanSettings();
       if (magicEpisodeDefaultsRestore) magicEpisodeDefaultsRestore.disabled = magicSaving;
       if (magicEpisodeDefaultsRestoreConfirm) magicEpisodeDefaultsRestoreConfirm.disabled = magicSaving;
       if (magicEpisodeDefaultsRestoreCancel) magicEpisodeDefaultsRestoreCancel.disabled = magicSaving;
@@ -6797,19 +7063,14 @@ export function initDashboardPage(bootstrap = {}) {
 	    setMagicAggregateTestOutput('', '');
 	  };
 
-	  const persistMagic = async () => {
+	  const persistMagic = async ({ successMessage = '' } = {}) => {
 	    if (magicSaving) return;
 	    magicSaving = true;
 	    setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '保存中...');
 	    setMagicStatus(magicEpisodeRuleStatus, '', '保存中...');
 	    setMagicStatus(magicMovieRuleStatus, '', '保存中...');
 	    setMagicStatus(magicAggregateRegexRuleStatus, '', '保存中...');
-      setMagicStatus(smartPanSettingsStatus, '', '保存中...');
 	    try {
-        smartSourcePriorityTokens = normalizeCommaTokenLine(smartSourcePriorityTokensInput ? smartSourcePriorityTokensInput.value : '');
-        smartPanMatchTokens = normalizeCommaTokenLine(smartPanMatchTokensInput ? smartPanMatchTokensInput.value : '');
-        smartPanExtractMode = smartPanExtractModeSelect && smartPanExtractModeSelect.value === 'pan-first' ? 'pan-first' : 'rule-first';
-
 	      const episodeRulesForSave = (Array.isArray(magicEpisodeRules) ? magicEpisodeRules : [])
 	        .map(encodeEpisodeRule)
 	        .filter(Boolean);
@@ -6821,7 +7082,7 @@ export function initDashboardPage(bootstrap = {}) {
 	        episodeRulesForSave,
           movieRulesForSave,
 	        Array.isArray(magicAggregateRegexRules) ? magicAggregateRegexRules : [],
-          { smartSourcePriorityTokens, smartPanMatchTokens, smartPanExtractMode }
+          {}
 	      );
 	      magicEpisodeCleanRegexRules = Array.isArray(data.episodeCleanRegexRules)
 	        ? data.episodeCleanRegexRules
@@ -6834,32 +7095,27 @@ export function initDashboardPage(bootstrap = {}) {
         magicMovieRules = Array.isArray(data.movieRules)
           ? data.movieRules.map(decodeEpisodeRule).filter(Boolean)
           : magicMovieRules;
-      magicAggregateRegexRules = Array.isArray(data.aggregateRegexRules)
-        ? data.aggregateRegexRules
-        : magicAggregateRegexRules;
-      smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : smartSourcePriorityTokens;
-      smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : smartPanMatchTokens;
-      smartPanExtractMode = typeof data.smartPanExtractMode === 'string' && data.smartPanExtractMode === 'pan-first' ? 'pan-first' : 'rule-first';
+	      magicAggregateRegexRules = Array.isArray(data.aggregateRegexRules)
+	        ? data.aggregateRegexRules
+	        : magicAggregateRegexRules;
 	      renderMagicPanels();
-	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, 'success', '已保存');
-	      setMagicStatus(magicEpisodeRuleStatus, 'success', '已保存');
-	      setMagicStatus(magicMovieRuleStatus, 'success', '已保存');
-	      setMagicStatus(magicAggregateRegexRuleStatus, 'success', '已保存');
-        setMagicStatus(smartPanSettingsStatus, 'success', '已保存');
+	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '');
+	      setMagicStatus(magicEpisodeRuleStatus, '', '');
+	      setMagicStatus(magicMovieRuleStatus, '', '');
+	      setMagicStatus(magicAggregateRegexRuleStatus, '', '');
+	      notify.success(successMessage || '保存成功');
 	    } catch (err) {
 	      const msg = (err && err.message) || '保存失败';
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, 'error', msg);
 	      setMagicStatus(magicEpisodeRuleStatus, 'error', msg);
 	      setMagicStatus(magicMovieRuleStatus, 'error', msg);
 	      setMagicStatus(magicAggregateRegexRuleStatus, 'error', msg);
-        setMagicStatus(smartPanSettingsStatus, 'error', msg);
+	      notify.error(msg);
 	    } finally {
 	      magicSaving = false;
       renderMagicPanels();
     }
   };
-
-  const fetchTMDBSettings = async () => getSuccessJson('/dashboard/tmdb/settings');
 
   const saveTMDBSettings = async (payload) => {
     const { resp, data } = await postJsonSafe('/dashboard/tmdb/settings', payload);
@@ -6874,8 +7130,6 @@ export function initDashboardPage(bootstrap = {}) {
 
   const renderTMDBPanel = (data) => {
     const s = data && typeof data === 'object' ? data : {};
-    if (tmdbEnabledInput) tmdbEnabledInput.checked = !!s.tmdbEnabled;
-    if (tmdbSmartSearchEnabledInput) tmdbSmartSearchEnabledInput.checked = !!s.smartSearchEnabled;
     if (tmdbV4TokenInput) tmdbV4TokenInput.value = typeof s.v4Token === 'string' ? s.v4Token : '';
     if (tmdbV3KeyInput) tmdbV3KeyInput.value = typeof s.v3Key === 'string' ? s.v3Key : '';
     if (tmdbLanguageInput) tmdbLanguageInput.value = typeof s.language === 'string' ? s.language : 'zh-CN';
@@ -6889,7 +7143,7 @@ export function initDashboardPage(bootstrap = {}) {
     panelLoading.tmdb = true;
     setTMDBStatus('', '加载中...');
     try {
-      const data = await fetchTMDBSettings();
+      const data = await getTMDBSettingsCached();
       if (!data) {
         setTMDBStatus('error', '加载失败');
         return;
@@ -6907,11 +7161,11 @@ export function initDashboardPage(bootstrap = {}) {
       e.preventDefault();
       if (tmdbSaving) return;
       tmdbSaving = true;
-      setTMDBStatus('', '保存中...');
+      const submitBtn = tmdbSettingsForm.querySelector('button[type="submit"]');
+      setButtonLoading(submitBtn, true);
+      setTMDBStatus('', '');
       try {
         const payload = {
-          tmdbEnabled: !!(tmdbEnabledInput && tmdbEnabledInput.checked),
-          smartSearchEnabled: !!(tmdbSmartSearchEnabledInput && tmdbSmartSearchEnabledInput.checked),
           v4Token: tmdbV4TokenInput ? (tmdbV4TokenInput.value || '').trim() : '',
           v3Key: tmdbV3KeyInput ? (tmdbV3KeyInput.value || '').trim() : '',
           language: tmdbLanguageInput ? (tmdbLanguageInput.value || '').trim() : '',
@@ -6919,15 +7173,198 @@ export function initDashboardPage(bootstrap = {}) {
           includeAdult: !!(tmdbIncludeAdultInput && tmdbIncludeAdultInput.checked),
         };
         const data = await saveTMDBSettings(payload);
+        tmdbSettingsCache = data && typeof data === 'object' ? data : tmdbSettingsCache;
         renderTMDBPanel(data);
-        setTMDBStatus('success', '已保存');
+        if (tmdbSettingsCache && typeof tmdbSettingsCache.v4Token === 'string' && tmdbSettingsCache.v4Token.trim()) {
+          setSearchDisplayModeError('', '');
+        } else {
+          void validateSearchDisplayModeToken();
+        }
+        setTMDBStatus('', '');
+        notify.success('保存成功');
       } catch (err) {
         const msg = (err && err.message) || '保存失败';
-        setTMDBStatus('error', msg);
+        setTMDBStatus('', '');
+        notify.error(msg);
       } finally {
         tmdbSaving = false;
+        setButtonLoading(submitBtn, false);
       }
     });
+  }
+
+  const fetchSmartSettings = async () => getSuccessJson('/dashboard/smart/settings');
+
+  const saveSmartSettings = async (payload) => {
+    const { resp, data } = await postJsonSafe('/dashboard/smart/settings', payload);
+    if (!resp.ok || !data || data.success !== true) {
+      throw new Error((data && data.message) || `HTTP ${resp.status}`);
+    }
+    return data;
+  };
+
+  const setSmartStatus = bindInlineStatus(smartSettingsStatus);
+  const setSmartPrefStatus = bindInlineStatus(smartPanSettingsStatus);
+
+  const renderSmartBasics = () => {
+    if (smartPlayEnabledInput) smartPlayEnabledInput.checked = !!smartPlayEnabled;
+    if (smartListEnabledInput) smartListEnabledInput.checked = !!smartListEnabled;
+    if (smartSettingsSave) smartSettingsSave.disabled = smartSaving;
+    if (smartPlayEnabledInput) smartPlayEnabledInput.disabled = smartSaving;
+    if (smartListEnabledInput) smartListEnabledInput.disabled = smartSaving;
+  };
+
+  const persistSmartBasics = async () => {
+    if (smartSaving) return;
+    smartSaving = true;
+    setSmartStatus('', '');
+    try {
+      smartPlayEnabled = !!(smartPlayEnabledInput && smartPlayEnabledInput.checked);
+      smartListEnabled = !!(smartListEnabledInput && smartListEnabledInput.checked);
+      const data = await saveSmartSettings({
+        smartPlayEnabled,
+        smartListEnabled,
+      });
+      smartPlayEnabled = !!data.smartPlayEnabled;
+      smartListEnabled = !!data.smartListEnabled;
+      renderSmartBasics();
+      setSmartStatus('', '');
+    } catch (err) {
+      const msg = (err && err.message) || '保存失败';
+      setSmartStatus('error', msg);
+      throw new Error(msg);
+    } finally {
+      smartSaving = false;
+      renderSmartBasics();
+    }
+  };
+
+  const persistSmartPreferences = async () => {
+    if (smartSaving) return;
+    smartSaving = true;
+    setSmartPrefStatus('', '');
+    try {
+      smartQualityPref = smartQualityPrefSelect ? String(smartQualityPrefSelect.value || '').trim() : '';
+      smartFpsPref = smartFpsPrefSelect ? String(smartFpsPrefSelect.value || '').trim() : '';
+      smartSourcePriorityTokens = normalizeCommaTokenLine(smartSourcePriorityTokensInput ? smartSourcePriorityTokensInput.value : '');
+      smartPanMatchTokens = normalizeCommaTokenLine(smartPanMatchTokensInput ? smartPanMatchTokensInput.value : '');
+      smartPanExtractMode = smartPanExtractModeSelect && smartPanExtractModeSelect.value === 'pan-first' ? 'pan-first' : 'rule-first';
+
+      const data = await saveSmartSettings({
+        smartQualityPref,
+        smartFpsPref,
+        smartSourcePriorityTokens,
+        smartPanMatchTokens,
+        smartPanExtractMode,
+      });
+
+      smartQualityPref = typeof data.smartQualityPref === 'string' ? data.smartQualityPref : '';
+      smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
+      smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : smartSourcePriorityTokens;
+      smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : smartPanMatchTokens;
+      smartPanExtractMode = typeof data.smartPanExtractMode === 'string' && data.smartPanExtractMode === 'pan-first' ? 'pan-first' : 'rule-first';
+
+      renderSmartPanSettings();
+      setSmartPrefStatus('', '');
+    } catch (err) {
+      const msg = (err && err.message) || '保存失败';
+      setSmartPrefStatus('error', msg);
+      throw new Error(msg);
+    } finally {
+      smartSaving = false;
+      renderSmartPanSettings();
+      renderSmartBasics();
+    }
+  };
+
+  const setGlobalSettingsSaveStatus = bindInlineStatus(globalSettingsSaveStatus);
+  let globalSettingsSaving = false;
+  const renderGlobalSettingsSave = () => {
+    if (globalSettingsSave) globalSettingsSave.disabled = globalSettingsSaving || smartSaving;
+  };
+  const persistGlobalSettings = async () => {
+    if (globalSettingsSaving) return;
+    globalSettingsSaving = true;
+    renderGlobalSettingsSave();
+    setGlobalSettingsSaveStatus('', '');
+    setButtonLoading(globalSettingsSave, true, { loadingText: '保存中' });
+    try {
+      await validateSearchDisplayModeToken();
+      if (siteForm) {
+        await withDatasetLock(siteForm, 'pending', async () => {
+          setSiteSaveStatus('', '');
+          try {
+            const { resp, data } = await postForm(siteForm.action, formToFields(siteForm));
+            if (resp.ok && data && data.success) {
+              setSiteSaveStatus('', '');
+              return;
+            }
+            const msg = (data && data.message) || '保存失败';
+            setSiteSaveStatus('error', msg);
+            throw new Error(msg);
+          } catch (e) {
+            const msg = (e && e.message) || '保存失败';
+            setSiteSaveStatus('error', msg);
+            throw e;
+          }
+        });
+      }
+      await persistSmartBasics();
+      await persistSmartPreferences();
+      setGlobalSettingsSaveStatus('', '');
+      notify.success('保存成功');
+    } catch (err) {
+      const msg = (err && err.message) || '保存失败';
+      setGlobalSettingsSaveStatus('', '');
+      notify.error(msg);
+    } finally {
+      globalSettingsSaving = false;
+      setButtonLoading(globalSettingsSave, false);
+      renderGlobalSettingsSave();
+    }
+  };
+  if (globalSettingsSave) {
+    globalSettingsSave.addEventListener('click', () => void persistGlobalSettings());
+    renderGlobalSettingsSave();
+  }
+  if (searchDisplayModeSelect) {
+    searchDisplayModeSelect.addEventListener('change', () => void validateSearchDisplayModeToken());
+  }
+
+  let smartSettingsLoaded = false;
+  let smartSettingsLoading = false;
+
+  const loadSmartPanel = async () => {
+    if (smartSettingsLoaded || smartSettingsLoading) return;
+    smartSettingsLoading = true;
+    setSmartStatus('', '加载中...');
+    setSmartPrefStatus('', '加载中...');
+    try {
+      const data = await fetchSmartSettings();
+      if (!data) {
+        setSmartStatus('error', '加载失败');
+        setSmartPrefStatus('error', '加载失败');
+        return;
+      }
+      smartPlayEnabled = !!data.smartPlayEnabled;
+      smartListEnabled = !!data.smartListEnabled;
+      smartQualityPref = typeof data.smartQualityPref === 'string' ? data.smartQualityPref : '';
+      smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
+      smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : [];
+      smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : [];
+      smartPanExtractMode = typeof data.smartPanExtractMode === 'string' && data.smartPanExtractMode === 'pan-first' ? 'pan-first' : 'rule-first';
+      renderSmartBasics();
+      renderSmartPanSettings();
+      setSmartStatus('', '');
+      setSmartPrefStatus('', '');
+      smartSettingsLoaded = true;
+    } finally {
+      smartSettingsLoading = false;
+    }
+  };
+
+  if (smartSettingsSave) {
+    smartSettingsSave.addEventListener('click', () => void persistSmartBasics());
   }
 
 	  const loadMagicPanel = async () => {
@@ -6938,7 +7375,6 @@ export function initDashboardPage(bootstrap = {}) {
 	    setMagicStatus(magicEpisodeRuleStatus, '', '加载中...');
 	    setMagicStatus(magicMovieRuleStatus, '', '加载中...');
 	    setMagicStatus(magicAggregateRegexRuleStatus, '', '加载中...');
-      setMagicStatus(smartPanSettingsStatus, '', '加载中...');
 	    try {
 	      const data = await fetchMagicSettings();
 	      if (!data) {
@@ -6946,7 +7382,6 @@ export function initDashboardPage(bootstrap = {}) {
 	        setMagicStatus(magicEpisodeRuleStatus, 'error', '加载失败');
 	        setMagicStatus(magicMovieRuleStatus, 'error', '加载失败');
 	        setMagicStatus(magicAggregateRegexRuleStatus, 'error', '加载失败');
-          setMagicStatus(smartPanSettingsStatus, 'error', '加载失败');
 	        return;
       }
 	      magicEpisodeRules = Array.isArray(data.episodeRules)
@@ -6961,15 +7396,11 @@ export function initDashboardPage(bootstrap = {}) {
 	          ? [data.episodeCleanRegex.trim()]
 	          : [];
 	      magicAggregateRegexRules = Array.isArray(data.aggregateRegexRules) ? data.aggregateRegexRules : [];
-        smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : [];
-        smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : [];
-        smartPanExtractMode = typeof data.smartPanExtractMode === 'string' && data.smartPanExtractMode === 'pan-first' ? 'pan-first' : 'rule-first';
 	      renderMagicPanels();
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '');
 	      setMagicStatus(magicEpisodeRuleStatus, '', '');
 	      setMagicStatus(magicMovieRuleStatus, '', '');
 	      setMagicStatus(magicAggregateRegexRuleStatus, '', '');
-        setMagicStatus(smartPanSettingsStatus, '', '');
 	      panelLoaded.magic = true;
 	    } finally {
       panelLoading.magic = false;
@@ -7059,12 +7490,18 @@ export function initDashboardPage(bootstrap = {}) {
   if (magicMovieDefaultsRestoreConfirm) {
     magicMovieDefaultsRestoreConfirm.addEventListener('click', async () => {
       if (magicSaving) return;
-      movieDefaultsConfirming = false;
       magicMovieRules = DEFAULT_MOVIE_RULES.map((r) => ({ ...r }));
       if (magicMovieRulePatternInput) magicMovieRulePatternInput.value = '';
       if (magicMovieRuleReplaceInput) magicMovieRuleReplaceInput.value = '';
       renderMagicPanels();
-      await persistMagic();
+      setButtonLoading(magicMovieDefaultsRestoreConfirm, true);
+      try {
+        await persistMagic({ successMessage: '恢复默认并保存成功' });
+      } finally {
+        setButtonLoading(magicMovieDefaultsRestoreConfirm, false);
+        movieDefaultsConfirming = false;
+        renderMagicPanels();
+      }
     });
   }
 
@@ -7117,14 +7554,20 @@ export function initDashboardPage(bootstrap = {}) {
     if (magicEpisodeDefaultsRestoreConfirm) {
       magicEpisodeDefaultsRestoreConfirm.addEventListener('click', async () => {
         if (magicSaving) return;
-        episodeDefaultsConfirming = false;
         magicEpisodeCleanRegexRules = DEFAULT_EPISODE_CLEAN_RULES.slice();
         magicEpisodeRules = DEFAULT_EPISODE_RULES.map((r) => ({ ...r }));
         if (magicEpisodeCleanRegexRuleInput) magicEpisodeCleanRegexRuleInput.value = '';
         if (magicEpisodeRulePatternInput) magicEpisodeRulePatternInput.value = '';
         if (magicEpisodeRuleReplaceInput) magicEpisodeRuleReplaceInput.value = '';
         renderMagicPanels();
-        await persistMagic();
+        setButtonLoading(magicEpisodeDefaultsRestoreConfirm, true);
+        try {
+          await persistMagic({ successMessage: '恢复默认并保存成功' });
+        } finally {
+          setButtonLoading(magicEpisodeDefaultsRestoreConfirm, false);
+          episodeDefaultsConfirming = false;
+          renderMagicPanels();
+        }
       });
     }
 
@@ -7167,11 +7610,17 @@ export function initDashboardPage(bootstrap = {}) {
   if (magicAggregateDefaultsRestoreConfirm) {
     magicAggregateDefaultsRestoreConfirm.addEventListener('click', async () => {
       if (magicSaving) return;
-      aggregateDefaultsConfirming = false;
       magicAggregateRegexRules = DEFAULT_AGGREGATE_REGEX_RULES.slice();
       if (magicAggregateRegexRuleInput) magicAggregateRegexRuleInput.value = '';
       renderMagicPanels();
-      await persistMagic();
+      setButtonLoading(magicAggregateDefaultsRestoreConfirm, true);
+      try {
+        await persistMagic({ successMessage: '恢复默认并保存成功' });
+      } finally {
+        setButtonLoading(magicAggregateDefaultsRestoreConfirm, false);
+        aggregateDefaultsConfirming = false;
+        renderMagicPanels();
+      }
     });
   }
 
@@ -7201,53 +7650,39 @@ export function initDashboardPage(bootstrap = {}) {
 
   if (smartPanSettingsSave) {
     smartPanSettingsSave.addEventListener('click', async () => {
-      if (magicSaving) return;
-      renderMagicPanels();
-      await persistMagic();
+      if (smartSaving) return;
+      renderSmartPanSettings();
+      await persistSmartPreferences();
     });
   }
 
-  const DEFAULT_SMART_SOURCE_PRIORITY_TOKENS = ['60fps', '60帧', '4K', '2160P'];
-  const DEFAULT_SMART_PAN_MATCH_TOKENS = ['天意', '逸动', '夸父', '优夕', '百度'];
+  const DEFAULT_SMART_SOURCE_PRIORITY_TOKENS = [];
+  const DEFAULT_SMART_PAN_MATCH_TOKENS = ['逸动', '天意', '夸父', '优夕', '百度'];
 
   if (smartPanDefaultsRestore) {
     smartPanDefaultsRestore.addEventListener('click', () => {
-      if (magicSaving) return;
+      if (smartSaving) return;
       smartPanDefaultsConfirming = true;
-      renderMagicPanels();
+      renderSmartPanSettings();
     });
   }
   if (smartPanDefaultsRestoreCancel) {
     smartPanDefaultsRestoreCancel.addEventListener('click', () => {
-      if (magicSaving) return;
+      if (smartSaving) return;
       smartPanDefaultsConfirming = false;
-      renderMagicPanels();
+      renderSmartPanSettings();
     });
   }
   if (smartPanDefaultsRestoreConfirm) {
-    smartPanDefaultsRestoreConfirm.addEventListener('click', async () => {
-      if (magicSaving) return;
+    smartPanDefaultsRestoreConfirm.addEventListener('click', () => {
+      if (smartSaving) return;
       smartPanDefaultsConfirming = false;
       smartSourcePriorityTokens = DEFAULT_SMART_SOURCE_PRIORITY_TOKENS.slice();
       smartPanMatchTokens = DEFAULT_SMART_PAN_MATCH_TOKENS.slice();
-      renderMagicPanels();
-      await persistMagic();
+      renderSmartPanSettings();
     });
   }
-  const smartSettingsEnterToSave = (el) => {
-    if (!el) return;
-    el.addEventListener('keydown', (e) => {
-      if (!e) return;
-      const key = e.key || '';
-      if (key === 'Enter') {
-        e.preventDefault();
-        if (!magicSaving) void persistMagic();
-      }
-    });
-  };
-  smartSettingsEnterToSave(smartSourcePriorityTokensInput);
-  smartSettingsEnterToSave(smartPanMatchTokensInput);
-  if (smartPanExtractModeSelect) smartPanExtractModeSelect.addEventListener('change', () => void persistMagic());
+  // Unified save button persists smart preferences; no auto-save on change/enter.
 
 	  const onMagicListClick = async (e) => {
 	    const target = e && e.target ? e.target : null;

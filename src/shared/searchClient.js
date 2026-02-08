@@ -42,8 +42,7 @@ export function initSearchPage() {
   let siteOrderList = [];
   let siteOrderMap = new Map();
   let magicSearchCleanRules = [];
-  let tmdbEnabled = false;
-  let tmdbSmartSearchEnabled = false;
+  let searchDisplayMode = 'sites'; // sites | tmdb | both
 
   const safeParseJsonArray = (text) => {
     try {
@@ -79,9 +78,8 @@ export function initSearchPage() {
       .map((x) => (typeof x === 'string' ? x.trim() : ''))
       .filter(Boolean);
 
-    tmdbEnabled = (configEl && (configEl.getAttribute('data-tmdb-enabled') || '').trim() === '1') || false;
-    tmdbSmartSearchEnabled =
-      tmdbEnabled && (configEl && (configEl.getAttribute('data-tmdb-smart-search-enabled') || '').trim() === '1');
+    const modeRaw = ((configEl && configEl.getAttribute('data-search-display-mode')) || 'sites').trim();
+    searchDisplayMode = modeRaw === 'tmdb' || modeRaw === 'both' || modeRaw === 'sites' ? modeRaw : 'sites';
   };
 
   refreshSearchConfigFromDom();
@@ -550,7 +548,7 @@ export function initSearchPage() {
     const seenKeys = new Set();
 
     const runTMDBSearch = async () => {
-      if (!tmdbEnabled || !tmdbSmartSearchEnabled) return 0;
+      if (searchDisplayMode !== 'tmdb' && searchDisplayMode !== 'both') return 0;
       try {
         const data = await requestJson(`/api/tmdb/search?q=${encodeURIComponent(q)}`, {
           method: 'GET',
@@ -576,8 +574,8 @@ export function initSearchPage() {
 
     const tmdbCount = await runTMDBSearch();
     if (runId !== currentRunId) return;
-    if (tmdbEnabled && tmdbSmartSearchEnabled) {
-      // Smart search: TMDB-only search results. Do not trigger site searches.
+    if (searchDisplayMode === 'tmdb') {
+      // TMDB-only search results. Do not trigger site searches.
       if (tmdbCount >= 0 && grid.children.length) setStatus('');
       return;
     }
@@ -587,6 +585,7 @@ export function initSearchPage() {
       const key = s && typeof s.key === 'string' ? s.key : '';
       return api.includes('/spider/baseset/') || key.toLowerCase().includes('baseset');
     };
+    if (searchDisplayMode !== 'sites' && searchDisplayMode !== 'both') return;
     const sites = (await loadSites()).filter((s) => s && s.enabled !== false && s.search !== false && s.api && !isConfigCenter(s));
     if (runId !== currentRunId) return;
     if (!sites.length) {
