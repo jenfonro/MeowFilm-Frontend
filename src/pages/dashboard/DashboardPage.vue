@@ -32,6 +32,10 @@
 	          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-film h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M7 3v18"></path><path d="M3 7.5h4"></path><path d="M3 12h18"></path><path d="M3 16.5h4"></path><path d="M17 3v18"></path><path d="M17 7.5h4"></path><path d="M17 16.5h4"></path></svg>
 	          <span class="nav-label">视频源管理</span>
 	        </a>
+	        <a data-admin="tmdb" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
+	          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
+	          <span class="nav-label">TMDB 设置</span>
+	        </a>
         <a data-admin="magic" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>
           <span class="nav-label">魔法匹配设置</span>
@@ -684,6 +688,78 @@
 
 		              <div class="pt-1 flex justify-start">
 		                <button type="submit" class="btn-green">保存</button>
+	              </div>
+	            </form>
+	          </div>
+	        </section>
+	        <section v-if="bootstrap.user.role === 'admin'" id="adminTmdb" class="admin-panel hidden space-y-6">
+	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
+	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-600 dark:text-gray-300"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
+	            TMDB 设置
+	          </div>
+
+	          <div class="admin-card space-y-4">
+	            <div class="flex items-center gap-3">
+	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">TMDB 配置</div>
+	              <div id="tmdbSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
+	            </div>
+
+	            <form id="tmdbSettingsForm" class="space-y-4">
+	              <div class="space-y-1">
+	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">启用 TMDB</div>
+	                <div>
+	                  <label class="enable-switch" title="启用 TMDB">
+	                    <input id="tmdbEnabled" type="checkbox" />
+	                    <span class="enable-slider"></span>
+	                  </label>
+	                </div>
+	                <div class="text-xs text-gray-500 dark:text-gray-400">开启后可在搜索页使用 TMDB 结果。</div>
+	              </div>
+
+	              <div class="space-y-1">
+	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">智能播放（TMDB 优先搜索）</div>
+	                <div>
+	                  <label class="enable-switch" title="智能播放（TMDB 优先搜索）">
+	                    <input id="tmdbSmartSearchEnabled" type="checkbox" />
+	                    <span class="enable-slider"></span>
+	                  </label>
+	                </div>
+	                <div class="text-xs text-gray-500 dark:text-gray-400">开启后搜索页会先请求 TMDB 混合搜索并生成卡片。</div>
+	              </div>
+
+	              <div class="space-y-1">
+	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Read Access Token（v4）</div>
+	                <input id="tmdbV4Token" class="tv-field" type="password" placeholder="可选：v4 Token（推荐）" autocomplete="off" />
+	                <div class="text-xs text-gray-500 dark:text-gray-400">建议使用 v4 Token（Bearer）。也可仅填 v3 Key。</div>
+	              </div>
+
+	              <div class="space-y-1">
+	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Key（v3）</div>
+	                <input id="tmdbV3Key" class="tv-field" type="password" placeholder="可选：v3 API Key" autocomplete="off" />
+	              </div>
+
+	              <div class="grid gap-3 sm:grid-cols-3">
+	                <div class="space-y-1">
+	                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">语言</div>
+	                  <input id="tmdbLanguage" class="tv-field" placeholder="zh-CN" autocomplete="off" />
+	                </div>
+	                <div class="space-y-1">
+	                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">地区</div>
+	                  <input id="tmdbRegion" class="tv-field" placeholder="CN" autocomplete="off" />
+	                </div>
+	                <div class="space-y-1">
+	                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">包含成人内容</div>
+	                  <div>
+	                    <label class="enable-switch" title="包含成人内容">
+	                      <input id="tmdbIncludeAdult" type="checkbox" />
+	                      <span class="enable-slider"></span>
+	                    </label>
+	                  </div>
+	                </div>
+	              </div>
+
+	              <div class="pt-1 flex justify-start">
+	                <button type="submit" class="btn-green">保存</button>
 	              </div>
 	            </form>
 	          </div>

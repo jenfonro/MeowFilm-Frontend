@@ -100,6 +100,16 @@ export function initDashboardPage(bootstrap = {}) {
   const smartPanDefaultsRestoreConfirm = document.getElementById('smartPanDefaultsRestoreConfirm');
   const smartPanDefaultsRestoreCancel = document.getElementById('smartPanDefaultsRestoreCancel');
 
+  const tmdbSettingsForm = document.getElementById('tmdbSettingsForm');
+  const tmdbSaveStatus = document.getElementById('tmdbSaveStatus');
+  const tmdbEnabledInput = document.getElementById('tmdbEnabled');
+  const tmdbSmartSearchEnabledInput = document.getElementById('tmdbSmartSearchEnabled');
+  const tmdbV4TokenInput = document.getElementById('tmdbV4Token');
+  const tmdbV3KeyInput = document.getElementById('tmdbV3Key');
+  const tmdbLanguageInput = document.getElementById('tmdbLanguage');
+  const tmdbRegionInput = document.getElementById('tmdbRegion');
+  const tmdbIncludeAdultInput = document.getElementById('tmdbIncludeAdult');
+
   const panelLoaded = {
     site: false,
     user: false,
@@ -107,6 +117,7 @@ export function initDashboardPage(bootstrap = {}) {
     pan: false,
     interface: false,
     magic: false,
+    tmdb: false,
   };
   const panelLoading = {
     site: false,
@@ -115,6 +126,7 @@ export function initDashboardPage(bootstrap = {}) {
     pan: false,
     interface: false,
     magic: false,
+    tmdb: false,
   };
 
   const CLS = {
@@ -467,7 +479,7 @@ export function initDashboardPage(bootstrap = {}) {
     return list;
   };
   let initialPanelKey = null;
-  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic']);
+  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic', 'tmdb']);
   const normalizePanelKey = (key) => {
     const k = typeof key === 'string' ? key.trim().toLowerCase() : '';
     return allowedPanels.has(k) ? k : 'site';
@@ -6847,6 +6859,77 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
+  const fetchTMDBSettings = async () => getSuccessJson('/dashboard/tmdb/settings');
+
+  const saveTMDBSettings = async (payload) => {
+    const { resp, data } = await postJsonSafe('/dashboard/tmdb/settings', payload);
+    if (!resp.ok || !data || data.success !== true) {
+      throw new Error((data && data.message) || `HTTP ${resp.status}`);
+    }
+    return data;
+  };
+
+  let tmdbSaving = false;
+  const setTMDBStatus = bindInlineStatus(tmdbSaveStatus);
+
+  const renderTMDBPanel = (data) => {
+    const s = data && typeof data === 'object' ? data : {};
+    if (tmdbEnabledInput) tmdbEnabledInput.checked = !!s.tmdbEnabled;
+    if (tmdbSmartSearchEnabledInput) tmdbSmartSearchEnabledInput.checked = !!s.smartSearchEnabled;
+    if (tmdbV4TokenInput) tmdbV4TokenInput.value = typeof s.v4Token === 'string' ? s.v4Token : '';
+    if (tmdbV3KeyInput) tmdbV3KeyInput.value = typeof s.v3Key === 'string' ? s.v3Key : '';
+    if (tmdbLanguageInput) tmdbLanguageInput.value = typeof s.language === 'string' ? s.language : 'zh-CN';
+    if (tmdbRegionInput) tmdbRegionInput.value = typeof s.region === 'string' ? s.region : 'CN';
+    if (tmdbIncludeAdultInput) tmdbIncludeAdultInput.checked = !!s.includeAdult;
+  };
+
+  const loadTMDBPanel = async () => {
+    if (panelLoaded.tmdb || panelLoading.tmdb) return;
+    if (!tmdbSettingsForm) return;
+    panelLoading.tmdb = true;
+    setTMDBStatus('', '加载中...');
+    try {
+      const data = await fetchTMDBSettings();
+      if (!data) {
+        setTMDBStatus('error', '加载失败');
+        return;
+      }
+      renderTMDBPanel(data);
+      setTMDBStatus('', '');
+      panelLoaded.tmdb = true;
+    } finally {
+      panelLoading.tmdb = false;
+    }
+  };
+
+  if (tmdbSettingsForm) {
+    tmdbSettingsForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (tmdbSaving) return;
+      tmdbSaving = true;
+      setTMDBStatus('', '保存中...');
+      try {
+        const payload = {
+          tmdbEnabled: !!(tmdbEnabledInput && tmdbEnabledInput.checked),
+          smartSearchEnabled: !!(tmdbSmartSearchEnabledInput && tmdbSmartSearchEnabledInput.checked),
+          v4Token: tmdbV4TokenInput ? (tmdbV4TokenInput.value || '').trim() : '',
+          v3Key: tmdbV3KeyInput ? (tmdbV3KeyInput.value || '').trim() : '',
+          language: tmdbLanguageInput ? (tmdbLanguageInput.value || '').trim() : '',
+          region: tmdbRegionInput ? (tmdbRegionInput.value || '').trim() : '',
+          includeAdult: !!(tmdbIncludeAdultInput && tmdbIncludeAdultInput.checked),
+        };
+        const data = await saveTMDBSettings(payload);
+        renderTMDBPanel(data);
+        setTMDBStatus('success', '已保存');
+      } catch (err) {
+        const msg = (err && err.message) || '保存失败';
+        setTMDBStatus('error', msg);
+      } finally {
+        tmdbSaving = false;
+      }
+    });
+  }
+
 	  const loadMagicPanel = async () => {
 	    if (panelLoaded.magic || panelLoading.magic) return;
 	    if (!magicEpisodeRuleList && !magicMovieRuleList && !magicAggregateRegexRuleList) return;
@@ -7252,6 +7335,7 @@ export function initDashboardPage(bootstrap = {}) {
     if (key === 'pan') return loadPanPanel();
     if (key === 'interface') return loadInterfacePanel();
     if (key === 'magic') return loadMagicPanel();
+    if (key === 'tmdb') return loadTMDBPanel();
     return null;
   }
 

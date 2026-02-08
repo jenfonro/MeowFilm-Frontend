@@ -42,6 +42,8 @@ export function initSearchPage() {
   let siteOrderList = [];
   let siteOrderMap = new Map();
   let magicSearchCleanRules = [];
+  let tmdbEnabled = false;
+  let tmdbSmartSearchEnabled = false;
 
   const safeParseJsonArray = (text) => {
     try {
@@ -76,6 +78,10 @@ export function initSearchPage() {
     magicSearchCleanRules = safeParseJsonArray(magicRaw)
       .map((x) => (typeof x === 'string' ? x.trim() : ''))
       .filter(Boolean);
+
+    tmdbEnabled = (configEl && (configEl.getAttribute('data-tmdb-enabled') || '').trim() === '1') || false;
+    tmdbSmartSearchEnabled =
+      tmdbEnabled && (configEl && (configEl.getAttribute('data-tmdb-smart-search-enabled') || '').trim() === '1');
   };
 
   refreshSearchConfigFromDom();
@@ -85,7 +91,10 @@ export function initSearchPage() {
     const data = await resp.json().catch(() => null);
     if (!resp.ok) {
       const msg = data && (data.error || data.message) ? (data.error || data.message) : '请求失败';
-      throw new Error(msg);
+      const err = new Error(msg);
+      err.status = resp.status;
+      err.code = data && (data.code || data.errorCode) ? String(data.code || data.errorCode) : '';
+      throw err;
     }
     return data;
   };
@@ -232,6 +241,101 @@ export function initSearchPage() {
       }
       appended += 1;
     });
+    return appended;
+  };
+
+  const appendTMDBItemsToGrid = ({
+    gridEl,
+    items,
+    siteName,
+    seenKeys,
+    insertCardSorted,
+    computeMatchScore,
+  }) => {
+    const grid = gridEl;
+    const list = Array.isArray(items) ? items : [];
+    if (!grid || !list.length) return 0;
+    let appended = 0;
+
+    let io = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      try {
+        io = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((en) => {
+              if (!en.isIntersecting) return;
+              const img = en.target;
+              const src = img && img.dataset ? img.dataset.src : '';
+              if (src && !img.getAttribute('src')) img.setAttribute('src', src);
+              if (io) io.unobserve(img);
+            });
+          },
+          { root: null, rootMargin: '0px', threshold: 0.01 }
+        );
+      } catch (_e) {
+        io = null;
+      }
+    }
+
+    list.forEach((it) => {
+      const id = it && it.id ? String(it.id) : '';
+      if (!id) return;
+      const uniq = `tmdb::${id}`;
+      if (seenKeys && seenKeys.has(uniq)) return;
+      if (seenKeys) seenKeys.add(uniq);
+
+      const mediaType = it && it.mediaType ? String(it.mediaType) : '';
+      const tmdbIdRaw = it && it.tmdbId != null ? Number(it.tmdbId) : 0;
+      const tmdbId = Number.isFinite(tmdbIdRaw) && tmdbIdRaw > 0 ? Math.floor(tmdbIdRaw) : 0;
+      const badgeText = it && typeof it.badge === 'string' ? it.badge.trim() : '';
+
+      const titleText = it && it.name ? String(it.name) : '';
+      const fallbackTitleLen = titleText.replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '').length;
+      const titleLen = Number.isFinite(Number(it && it.__titleLen)) ? Number(it.__titleLen) : fallbackTitleLen;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'w-full';
+      wrapper.dataset.siteKey = 'tmdb';
+      wrapper.dataset.videoId = id;
+      wrapper.dataset.siteOrder = '-1';
+      wrapper.dataset.titleLen = String(Math.max(0, Math.floor(titleLen)));
+      if (typeof computeMatchScore === 'function' && computeMatchScore(titleText) === 1000) {
+        wrapper.dataset.exactMatch = '1';
+      }
+
+      const openUrl =
+        tmdbId && (mediaType === 'movie' || mediaType === 'tv')
+          ? `https://www.themoviedb.org/${mediaType}/${tmdbId}`
+          : '';
+
+      const score = typeof computeMatchScore === 'function' ? computeMatchScore(titleText) : 0;
+      const scoreFinal = Number.isFinite(Number(it && it.__score)) ? Number(it.__score) : score;
+
+      const cardWrapper = createPosterCard({
+        wrapperEl: wrapper,
+        wrapperClass: 'w-full',
+        io,
+        onActivate: () => {
+          if (!openUrl) return;
+          try {
+            window.open(openUrl, '_blank', 'noopener,noreferrer');
+          } catch (_e) {}
+        },
+        title: titleText,
+        poster: it && it.pic ? String(it.pic) : '',
+        remark: badgeText,
+        siteName: '',
+        cornerBadgeText: '',
+        placeholder: true,
+        overlays: false,
+      });
+      if (!cardWrapper) return;
+
+      if (typeof insertCardSorted === 'function') insertCardSorted(wrapper, scoreFinal);
+      else grid.appendChild(wrapper);
+      appended += 1;
+    });
+
     return appended;
   };
 
@@ -443,6 +547,41 @@ export function initSearchPage() {
       grid.appendChild(wrapperEl);
     };
 
+    const seenKeys = new Set();
+
+    const runTMDBSearch = async () => {
+      if (!tmdbEnabled || !tmdbSmartSearchEnabled) return 0;
+      try {
+        const data = await requestJson(`/api/tmdb/search?q=${encodeURIComponent(q)}`, {
+          method: 'GET',
+          credentials: 'same-origin',
+        });
+        const items = data && Array.isArray(data.list) ? data.list : [];
+        if (!items.length) return 0;
+        return appendTMDBItemsToGrid({
+          gridEl: grid,
+          items,
+          siteName: 'TMDB',
+          seenKeys,
+          insertCardSorted,
+          computeMatchScore,
+        });
+      } catch (err) {
+        const code = err && typeof err.code === 'string' ? err.code.trim() : '';
+        if (code === 'TMDB_TOKEN_INVALID') setStatus('TMDB Token 状态异常', true);
+        else setStatus('服务器连接 TMDB 失败', true);
+        return -1;
+      }
+    };
+
+    const tmdbCount = await runTMDBSearch();
+    if (runId !== currentRunId) return;
+    if (tmdbEnabled && tmdbSmartSearchEnabled) {
+      // Smart search: TMDB-only search results. Do not trigger site searches.
+      if (tmdbCount >= 0 && grid.children.length) setStatus('');
+      return;
+    }
+
     const isConfigCenter = (s) => {
       const api = s && typeof s.api === 'string' ? s.api : '';
       const key = s && typeof s.key === 'string' ? s.key : '';
@@ -451,16 +590,13 @@ export function initSearchPage() {
     const sites = (await loadSites()).filter((s) => s && s.enabled !== false && s.search !== false && s.api && !isConfigCenter(s));
     if (runId !== currentRunId) return;
     if (!sites.length) {
-      setStatus('暂无可用站点');
-      resultsList.innerHTML = '';
+      setStatus(grid.children.length ? '' : '暂无可用站点');
       return;
     }
 
     let done = 0;
     let failed = 0;
     let totalFound = 0;
-
-    const seenKeys = new Set();
 
     const aggregateByGroup = new Map(); // groupKey -> { groupKey, title, bySite: Map(siteKey -> {meta..., matches: Map(videoId -> source)}) }
     const aggregateCardByGroup = new Map(); // groupKey -> { el, uniq, sourceSiteCount, storageKey }
