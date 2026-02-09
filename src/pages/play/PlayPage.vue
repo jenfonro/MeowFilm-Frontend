@@ -2154,7 +2154,7 @@ const compiledSmartSourcePriorityTokenGroups = computed(() => {
   const qualityTokens = [];
   const q = smartQualityPrefSetting.value;
   if (q === '4k_high_bitrate') qualityTokens.push('4k', '2160p', '高码率');
-  else if (q === '4k_1080p') qualityTokens.push('4k', '2160p');
+  else if (q === '4k') qualityTokens.push('4k', '2160p');
   else if (q === '8k') qualityTokens.push('8k', '4320p');
 
   const fpsTokens = [];

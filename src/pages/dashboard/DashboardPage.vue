@@ -170,7 +170,7 @@
                 <div class="text-sm font-medium text-gray-700 dark:text-gray-200">画质设置</div>
                 <select id="smartQualityPref" class="custom-select tv-field">
                   <option value="4k_high_bitrate">4K高码率</option>
-                  <option value="4k_1080p">4K</option>
+                  <option value="4k">4K</option>
                   <option value="8k">8K（慎用）</option>
                   <option value="">未设置</option>
                 </select>

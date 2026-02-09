@@ -6602,7 +6602,7 @@ export function initDashboardPage(bootstrap = {}) {
   // 智能设置
   let smartPlayEnabled = true;
   let smartListEnabled = true;
-  let smartQualityPref = '4k_1080p';
+  let smartQualityPref = '4k';
   let smartFpsPref = '';
   let smartSourceExtractPriority = '画质';
   let smartSourcePriorityTokens = [];
@@ -6610,42 +6610,47 @@ export function initDashboardPage(bootstrap = {}) {
   let smartPanDefaultsConfirming = false;
   let smartSaving = false;
 
-  const normalizeSmartSourceExtractPriorityList = (raw) => {
-    const allowed = new Set(['画质', '帧率', '关键字', '网盘']);
-    const text = typeof raw === 'string' ? raw : String(raw || '');
-    const parts = text.replaceAll('，', ',').split(/[,/\s]+/g).map((x) => String(x || '').trim()).filter(Boolean);
+  const parseDelimitedTokens = (
+    input,
+    { split = /,/, allow = null, keyOf = (v) => v, defaultList = [] } = {}
+  ) => {
+    const raw = typeof input === 'string' ? input : String(input || '');
+    const text = raw.replaceAll('，', ',');
+    const parts = text
+      .split(split)
+      .map((x) => String(x || '').trim())
+      .filter(Boolean);
+    const allowSet = allow instanceof Set ? allow : null;
     const seen = new Set();
     const out = [];
     parts.forEach((p) => {
-      if (!allowed.has(p)) return;
-      if (seen.has(p)) return;
-      seen.add(p);
-      out.push(p);
-    });
-    if (!out.length) return ['画质'];
-    return out;
-  };
-
-  const encodeSmartSourceExtractPriorityList = (list) => {
-    const arr = Array.isArray(list) ? list : normalizeSmartSourceExtractPriorityList(list);
-    return arr.join(',');
-  };
-
-  const normalizeCommaTokenLine = (text) => {
-    const raw = typeof text === 'string' ? text : String(text || '');
-    if (!raw.trim()) return [];
-    const normalized = raw.replaceAll('，', ',');
-    const parts = normalized.split(',').map((x) => String(x || '').trim()).filter(Boolean);
-    const seen = new Set();
-    const out = [];
-    parts.forEach((p) => {
-      const key = p.toLowerCase();
+      if (allowSet && !allowSet.has(p)) return;
+      const key = String(keyOf(p) || '');
       if (!key || seen.has(key)) return;
       seen.add(key);
       out.push(p);
     });
+    if (!out.length) return Array.isArray(defaultList) ? defaultList.slice() : [];
     return out;
   };
+
+  const normalizeSmartSourceExtractPriorityList = (raw) =>
+    parseDelimitedTokens(raw, {
+      split: /[,/\s]+/g,
+      allow: new Set(['画质', '帧率', '关键字', '网盘']),
+      keyOf: (v) => v,
+      defaultList: ['画质'],
+    });
+
+  const encodeSmartSourceExtractPriorityList = (list) =>
+    (Array.isArray(list) ? list : normalizeSmartSourceExtractPriorityList(list)).join(',');
+
+  const normalizeCommaTokenLine = (text) =>
+    parseDelimitedTokens(text, {
+      split: /,/,
+      keyOf: (v) => String(v || '').toLowerCase(),
+      defaultList: [],
+    });
 
   const renderSmartPanSettings = () => {
     if (smartQualityPrefSelect) {
@@ -7555,8 +7560,7 @@ export function initDashboardPage(bootstrap = {}) {
       }
       smartPlayEnabled = !!data.smartPlayEnabled;
       smartListEnabled = !!data.smartListEnabled;
-      smartQualityPref =
-        typeof data.smartQualityPref === 'string' && data.smartQualityPref.trim() ? data.smartQualityPref : '4k_1080p';
+      smartQualityPref = typeof data.smartQualityPref === 'string' && data.smartQualityPref.trim() ? data.smartQualityPref : '4k';
       smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
       smartSourceExtractPriority =
         typeof data.smartSourceExtractPriority === 'string' && data.smartSourceExtractPriority.trim()
@@ -7879,7 +7883,7 @@ export function initDashboardPage(bootstrap = {}) {
 
   const DEFAULT_SMART_SOURCE_PRIORITY_TOKENS = [];
   const DEFAULT_SMART_PAN_MATCH_TOKENS = ['逸动', '天意', '夸父', '优夕', '百度'];
-  const DEFAULT_SMART_QUALITY_PREF = '4k_1080p';
+  const DEFAULT_SMART_QUALITY_PREF = '4k';
 
   if (smartPanDefaultsRestore) {
     smartPanDefaultsRestore.addEventListener('click', () => {
