@@ -2109,6 +2109,16 @@ const smartFpsPrefSetting = computed(() => {
   return typeof raw === 'string' ? raw.trim() : '';
 });
 
+const smartBalanceQualitySetting = computed(() => {
+  const raw = props.bootstrap?.settings?.smartBalanceQuality;
+  return raw !== false;
+});
+
+const smartBalanceFpsSetting = computed(() => {
+  const raw = props.bootstrap?.settings?.smartBalanceFps;
+  return raw !== false;
+});
+
 const smartSourcePriorityTokensSetting = computed(() => {
   const list = props.bootstrap?.settings?.smartSourcePriorityTokens;
   if (!Array.isArray(list)) return [];
@@ -2123,20 +2133,29 @@ const smartPanMatchTokensSetting = computed(() => {
 
 const smartPanExtractModeSetting = computed(() => {
   const raw = props.bootstrap?.settings?.smartPanExtractMode;
-  return raw === 'pan-first' ? 'pan-first' : 'rule-first';
+  return raw === 'pan-first' || raw === 'rule-first' || raw === 'quality-first' ? raw : 'quality-first';
 });
 
 const compiledSmartSourcePriorityTokens = computed(() => {
-  if (!smartPlayEnabledSetting.value) return [];
   const list = Array.isArray(smartSourcePriorityTokensSetting.value) ? smartSourcePriorityTokensSetting.value : [];
-  const prefix = [];
-  const q = smartQualityPrefSetting.value;
-  if (q === '4k_high_bitrate') prefix.push('4k', '2160p', '高码率', '码率');
-  else if (q === '4k_1080p') prefix.push('4k', '2160p', '1080p');
-  else if (q === '8k') prefix.push('8k', '4k', '2160p', '1080p');
+  const mode = smartPanExtractModeSetting.value;
 
-  const fps = smartFpsPrefSetting.value;
-  if (fps === '60') prefix.unshift('60fps', '60帧');
+  const qualityTokens = [];
+  if (smartBalanceQualitySetting.value) {
+    const q = smartQualityPrefSetting.value;
+    if (q === '4k_high_bitrate') qualityTokens.push('4k', '2160p', '高码率');
+    else if (q === '4k_1080p') qualityTokens.push('4k', '2160p');
+    else if (q === '8k') qualityTokens.push('8k', '4320p');
+  }
+
+  const fpsTokens = [];
+  if (smartBalanceFpsSetting.value) {
+    const fps = smartFpsPrefSetting.value;
+    if (fps === '60') fpsTokens.push('60fps', '60帧');
+  }
+
+  const prefix = mode === 'rule-first' ? list : qualityTokens.concat(fpsTokens);
+  const suffix = mode === 'rule-first' ? qualityTokens.concat(fpsTokens) : list;
 
   const out = [];
   const seen = new Set();
@@ -2149,7 +2168,7 @@ const compiledSmartSourcePriorityTokens = computed(() => {
     out.push(key);
   };
   prefix.forEach(add);
-  list.forEach(add);
+  suffix.forEach(add);
   return out;
 });
 
@@ -2689,6 +2708,7 @@ const smartMovieEpisodes = computed(() => {
   if (!Array.isArray(rules) || !rules.length) return [];
 
   const qualityTokens = compiledSmartSourcePriorityTokens.value;
+  const mode = smartPanExtractModeSetting.value;
   const pans = panOptions.value;
   if (!Array.isArray(pans) || !pans.length) return [];
 
@@ -2723,6 +2743,12 @@ const smartMovieEpisodes = computed(() => {
   if (!candidates.length) return [];
 
   const better = (a, b) => {
+    if (mode === 'pan-first') {
+      if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) < (b.panIdx || 0) ? a : b;
+      const q = comparePriorityMatch(a && a.priority, b && b.priority);
+      if (q) return q < 0 ? a : b;
+      return (a.index || 0) <= (b.index || 0) ? a : b;
+    }
     const q = comparePriorityMatch(a && a.priority, b && b.priority);
     if (q) return q < 0 ? a : b;
     if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) < (b.panIdx || 0) ? a : b;
@@ -2745,6 +2771,12 @@ const smartMovieEpisodes = computed(() => {
 
   const out = Array.from(byKey.values());
   out.sort((a, b) => {
+    if (mode === 'pan-first') {
+      if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) - (b.panIdx || 0);
+      const q = comparePriorityMatch(a && a.priority, b && b.priority);
+      if (q) return q;
+      return (a.index || 0) - (b.index || 0);
+    }
     const q = comparePriorityMatch(a && a.priority, b && b.priority);
     if (q) return q;
     if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) - (b.panIdx || 0);

@@ -111,6 +111,8 @@ export function initDashboardPage(bootstrap = {}) {
   const smartListEnabledInput = document.getElementById('smartListEnabled');
   const smartQualityPrefSelect = document.getElementById('smartQualityPref');
   const smartFpsPrefSelect = document.getElementById('smartFpsPref');
+  const smartBalanceQualityInput = document.getElementById('smartBalanceQuality');
+  const smartBalanceFpsInput = document.getElementById('smartBalanceFps');
 
   const tmdbSettingsForm = document.getElementById('tmdbSettingsForm');
   const tmdbSaveStatus = document.getElementById('tmdbSaveStatus');
@@ -1917,6 +1919,9 @@ export function initDashboardPage(bootstrap = {}) {
   setupCustomSelect('doubanDataSelect');
   setupCustomSelect('doubanImgSelect');
   setupCustomSelect('searchDisplayModeSelect');
+  setupCustomSelect('smartQualityPref');
+  setupCustomSelect('smartFpsPref');
+  setupCustomSelect('smartPanExtractModeSelect');
   setupCustomSelect('catPawOpenServerSelect');
   setupCustomSelect('catPawOpenSyncFromServerSelect');
 
@@ -6535,7 +6540,7 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const setSearchDisplayModeError = bindInlineStatus(searchDisplayModeError);
-  const validateSearchDisplayModeToken = async () => {
+  const validateSearchDisplayModeToken = async ({ toast = false } = {}) => {
     if (!searchDisplayModeSelect) return true;
     const mode = (searchDisplayModeSelect.value || '').trim();
     const needsTMDB = mode === 'tmdb' || mode === 'both';
@@ -6547,13 +6552,15 @@ export function initDashboardPage(bootstrap = {}) {
     } catch (_e) {
       s = null;
     }
-    const token = s && typeof s.v4Token === 'string' ? s.v4Token.trim() : '';
-    if (token) {
+    const v4 = s && typeof s.v4Token === 'string' ? s.v4Token.trim() : '';
+    const v3 = s && typeof s.v3Key === 'string' ? s.v3Key.trim() : '';
+    if (v4 || v3) {
       setSearchDisplayModeError('', '');
       return true;
     }
-    setSearchDisplayModeError('error', 'TMDB Token为空');
+    setSearchDisplayModeError('', '');
     syncCustomSelectValue('searchDisplayModeSelect', 'sites', { dispatch: false });
+    if (toast) notify.error('TMDB Token未设置');
     return false;
   };
 
@@ -6571,7 +6578,7 @@ export function initDashboardPage(bootstrap = {}) {
       syncCustomSelectValue('doubanDataSelect', settings.doubanDataProxy || 'direct');
       syncCustomSelectValue('doubanImgSelect', settings.doubanImgProxy || 'direct-browser');
 
-      await validateSearchDisplayModeToken();
+      await validateSearchDisplayModeToken({ toast: false });
 
       panelLoaded.site = true;
       // Smart settings now live under "全局设置".
@@ -6596,9 +6603,11 @@ export function initDashboardPage(bootstrap = {}) {
   let smartListEnabled = true;
   let smartQualityPref = '';
   let smartFpsPref = '';
+  let smartBalanceQuality = true;
+  let smartBalanceFps = true;
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
-  let smartPanExtractMode = 'rule-first';
+  let smartPanExtractMode = 'quality-first';
   let smartPanDefaultsConfirming = false;
   let smartSaving = false;
 
@@ -6627,6 +6636,14 @@ export function initDashboardPage(bootstrap = {}) {
       smartFpsPrefSelect.value = smartFpsPref || '';
       smartFpsPrefSelect.disabled = smartSaving;
     }
+    if (smartBalanceQualityInput) {
+      smartBalanceQualityInput.checked = !!smartBalanceQuality;
+      smartBalanceQualityInput.disabled = smartSaving;
+    }
+    if (smartBalanceFpsInput) {
+      smartBalanceFpsInput.checked = !!smartBalanceFps;
+      smartBalanceFpsInput.disabled = smartSaving;
+    }
     if (smartSourcePriorityTokensInput) {
       smartSourcePriorityTokensInput.value = Array.isArray(smartSourcePriorityTokens) ? smartSourcePriorityTokens.join(',') : '';
       smartSourcePriorityTokensInput.disabled = smartSaving;
@@ -6636,7 +6653,10 @@ export function initDashboardPage(bootstrap = {}) {
       smartPanMatchTokensInput.disabled = smartSaving;
     }
     if (smartPanExtractModeSelect) {
-      smartPanExtractModeSelect.value = smartPanExtractMode === 'pan-first' ? 'pan-first' : 'rule-first';
+      smartPanExtractModeSelect.value =
+        smartPanExtractMode === 'pan-first' || smartPanExtractMode === 'rule-first' || smartPanExtractMode === 'quality-first'
+          ? smartPanExtractMode
+          : 'quality-first';
       smartPanExtractModeSelect.disabled = smartSaving;
     }
     if (smartPanSettingsSave) smartPanSettingsSave.disabled = smartSaving;
@@ -6945,7 +6965,13 @@ export function initDashboardPage(bootstrap = {}) {
 	      aggregateRegexRules,
         smartSourcePriorityTokens: Array.isArray(smartSettings.smartSourcePriorityTokens) ? smartSettings.smartSourcePriorityTokens : [],
         smartPanMatchTokens: Array.isArray(smartSettings.smartPanMatchTokens) ? smartSettings.smartPanMatchTokens : [],
-        smartPanExtractMode: typeof smartSettings.smartPanExtractMode === 'string' ? smartSettings.smartPanExtractMode : 'rule-first',
+        smartPanExtractMode:
+          typeof smartSettings.smartPanExtractMode === 'string' &&
+          (smartSettings.smartPanExtractMode === 'pan-first' ||
+            smartSettings.smartPanExtractMode === 'rule-first' ||
+            smartSettings.smartPanExtractMode === 'quality-first')
+            ? smartSettings.smartPanExtractMode
+            : 'quality-first',
 	    });
 	    if (!resp.ok || !data || data.success !== true) {
 	      throw new Error((data && data.message) || `HTTP ${resp.status}`);
@@ -7175,10 +7201,12 @@ export function initDashboardPage(bootstrap = {}) {
         const data = await saveTMDBSettings(payload);
         tmdbSettingsCache = data && typeof data === 'object' ? data : tmdbSettingsCache;
         renderTMDBPanel(data);
-        if (tmdbSettingsCache && typeof tmdbSettingsCache.v4Token === 'string' && tmdbSettingsCache.v4Token.trim()) {
+        const v4 = tmdbSettingsCache && typeof tmdbSettingsCache.v4Token === 'string' ? tmdbSettingsCache.v4Token.trim() : '';
+        const v3 = tmdbSettingsCache && typeof tmdbSettingsCache.v3Key === 'string' ? tmdbSettingsCache.v3Key.trim() : '';
+        if (v4 || v3) {
           setSearchDisplayModeError('', '');
         } else {
-          void validateSearchDisplayModeToken();
+          void validateSearchDisplayModeToken({ toast: false });
         }
         setTMDBStatus('', '');
         notify.success('保存成功');
@@ -7214,10 +7242,10 @@ export function initDashboardPage(bootstrap = {}) {
     if (smartListEnabledInput) smartListEnabledInput.disabled = smartSaving;
   };
 
-  const persistSmartBasics = async () => {
+  const persistSmartBasics = async ({ silent = false } = {}) => {
     if (smartSaving) return;
     smartSaving = true;
-    setSmartStatus('', '');
+    if (!silent) setSmartStatus('', '');
     try {
       smartPlayEnabled = !!(smartPlayEnabledInput && smartPlayEnabledInput.checked);
       smartListEnabled = !!(smartListEnabledInput && smartListEnabledInput.checked);
@@ -7228,10 +7256,10 @@ export function initDashboardPage(bootstrap = {}) {
       smartPlayEnabled = !!data.smartPlayEnabled;
       smartListEnabled = !!data.smartListEnabled;
       renderSmartBasics();
-      setSmartStatus('', '');
+      if (!silent) setSmartStatus('', '');
     } catch (err) {
       const msg = (err && err.message) || '保存失败';
-      setSmartStatus('error', msg);
+      if (!silent) setSmartStatus('error', msg);
       throw new Error(msg);
     } finally {
       smartSaving = false;
@@ -7239,20 +7267,25 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
-  const persistSmartPreferences = async () => {
+  const persistSmartPreferences = async ({ silent = false } = {}) => {
     if (smartSaving) return;
     smartSaving = true;
-    setSmartPrefStatus('', '');
+    if (!silent) setSmartPrefStatus('', '');
     try {
       smartQualityPref = smartQualityPrefSelect ? String(smartQualityPrefSelect.value || '').trim() : '';
       smartFpsPref = smartFpsPrefSelect ? String(smartFpsPrefSelect.value || '').trim() : '';
+      smartBalanceQuality = !!(smartBalanceQualityInput && smartBalanceQualityInput.checked);
+      smartBalanceFps = !!(smartBalanceFpsInput && smartBalanceFpsInput.checked);
       smartSourcePriorityTokens = normalizeCommaTokenLine(smartSourcePriorityTokensInput ? smartSourcePriorityTokensInput.value : '');
       smartPanMatchTokens = normalizeCommaTokenLine(smartPanMatchTokensInput ? smartPanMatchTokensInput.value : '');
-      smartPanExtractMode = smartPanExtractModeSelect && smartPanExtractModeSelect.value === 'pan-first' ? 'pan-first' : 'rule-first';
+      const modeRaw = smartPanExtractModeSelect ? String(smartPanExtractModeSelect.value || '').trim() : '';
+      smartPanExtractMode = modeRaw === 'pan-first' || modeRaw === 'rule-first' || modeRaw === 'quality-first' ? modeRaw : 'quality-first';
 
       const data = await saveSmartSettings({
         smartQualityPref,
         smartFpsPref,
+        smartBalanceQuality,
+        smartBalanceFps,
         smartSourcePriorityTokens,
         smartPanMatchTokens,
         smartPanExtractMode,
@@ -7260,15 +7293,21 @@ export function initDashboardPage(bootstrap = {}) {
 
       smartQualityPref = typeof data.smartQualityPref === 'string' ? data.smartQualityPref : '';
       smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
+      smartBalanceQuality = !!data.smartBalanceQuality;
+      smartBalanceFps = !!data.smartBalanceFps;
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : smartSourcePriorityTokens;
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : smartPanMatchTokens;
-      smartPanExtractMode = typeof data.smartPanExtractMode === 'string' && data.smartPanExtractMode === 'pan-first' ? 'pan-first' : 'rule-first';
+      smartPanExtractMode =
+        typeof data.smartPanExtractMode === 'string' &&
+        (data.smartPanExtractMode === 'pan-first' || data.smartPanExtractMode === 'rule-first' || data.smartPanExtractMode === 'quality-first')
+          ? data.smartPanExtractMode
+          : 'quality-first';
 
       renderSmartPanSettings();
-      setSmartPrefStatus('', '');
+      if (!silent) setSmartPrefStatus('', '');
     } catch (err) {
       const msg = (err && err.message) || '保存失败';
-      setSmartPrefStatus('error', msg);
+      if (!silent) setSmartPrefStatus('error', msg);
       throw new Error(msg);
     } finally {
       smartSaving = false;
@@ -7289,28 +7328,27 @@ export function initDashboardPage(bootstrap = {}) {
     setGlobalSettingsSaveStatus('', '');
     setButtonLoading(globalSettingsSave, true, { loadingText: '保存中' });
     try {
+      // Unified save: report via the global info box only.
+      setSiteSaveStatus('', '');
+      setSmartStatus('', '');
+      setSmartPrefStatus('', '');
+
       await validateSearchDisplayModeToken();
       if (siteForm) {
         await withDatasetLock(siteForm, 'pending', async () => {
           setSiteSaveStatus('', '');
           try {
             const { resp, data } = await postForm(siteForm.action, formToFields(siteForm));
-            if (resp.ok && data && data.success) {
-              setSiteSaveStatus('', '');
-              return;
-            }
+            if (resp.ok && data && data.success) return;
             const msg = (data && data.message) || '保存失败';
-            setSiteSaveStatus('error', msg);
             throw new Error(msg);
           } catch (e) {
-            const msg = (e && e.message) || '保存失败';
-            setSiteSaveStatus('error', msg);
             throw e;
           }
         });
       }
-      await persistSmartBasics();
-      await persistSmartPreferences();
+      await persistSmartBasics({ silent: true });
+      await persistSmartPreferences({ silent: true });
       setGlobalSettingsSaveStatus('', '');
       notify.success('保存成功');
     } catch (err) {
@@ -7328,7 +7366,7 @@ export function initDashboardPage(bootstrap = {}) {
     renderGlobalSettingsSave();
   }
   if (searchDisplayModeSelect) {
-    searchDisplayModeSelect.addEventListener('change', () => void validateSearchDisplayModeToken());
+    searchDisplayModeSelect.addEventListener('change', () => void validateSearchDisplayModeToken({ toast: true }));
   }
 
   let smartSettingsLoaded = false;
@@ -7350,9 +7388,15 @@ export function initDashboardPage(bootstrap = {}) {
       smartListEnabled = !!data.smartListEnabled;
       smartQualityPref = typeof data.smartQualityPref === 'string' ? data.smartQualityPref : '';
       smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
+      smartBalanceQuality = !!data.smartBalanceQuality;
+      smartBalanceFps = !!data.smartBalanceFps;
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : [];
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : [];
-      smartPanExtractMode = typeof data.smartPanExtractMode === 'string' && data.smartPanExtractMode === 'pan-first' ? 'pan-first' : 'rule-first';
+      smartPanExtractMode =
+        typeof data.smartPanExtractMode === 'string' &&
+        (data.smartPanExtractMode === 'pan-first' || data.smartPanExtractMode === 'rule-first' || data.smartPanExtractMode === 'quality-first')
+          ? data.smartPanExtractMode
+          : 'quality-first';
       renderSmartBasics();
       renderSmartPanSettings();
       setSmartStatus('', '');

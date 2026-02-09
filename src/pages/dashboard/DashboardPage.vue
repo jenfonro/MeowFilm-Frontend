@@ -60,7 +60,6 @@
             <div class="admin-card space-y-4">
               <div class="flex items-center gap-3">
                 <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">站点设置</div>
-                <div id="saveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">站点名称</label>
@@ -160,7 +159,7 @@
             <div class="space-y-3">
               <div class="space-y-1">
                 <div class="text-sm font-medium text-gray-700 dark:text-gray-200">画质设置</div>
-                <select id="smartQualityPref" class="tv-field min-w-0">
+                <select id="smartQualityPref" class="custom-select tv-field">
                   <option value="4k_high_bitrate">4K高码率</option>
                   <option value="4k_1080p">4K</option>
                   <option value="8k">8K（慎用）</option>
@@ -169,7 +168,7 @@
               </div>
               <div class="space-y-1">
                 <div class="text-sm font-medium text-gray-700 dark:text-gray-200">帧率设置</div>
-                <select id="smartFpsPref" class="tv-field min-w-0">
+                <select id="smartFpsPref" class="custom-select tv-field">
                   <option value="">未设置</option>
                   <option value="60">60帧</option>
                 </select>
@@ -179,58 +178,42 @@
             <div class="pt-2 border-t border-gray-200 dark:border-white/10">
               <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先匹配片源规则</div>
             </div>
-            <div class="flex items-center gap-2">
-              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                <input
-                  id="smartSourcePriorityTokensInput"
-                  class="tv-field min-w-0"
-                  placeholder="DDP,H.265"
-                />
-              </div>
+            <div>
+              <input id="smartSourcePriorityTokensInput" class="tv-field" placeholder="DDP,H.265" />
             </div>
 
             <div class="pt-2 border-t border-gray-200 dark:border-white/10">
               <div class="text-sm font-medium text-gray-700 dark:text-gray-200">网盘匹配规则</div>
             </div>
-            <div class="flex items-center gap-2">
-              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                <input
-                  id="smartPanMatchTokensInput"
-                  class="tv-field min-w-0"
-                  placeholder="百度,夸克,天翼,UC,115"
-                />
-              </div>
+            <div>
+              <input id="smartPanMatchTokensInput" class="tv-field" placeholder="百度,夸克,天翼,UC,115" />
             </div>
 
             <div class="pt-2 border-t border-gray-200 dark:border-white/10">
               <div class="text-sm font-medium text-gray-700 dark:text-gray-200">片源提取优先设置</div>
             </div>
-            <div class="flex items-center gap-2">
-              <div class="min-w-0" style="flex: 0 0 50%; max-width: 50%;">
-                <select id="smartPanExtractModeSelect" class="tv-field min-w-0">
-                  <option value="quality-first">画质优先</option>
-                  <option value="rule-first">规则优先</option>
-                  <option value="pan-first">网盘优先</option>
-                </select>
-              </div>
+            <div>
+              <select id="smartPanExtractModeSelect" class="custom-select tv-field">
+                <option value="quality-first">画质优先</option>
+                <option value="rule-first">规则优先</option>
+                <option value="pan-first">网盘优先</option>
+              </select>
             </div>
-            <div class="space-y-2">
-              <label class="inline-flex w-fit items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
-                <input
-                  id="smartBalanceQuality"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 dark:border-white/20 text-green-600 focus:ring-green-500"
-                />
-                <span>兼顾画质</span>
-              </label>
-              <label class="inline-flex w-fit items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
-                <input
-                  id="smartBalanceFps"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 dark:border-white/20 text-green-600 focus:ring-green-500"
-                />
-                <span>兼顾帧率</span>
-              </label>
+            <div class="flex items-center gap-6">
+              <div class="flex items-center gap-2">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">兼顾画质</div>
+                <label class="enable-switch" title="兼顾画质">
+                  <input id="smartBalanceQuality" type="checkbox" />
+                  <span class="enable-slider"></span>
+                </label>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">兼顾帧率</div>
+                <label class="enable-switch" title="兼顾帧率">
+                  <input id="smartBalanceFps" type="checkbox" />
+                  <span class="enable-slider"></span>
+                </label>
+              </div>
             </div>
             <div id="smartPanSettingsStatus" class="text-xs hidden"></div>
             <div class="text-xs text-gray-500 dark:text-gray-400">
@@ -849,13 +832,13 @@
 	            <form id="tmdbSettingsForm" class="space-y-4">
 	              <div class="space-y-1">
 	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Read Access Token（v4）</div>
-	                <input id="tmdbV4Token" class="tv-field" type="password" placeholder="可选：v4 Token（推荐）" autocomplete="off" />
+	                <input id="tmdbV4Token" class="tv-field" type="text" placeholder="可选：v4 Token（推荐）" autocomplete="off" />
 	                <div class="text-xs text-gray-500 dark:text-gray-400">建议使用 v4 Token（Bearer）。也可仅填 v3 Key。</div>
 	              </div>
 
 	              <div class="space-y-1">
 	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Key（v3）</div>
-	                <input id="tmdbV3Key" class="tv-field" type="password" placeholder="可选：v3 API Key" autocomplete="off" />
+	                <input id="tmdbV3Key" class="tv-field" type="text" placeholder="可选：v3 API Key" autocomplete="off" />
 	              </div>
 
 	              <div class="grid gap-3 sm:grid-cols-3">

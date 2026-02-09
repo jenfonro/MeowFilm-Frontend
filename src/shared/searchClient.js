@@ -565,9 +565,8 @@ export function initSearchPage() {
           computeMatchScore,
         });
       } catch (err) {
-        const code = err && typeof err.code === 'string' ? err.code.trim() : '';
-        if (code === 'TMDB_TOKEN_INVALID') setStatus('TMDB Token 状态异常', true);
-        else setStatus('服务器连接 TMDB 失败', true);
+        const msg = (err && err.message) || '服务器连接 TMDB 失败';
+        setStatus(msg, true);
         return -1;
       }
     };
