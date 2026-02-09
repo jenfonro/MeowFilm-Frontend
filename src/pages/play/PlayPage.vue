@@ -2109,14 +2109,21 @@ const smartFpsPrefSetting = computed(() => {
   return typeof raw === 'string' ? raw.trim() : '';
 });
 
-const smartBalanceQualitySetting = computed(() => {
-  const raw = props.bootstrap?.settings?.smartBalanceQuality;
-  return raw !== false;
-});
-
-const smartBalanceFpsSetting = computed(() => {
-  const raw = props.bootstrap?.settings?.smartBalanceFps;
-  return raw !== false;
+const smartSourceExtractPrioritySetting = computed(() => {
+  const allowed = new Set(['画质', '帧率', '关键字', '网盘']);
+  const raw = props.bootstrap?.settings?.smartSourceExtractPriority;
+  const text = typeof raw === 'string' ? raw : String(raw || '');
+  const parts = text.replaceAll('，', ',').split(/[,/\s]+/g).map((x) => String(x || '').trim()).filter(Boolean);
+  const seen = new Set();
+  const explicit = [];
+  parts.forEach((p) => {
+    if (!allowed.has(p)) return;
+    if (seen.has(p)) return;
+    seen.add(p);
+    explicit.push(p);
+  });
+  if (!explicit.length) explicit.push('画质');
+  return { explicit, order: explicit.slice() };
 });
 
 const smartSourcePriorityTokensSetting = computed(() => {
@@ -2131,44 +2138,60 @@ const smartPanMatchTokensSetting = computed(() => {
   return list.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
 });
 
-const smartPanExtractModeSetting = computed(() => {
-  const raw = props.bootstrap?.settings?.smartPanExtractMode;
-  return raw === 'pan-first' || raw === 'rule-first' || raw === 'quality-first' ? raw : 'quality-first';
-});
-
-const compiledSmartSourcePriorityTokens = computed(() => {
-  const list = Array.isArray(smartSourcePriorityTokensSetting.value) ? smartSourcePriorityTokensSetting.value : [];
-  const mode = smartPanExtractModeSetting.value;
-
-  const qualityTokens = [];
-  if (smartBalanceQualitySetting.value) {
-    const q = smartQualityPrefSetting.value;
-    if (q === '4k_high_bitrate') qualityTokens.push('4k', '2160p', '高码率');
-    else if (q === '4k_1080p') qualityTokens.push('4k', '2160p');
-    else if (q === '8k') qualityTokens.push('8k', '4320p');
-  }
-
-  const fpsTokens = [];
-  if (smartBalanceFpsSetting.value) {
-    const fps = smartFpsPrefSetting.value;
-    if (fps === '60') fpsTokens.push('60fps', '60帧');
-  }
-
-  const prefix = mode === 'rule-first' ? list : qualityTokens.concat(fpsTokens);
-  const suffix = mode === 'rule-first' ? qualityTokens.concat(fpsTokens) : list;
-
-  const out = [];
-  const seen = new Set();
-  const add = (t) => {
+const compiledSmartSourcePriorityTokenGroups = computed(() => {
+  const rawKeyword = Array.isArray(smartSourcePriorityTokensSetting.value) ? smartSourcePriorityTokensSetting.value : [];
+  const keywordTokens = [];
+  const keywordSeen = new Set();
+  rawKeyword.forEach((t) => {
     const s = typeof t === 'string' ? t.trim() : '';
     if (!s) return;
     const key = s.toLowerCase();
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    out.push(key);
+    if (!key || keywordSeen.has(key)) return;
+    keywordSeen.add(key);
+    keywordTokens.push(key);
+  });
+
+  const qualityTokens = [];
+  const q = smartQualityPrefSetting.value;
+  if (q === '4k_high_bitrate') qualityTokens.push('4k', '2160p', '高码率');
+  else if (q === '4k_1080p') qualityTokens.push('4k', '2160p');
+  else if (q === '8k') qualityTokens.push('8k', '4320p');
+
+  const fpsTokens = [];
+  const fps = smartFpsPrefSetting.value;
+  if (fps === '60') fpsTokens.push('60fps', '60帧');
+
+  return { keywordTokens, qualityTokens, fpsTokens };
+});
+
+const compiledSmartSourcePriorityTokens = computed(() => {
+  const { keywordTokens, qualityTokens, fpsTokens } = compiledSmartSourcePriorityTokenGroups.value || {};
+  const priorityOrder =
+    smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.order)
+      ? smartSourceExtractPrioritySetting.value.order
+      : ['画质', '帧率', '关键字', '网盘'];
+
+  const tokenGroups = {
+    画质: Array.isArray(qualityTokens) ? qualityTokens : [],
+    帧率: Array.isArray(fpsTokens) ? fpsTokens : [],
+    关键字: Array.isArray(keywordTokens) ? keywordTokens : [],
   };
-  prefix.forEach(add);
-  suffix.forEach(add);
+
+  const prefix = [];
+  priorityOrder.forEach((key) => {
+    if (key === '网盘') return;
+    const group = tokenGroups[key];
+    if (Array.isArray(group) && group.length) prefix.push(...group);
+  });
+
+  const out = [];
+  const seen = new Set();
+  prefix.forEach((t) => {
+    const s = typeof t === 'string' ? t.trim().toLowerCase() : '';
+    if (!s || seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  });
   return out;
 });
 
@@ -2492,8 +2515,15 @@ const smartPanEpisodes = computed(() => {
   const rawPans = panOptions.value;
   if (!Array.isArray(rawPans) || rawPans.length < 2) return [];
 
-  const qualityOrder = compiledSmartSourcePriorityTokens.value;
-  const mode = smartPanExtractModeSetting.value;
+  const priorityExplicit =
+    smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.explicit)
+      ? smartSourceExtractPrioritySetting.value.explicit
+      : ['画质'];
+  const priorityOrder =
+    smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.order)
+      ? smartSourceExtractPrioritySetting.value.order
+      : ['画质', '帧率', '关键字', '网盘'];
+  const { qualityTokens, fpsTokens, keywordTokens } = compiledSmartSourcePriorityTokenGroups.value || {};
 
   const labelTokenIdxOf = (label) => {
     const s = typeof label === 'string' ? label.trim().toLowerCase() : '';
@@ -2573,7 +2603,9 @@ const smartPanEpisodes = computed(() => {
         explicitSeason: explicit.has ? explicit.season : null,
         explicitSeasonHas: explicit.has,
         episodeNo,
-        priority: computePriorityMatch(rawTextLower, qualityOrder),
+        matchQuality: computePriorityMatch(rawTextLower, Array.isArray(qualityTokens) ? qualityTokens : []),
+        matchFps: computePriorityMatch(rawTextLower, Array.isArray(fpsTokens) ? fpsTokens : []),
+        matchKeyword: computePriorityMatch(rawTextLower, Array.isArray(keywordTokens) ? keywordTokens : []),
         rawTextLower,
       });
     });
@@ -2609,29 +2641,44 @@ const smartPanEpisodes = computed(() => {
     byKey.set(key, list);
   });
 
+  const countCriteriaMatches = (c) => {
+    if (!c) return 0;
+    let n = 0;
+    for (let i = 0; i < priorityExplicit.length; i += 1) {
+      const key = priorityExplicit[i];
+      if (key === '网盘') continue;
+      if (key === '画质' && c.matchQuality && c.matchQuality.count > 0) n += 1;
+      else if (key === '帧率' && c.matchFps && c.matchFps.count > 0) n += 1;
+      else if (key === '关键字' && c.matchKeyword && c.matchKeyword.count > 0) n += 1;
+    }
+    return n;
+  };
+
+  const compareByCriteria = (a, b) => {
+    if (!a || !b) return 0;
+    const am = countCriteriaMatches(a);
+    const bm = countCriteriaMatches(b);
+    if (am !== bm) return bm - am; // more big-condition matches first
+    for (let i = 0; i < priorityOrder.length; i += 1) {
+      const c = priorityOrder[i];
+      if (c === '网盘') {
+        if ((a.tokenIdx || 0) !== (b.tokenIdx || 0)) return (a.tokenIdx || 0) - (b.tokenIdx || 0);
+        continue;
+      }
+      const q =
+        c === '画质'
+          ? comparePriorityMatch(a && a.matchQuality, b && b.matchQuality)
+          : c === '帧率'
+            ? comparePriorityMatch(a && a.matchFps, b && b.matchFps)
+            : comparePriorityMatch(a && a.matchKeyword, b && b.matchKeyword);
+      if (q) return q;
+    }
+    return (a.index || 0) - (b.index || 0);
+  };
+
   const pickBest = (list) => {
     if (!Array.isArray(list) || !list.length) return null;
-    if (mode === 'pan-first') {
-      for (let tIdx = 0; tIdx < panTokenOrder.length; tIdx += 1) {
-        const group = list.filter((it) => it && it.tokenIdx === tIdx);
-        if (!group.length) continue;
-        group.sort((a, b) => {
-          const q = comparePriorityMatch(a && a.priority, b && b.priority);
-          if (q) return q;
-          return a.index - b.index;
-        });
-        return group[0] || null;
-      }
-      return null;
-    }
-
-    // rule-first
-    const sorted = list.slice().sort((a, b) => {
-      const q = comparePriorityMatch(a && a.priority, b && b.priority);
-      if (q) return q;
-      if (a.tokenIdx !== b.tokenIdx) return a.tokenIdx - b.tokenIdx;
-      return a.index - b.index;
-    });
+    const sorted = list.slice().sort(compareByCriteria);
     return sorted[0] || null;
   };
 
@@ -2707,12 +2754,29 @@ const smartMovieEpisodes = computed(() => {
   const rules = compiledMagicMovieRules.value;
   if (!Array.isArray(rules) || !rules.length) return [];
 
-  const qualityTokens = compiledSmartSourcePriorityTokens.value;
-  const mode = smartPanExtractModeSetting.value;
+  const priorityExplicit =
+    smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.explicit)
+      ? smartSourceExtractPrioritySetting.value.explicit
+      : ['画质'];
+  const priorityOrder =
+    smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.order)
+      ? smartSourceExtractPrioritySetting.value.order
+      : ['画质', '帧率', '关键字', '网盘'];
+  const { qualityTokens, fpsTokens, keywordTokens } = compiledSmartSourcePriorityTokenGroups.value || {};
   const pans = panOptions.value;
   if (!Array.isArray(pans) || !pans.length) return [];
 
   const candidates = [];
+  const panTokenOrder = compiledSmartPanMatchTokens.value;
+  const labelTokenIdxOf = (label) => {
+    const s = typeof label === 'string' ? label.trim().toLowerCase() : '';
+    if (!s) return -1;
+    for (let i = 0; i < panTokenOrder.length; i += 1) {
+      const t = panTokenOrder[i];
+      if (t && s.includes(t)) return i;
+    }
+    return -1;
+  };
   pans.forEach((pan, panIdx) => {
     const eps = pan && Array.isArray(pan.episodes) ? pan.episodes : [];
     eps.forEach((ep, index) => {
@@ -2727,14 +2791,18 @@ const smartMovieEpisodes = computed(() => {
       if (!candidatesText.some((t) => matchesAnyMagicRule(t, rules))) return;
 
       const rawLower = rawText.toLowerCase();
+      const tokenIdx = labelTokenIdxOf(pan && pan.label != null ? String(pan.label) : '');
       candidates.push({
         panIdx,
+        tokenIdx,
         index,
         ep,
         url,
         rawText: rawText || name || url,
         rawLower: rawLower || '',
-        priority: computePriorityMatch(rawLower || '', qualityTokens),
+        matchQuality: computePriorityMatch(rawLower || '', Array.isArray(qualityTokens) ? qualityTokens : []),
+        matchFps: computePriorityMatch(rawLower || '', Array.isArray(fpsTokens) ? fpsTokens : []),
+        matchKeyword: computePriorityMatch(rawLower || '', Array.isArray(keywordTokens) ? keywordTokens : []),
         dedupBase: normalizeMovieDedupBase(rawLower || ''),
         sig: extractMovieSignatureParts(rawLower || '').join('|'),
       });
@@ -2742,17 +2810,47 @@ const smartMovieEpisodes = computed(() => {
   });
   if (!candidates.length) return [];
 
-  const better = (a, b) => {
-    if (mode === 'pan-first') {
-      if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) < (b.panIdx || 0) ? a : b;
-      const q = comparePriorityMatch(a && a.priority, b && b.priority);
-      if (q) return q < 0 ? a : b;
-      return (a.index || 0) <= (b.index || 0) ? a : b;
+  const countCriteriaMatches = (c) => {
+    if (!c) return 0;
+    let n = 0;
+    for (let i = 0; i < priorityExplicit.length; i += 1) {
+      const key = priorityExplicit[i];
+      if (key === '网盘') continue;
+      if (key === '画质' && c.matchQuality && c.matchQuality.count > 0) n += 1;
+      else if (key === '帧率' && c.matchFps && c.matchFps.count > 0) n += 1;
+      else if (key === '关键字' && c.matchKeyword && c.matchKeyword.count > 0) n += 1;
     }
-    const q = comparePriorityMatch(a && a.priority, b && b.priority);
-    if (q) return q < 0 ? a : b;
-    if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) < (b.panIdx || 0) ? a : b;
-    return (a.index || 0) <= (b.index || 0) ? a : b;
+    return n;
+  };
+
+  const compareByCriteria = (a, b) => {
+    if (!a || !b) return 0;
+    const am = countCriteriaMatches(a);
+    const bm = countCriteriaMatches(b);
+    if (am !== bm) return bm - am;
+    for (let i = 0; i < priorityOrder.length; i += 1) {
+      const key = priorityOrder[i];
+      if (key === '网盘') {
+        const at = Number.isFinite(Number(a.tokenIdx)) ? Number(a.tokenIdx) : 99999;
+        const bt = Number.isFinite(Number(b.tokenIdx)) ? Number(b.tokenIdx) : 99999;
+        if (at !== bt) return at - bt;
+        continue;
+      }
+      const q =
+        key === '画质'
+          ? comparePriorityMatch(a.matchQuality, b.matchQuality)
+          : key === '帧率'
+            ? comparePriorityMatch(a.matchFps, b.matchFps)
+            : comparePriorityMatch(a.matchKeyword, b.matchKeyword);
+      if (q) return q;
+    }
+    if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) - (b.panIdx || 0);
+    return (a.index || 0) - (b.index || 0);
+  };
+
+  const better = (a, b) => {
+    const q = compareByCriteria(a, b);
+    return q <= 0 ? a : b;
   };
 
   const byUrl = new Map();
@@ -2770,18 +2868,7 @@ const smartMovieEpisodes = computed(() => {
   });
 
   const out = Array.from(byKey.values());
-  out.sort((a, b) => {
-    if (mode === 'pan-first') {
-      if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) - (b.panIdx || 0);
-      const q = comparePriorityMatch(a && a.priority, b && b.priority);
-      if (q) return q;
-      return (a.index || 0) - (b.index || 0);
-    }
-    const q = comparePriorityMatch(a && a.priority, b && b.priority);
-    if (q) return q;
-    if ((a.panIdx || 0) !== (b.panIdx || 0)) return (a.panIdx || 0) - (b.panIdx || 0);
-    return (a.index || 0) - (b.index || 0);
-  });
+  out.sort(compareByCriteria);
 
   return out.map((c) => {
     const ep = c && c.ep ? c.ep : {};

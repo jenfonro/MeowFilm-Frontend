@@ -94,12 +94,13 @@ export function initDashboardPage(bootstrap = {}) {
 
   const searchDisplayModeSelect = document.getElementById('searchDisplayModeSelect');
   const searchDisplayModeError = document.getElementById('searchDisplayModeError');
+  const searchBadgePreferEpisodeInput = document.getElementById('searchBadgePreferEpisode');
   const globalSettingsSave = document.getElementById('globalSettingsSave');
   const globalSettingsSaveStatus = document.getElementById('globalSettingsSaveStatus');
 
   const smartSourcePriorityTokensInput = document.getElementById('smartSourcePriorityTokensInput');
   const smartPanMatchTokensInput = document.getElementById('smartPanMatchTokensInput');
-  const smartPanExtractModeSelect = document.getElementById('smartPanExtractModeSelect');
+  const smartSourceExtractPriorityInput = document.getElementById('smartSourceExtractPriorityInput');
   const smartPanSettingsSave = document.getElementById('smartPanSettingsSave');
   const smartPanSettingsStatus = document.getElementById('smartPanSettingsStatus');
   const smartPanDefaultsRestore = document.getElementById('smartPanDefaultsRestore');
@@ -111,8 +112,6 @@ export function initDashboardPage(bootstrap = {}) {
   const smartListEnabledInput = document.getElementById('smartListEnabled');
   const smartQualityPrefSelect = document.getElementById('smartQualityPref');
   const smartFpsPrefSelect = document.getElementById('smartFpsPref');
-  const smartBalanceQualityInput = document.getElementById('smartBalanceQuality');
-  const smartBalanceFpsInput = document.getElementById('smartBalanceFps');
 
   const tmdbSettingsForm = document.getElementById('tmdbSettingsForm');
   const tmdbSaveStatus = document.getElementById('tmdbSaveStatus');
@@ -1921,7 +1920,6 @@ export function initDashboardPage(bootstrap = {}) {
   setupCustomSelect('searchDisplayModeSelect');
   setupCustomSelect('smartQualityPref');
   setupCustomSelect('smartFpsPref');
-  setupCustomSelect('smartPanExtractModeSelect');
   setupCustomSelect('catPawOpenServerSelect');
   setupCustomSelect('catPawOpenSyncFromServerSelect');
 
@@ -6577,6 +6575,9 @@ export function initDashboardPage(bootstrap = {}) {
       syncCustomSelectValue('searchDisplayModeSelect', settings.searchDisplayMode || 'sites');
       syncCustomSelectValue('doubanDataSelect', settings.doubanDataProxy || 'direct');
       syncCustomSelectValue('doubanImgSelect', settings.doubanImgProxy || 'direct-browser');
+      if (searchBadgePreferEpisodeInput) {
+        searchBadgePreferEpisodeInput.checked = !!settings.searchBadgePreferEpisode;
+      }
 
       await validateSearchDisplayModeToken({ toast: false });
 
@@ -6601,15 +6602,34 @@ export function initDashboardPage(bootstrap = {}) {
   // 智能设置
   let smartPlayEnabled = true;
   let smartListEnabled = true;
-  let smartQualityPref = '';
+  let smartQualityPref = '4k_1080p';
   let smartFpsPref = '';
-  let smartBalanceQuality = true;
-  let smartBalanceFps = true;
+  let smartSourceExtractPriority = '画质';
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
-  let smartPanExtractMode = 'quality-first';
   let smartPanDefaultsConfirming = false;
   let smartSaving = false;
+
+  const normalizeSmartSourceExtractPriorityList = (raw) => {
+    const allowed = new Set(['画质', '帧率', '关键字', '网盘']);
+    const text = typeof raw === 'string' ? raw : String(raw || '');
+    const parts = text.replaceAll('，', ',').split(/[,/\s]+/g).map((x) => String(x || '').trim()).filter(Boolean);
+    const seen = new Set();
+    const out = [];
+    parts.forEach((p) => {
+      if (!allowed.has(p)) return;
+      if (seen.has(p)) return;
+      seen.add(p);
+      out.push(p);
+    });
+    if (!out.length) return ['画质'];
+    return out;
+  };
+
+  const encodeSmartSourceExtractPriorityList = (list) => {
+    const arr = Array.isArray(list) ? list : normalizeSmartSourceExtractPriorityList(list);
+    return arr.join(',');
+  };
 
   const normalizeCommaTokenLine = (text) => {
     const raw = typeof text === 'string' ? text : String(text || '');
@@ -6629,20 +6649,12 @@ export function initDashboardPage(bootstrap = {}) {
 
   const renderSmartPanSettings = () => {
     if (smartQualityPrefSelect) {
-      smartQualityPrefSelect.value = smartQualityPref || '';
+      syncCustomSelectValue('smartQualityPref', smartQualityPref || '', { dispatch: false });
       smartQualityPrefSelect.disabled = smartSaving;
     }
     if (smartFpsPrefSelect) {
-      smartFpsPrefSelect.value = smartFpsPref || '';
+      syncCustomSelectValue('smartFpsPref', smartFpsPref || '', { dispatch: false });
       smartFpsPrefSelect.disabled = smartSaving;
-    }
-    if (smartBalanceQualityInput) {
-      smartBalanceQualityInput.checked = !!smartBalanceQuality;
-      smartBalanceQualityInput.disabled = smartSaving;
-    }
-    if (smartBalanceFpsInput) {
-      smartBalanceFpsInput.checked = !!smartBalanceFps;
-      smartBalanceFpsInput.disabled = smartSaving;
     }
     if (smartSourcePriorityTokensInput) {
       smartSourcePriorityTokensInput.value = Array.isArray(smartSourcePriorityTokens) ? smartSourcePriorityTokens.join(',') : '';
@@ -6652,12 +6664,9 @@ export function initDashboardPage(bootstrap = {}) {
       smartPanMatchTokensInput.value = Array.isArray(smartPanMatchTokens) ? smartPanMatchTokens.join(',') : '';
       smartPanMatchTokensInput.disabled = smartSaving;
     }
-    if (smartPanExtractModeSelect) {
-      smartPanExtractModeSelect.value =
-        smartPanExtractMode === 'pan-first' || smartPanExtractMode === 'rule-first' || smartPanExtractMode === 'quality-first'
-          ? smartPanExtractMode
-          : 'quality-first';
-      smartPanExtractModeSelect.disabled = smartSaving;
+    if (smartSourceExtractPriorityInput) {
+      smartSourceExtractPriorityInput.value = encodeSmartSourceExtractPriorityList(smartSourceExtractPriority || '画质');
+      smartSourceExtractPriorityInput.disabled = smartSaving;
     }
     if (smartPanSettingsSave) smartPanSettingsSave.disabled = smartSaving;
     if (smartPanDefaultsRestore) smartPanDefaultsRestore.disabled = smartSaving;
@@ -6906,7 +6915,9 @@ export function initDashboardPage(bootstrap = {}) {
         new RegExp('\\p{Extended_Pictographic}', 'u');
         return (s) =>
           String(s || '')
-            .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Emoji}]/gu, '')
+            // Do NOT include `\\p{Emoji}` here: it also matches ASCII digits (keycap emoji),
+            // which would break test cases like "仙逆4K".
+            .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}]/gu, '')
             .replace(/[\uFE0E\uFE0F]/g, '');
       } catch (_e) {
         return (s) =>
@@ -6988,13 +6999,7 @@ export function initDashboardPage(bootstrap = {}) {
 	      aggregateRegexRules,
         smartSourcePriorityTokens: Array.isArray(smartSettings.smartSourcePriorityTokens) ? smartSettings.smartSourcePriorityTokens : [],
         smartPanMatchTokens: Array.isArray(smartSettings.smartPanMatchTokens) ? smartSettings.smartPanMatchTokens : [],
-        smartPanExtractMode:
-          typeof smartSettings.smartPanExtractMode === 'string' &&
-          (smartSettings.smartPanExtractMode === 'pan-first' ||
-            smartSettings.smartPanExtractMode === 'rule-first' ||
-            smartSettings.smartPanExtractMode === 'quality-first')
-            ? smartSettings.smartPanExtractMode
-            : 'quality-first',
+        smartSourceExtractPriority: typeof smartSettings.smartSourceExtractPriority === 'string' ? smartSettings.smartSourceExtractPriority : '',
 	    });
 	    if (!resp.ok || !data || data.success !== true) {
 	      throw new Error((data && data.message) || `HTTP ${resp.status}`);
@@ -7012,7 +7017,8 @@ export function initDashboardPage(bootstrap = {}) {
 		    }
 
 		    list.forEach((rule, idx) => {
-		      const li = createEl('li', { className: 'tv-row tv-row-fit' });
+		      const li = createEl('li', { className: 'flex items-center gap-3' });
+          const row = createEl('div', { className: 'tv-row tv-row-fit min-w-0' });
 		      const seq = createEl('span', { className: CLS.mutedMonoXs, text: `${idx + 1}.` });
 
 		      if (kind === 'episode' || kind === 'movie') {
@@ -7040,8 +7046,8 @@ export function initDashboardPage(bootstrap = {}) {
 
 	        inputs.appendChild(patternInput);
 	        inputs.appendChild(replaceInput);
-	        li.appendChild(seq);
-		        li.appendChild(inputs);
+	        row.appendChild(seq);
+		        row.appendChild(inputs);
 		      } else {
 		        const inputs = createEl('div', { className: 'min-w-0' });
 		        setStyles(inputs, { width: 'min(900px, 70vw)', maxWidth: '100%', minWidth: '240px' });
@@ -7053,8 +7059,8 @@ export function initDashboardPage(bootstrap = {}) {
 	        input.setAttribute('data-magic-idx', String(idx));
 	        inputs.appendChild(input);
 
-	        li.appendChild(seq);
-	        li.appendChild(inputs);
+	        row.appendChild(seq);
+	        row.appendChild(inputs);
 	      }
 
 	      if (kind === 'episode' || kind === 'movie') {
@@ -7063,7 +7069,7 @@ export function initDashboardPage(bootstrap = {}) {
 	        save.disabled = magicSaving;
 	        save.setAttribute('data-magic-save', kind);
 	        save.setAttribute('data-magic-idx', String(idx));
-	        li.appendChild(save);
+	        row.appendChild(save);
 	      }
 	      if (kind === 'episodeCleanRegex' || kind === 'aggregateRegex') {
 	        const save = createEl('button', { className: 'action-btn green', text: '保存' });
@@ -7071,7 +7077,7 @@ export function initDashboardPage(bootstrap = {}) {
 	        save.disabled = magicSaving;
 	        save.setAttribute('data-magic-save', kind);
 	        save.setAttribute('data-magic-idx', String(idx));
-	        li.appendChild(save);
+	        row.appendChild(save);
 	      }
 
 	      const del = createEl('button', { className: 'action-btn red', text: '删除' });
@@ -7079,7 +7085,20 @@ export function initDashboardPage(bootstrap = {}) {
 	      del.disabled = magicSaving;
 	      del.setAttribute('data-magic-del', kind);
 	      del.setAttribute('data-magic-idx', String(idx));
-	      li.appendChild(del);
+	      row.appendChild(del);
+
+        // Rule preview (processed text) for easier maintenance.
+        if (kind === 'aggregateRegex' || kind === 'episodeCleanRegex') {
+          const preview = createEl('div', { className: 'tv-magic-preview truncate' });
+          preview.setAttribute('data-magic-preview-kind', kind);
+          preview.setAttribute('data-magic-preview-idx', String(idx));
+          setStyles(preview, { width: '260px', maxWidth: '260px', minWidth: '180px' });
+          li.appendChild(row);
+          li.appendChild(preview);
+          listEl.appendChild(li);
+          return;
+        }
+        li.appendChild(row);
 	      listEl.appendChild(li);
 	    });
 	  };
@@ -7110,7 +7129,140 @@ export function initDashboardPage(bootstrap = {}) {
 	    setMagicTestOutput('', '');
 	    setMagicMovieTestOutput('', '');
 	    setMagicAggregateTestOutput('', '');
+      updateMagicRulePreviews();
 	  };
+
+    function updateMagicRulePreviews() {
+      const sanitizeDisplayTitle = (s) =>
+        String(s || '')
+          .replace(/[\u200b\u200c\u200d\ufeff]+/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+      const buildEmojiCleaner = () => {
+        try {
+          // eslint-disable-next-line no-new
+          new RegExp('\\p{Extended_Pictographic}', 'u');
+          return (s) =>
+            String(s || '')
+              // Do NOT include `\\p{Emoji}` here: it also matches ASCII digits (keycap emoji),
+              // which would break test cases like "仙逆4K".
+              .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}]/gu, '')
+              .replace(/[\uFE0E\uFE0F]/g, '');
+        } catch (_e) {
+          return (s) =>
+            String(s || '')
+              .replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]/g, '')
+              .replace(/[\u2600-\u27BF]/g, '')
+              .replace(/[\uFE0E\uFE0F]/g, '');
+        }
+      };
+      const stripEmojiSymbols = buildEmojiCleaner();
+
+      const normalizeAggregateDisplay = (s) =>
+        String(s || '')
+          .replace(/[\u200b\u200c\u200d\ufeff]+/g, '')
+          .replace(/[\s.\-_,，:：;；!！?？·•/\\|]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+      const normalizeReplaceTemplate = (replaceRaw) => {
+        const r = typeof replaceRaw === 'string' ? replaceRaw : '';
+        return r ? r.replace(/\\(\d+)/g, '$$$1') : '';
+      };
+
+      const parseEpisodeNumber = (text) => {
+        const s = typeof text === 'string' ? text : '';
+        if (!s) return 0;
+        const mE = s.match(/\bE\s*(\d{1,5})\b/i);
+        if (mE && mE[1]) return Math.max(0, Number.parseInt(mE[1], 10) || 0);
+        const mCn = s.match(/(?:更新至|更至|第)\s*(\d{1,5})\s*(?:集|话|期)/);
+        if (mCn && mCn[1]) return Math.max(0, Number.parseInt(mCn[1], 10) || 0);
+        const mNum = s.match(/(\d{1,5})/);
+        if (mNum && mNum[1]) return Math.max(0, Number.parseInt(mNum[1], 10) || 0);
+        return 0;
+      };
+
+      const computeAggregateRegexPreviews = () => {
+        const rules = Array.isArray(magicAggregateRegexRules) ? magicAggregateRegexRules : [];
+        if (!rules.length) return [];
+        const query = (magicAggregateRuleTestQueryInput && magicAggregateRuleTestQueryInput.value ? magicAggregateRuleTestQueryInput.value : '').trim();
+        const raw = (magicAggregateRuleTestInput && magicAggregateRuleTestInput.value ? magicAggregateRuleTestInput.value : '').trim();
+        const qTrailingDigitsMatch = query.match(/(\d+)\s*$/);
+        const qTrailingDigits = qTrailingDigitsMatch ? String(qTrailingDigitsMatch[1] || '') : '';
+        let out = stripEmojiSymbols(sanitizeDisplayTitle(raw));
+        const previews = [];
+        rules.forEach((rule, idx) => {
+          const s = typeof rule === 'string' ? rule.trim() : '';
+          if (!s) {
+            previews[idx] = normalizeAggregateDisplay(out);
+            return;
+          }
+          try {
+            const re = buildRegexFromInput(s, { defaultFlags: 'g', forceGlobal: true });
+            if (!re) throw new Error('invalid');
+
+            if (qTrailingDigits) {
+              try {
+                const t1 = `x${qTrailingDigits}`;
+                const t2 = `x${qTrailingDigits}y`;
+                const r1 = t1.replace(re, '');
+                const r2 = t2.replace(re, '');
+                const isTrailingDigitsRule = r1 === 'x' && r2 === t2;
+                if (isTrailingDigitsRule) {
+                  previews[idx] = `${normalizeAggregateDisplay(out)}（跳过尾号规则）`;
+                  return;
+                }
+              } catch (_e) {}
+            }
+            out = out.replace(re, '');
+            previews[idx] = normalizeAggregateDisplay(out);
+          } catch (_e) {
+            previews[idx] = '正则无效';
+          }
+        });
+        return previews;
+      };
+
+      const computeEpisodeCleanRegexPreviews = () => {
+        const rules = Array.isArray(magicEpisodeCleanRegexRules) ? magicEpisodeCleanRegexRules : [];
+        if (!rules.length) return [];
+        const raw = (magicEpisodeRuleTestInput && magicEpisodeRuleTestInput.value ? magicEpisodeRuleTestInput.value : '').trim();
+        let out = String(raw || '');
+        const previews = [];
+        rules.forEach((rule, idx) => {
+          const s = typeof rule === 'string' ? rule.trim() : '';
+          if (!s) {
+            previews[idx] = out.replace(/\s+/g, ' ').trim();
+            return;
+          }
+          const re = buildRegexFromInput(s, { defaultFlags: 'g', forceGlobal: true });
+          if (!re) {
+            previews[idx] = '正则无效';
+            return;
+          }
+          try {
+            out = out.replace(re, '');
+          } catch (_e) {}
+          previews[idx] = out.replace(/\s+/g, ' ').trim();
+        });
+        return previews;
+      };
+
+      const aggregatePreviews = computeAggregateRegexPreviews();
+      const episodeCleanPreviews = computeEpisodeCleanRegexPreviews();
+
+      document.querySelectorAll('[data-magic-preview-kind][data-magic-preview-idx]').forEach((el) => {
+        const kind = (el.getAttribute('data-magic-preview-kind') || '').trim();
+        const idx = Number(el.getAttribute('data-magic-preview-idx') || -1);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        let text = '';
+        if (kind === 'aggregateRegex') text = aggregatePreviews[idx] || '';
+        else if (kind === 'episodeCleanRegex') text = episodeCleanPreviews[idx] || '';
+        el.textContent = text;
+        el.classList.toggle('hidden', !text);
+      });
+    }
 
 	  const persistMagic = async ({ successMessage = '' } = {}) => {
 	    if (magicSaving) return;
@@ -7162,9 +7314,9 @@ export function initDashboardPage(bootstrap = {}) {
 	      notify.error(msg);
 	    } finally {
 	      magicSaving = false;
-      renderMagicPanels();
-    }
-  };
+	      renderMagicPanels();
+	    }
+	  };
 
   const saveTMDBSettings = async (payload) => {
     const { resp, data } = await postJsonSafe('/dashboard/tmdb/settings', payload);
@@ -7297,34 +7449,28 @@ export function initDashboardPage(bootstrap = {}) {
     try {
       smartQualityPref = smartQualityPrefSelect ? String(smartQualityPrefSelect.value || '').trim() : '';
       smartFpsPref = smartFpsPrefSelect ? String(smartFpsPrefSelect.value || '').trim() : '';
-      smartBalanceQuality = !!(smartBalanceQualityInput && smartBalanceQualityInput.checked);
-      smartBalanceFps = !!(smartBalanceFpsInput && smartBalanceFpsInput.checked);
+      smartSourceExtractPriority = encodeSmartSourceExtractPriorityList(
+        smartSourceExtractPriorityInput ? smartSourceExtractPriorityInput.value : smartSourceExtractPriority
+      );
       smartSourcePriorityTokens = normalizeCommaTokenLine(smartSourcePriorityTokensInput ? smartSourcePriorityTokensInput.value : '');
       smartPanMatchTokens = normalizeCommaTokenLine(smartPanMatchTokensInput ? smartPanMatchTokensInput.value : '');
-      const modeRaw = smartPanExtractModeSelect ? String(smartPanExtractModeSelect.value || '').trim() : '';
-      smartPanExtractMode = modeRaw === 'pan-first' || modeRaw === 'rule-first' || modeRaw === 'quality-first' ? modeRaw : 'quality-first';
 
       const data = await saveSmartSettings({
         smartQualityPref,
         smartFpsPref,
-        smartBalanceQuality,
-        smartBalanceFps,
+        smartSourceExtractPriority,
         smartSourcePriorityTokens,
         smartPanMatchTokens,
-        smartPanExtractMode,
       });
 
       smartQualityPref = typeof data.smartQualityPref === 'string' ? data.smartQualityPref : '';
       smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
-      smartBalanceQuality = !!data.smartBalanceQuality;
-      smartBalanceFps = !!data.smartBalanceFps;
+      smartSourceExtractPriority =
+        typeof data.smartSourceExtractPriority === 'string' && data.smartSourceExtractPriority.trim()
+          ? data.smartSourceExtractPriority.trim()
+          : smartSourceExtractPriority;
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : smartSourcePriorityTokens;
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : smartPanMatchTokens;
-      smartPanExtractMode =
-        typeof data.smartPanExtractMode === 'string' &&
-        (data.smartPanExtractMode === 'pan-first' || data.smartPanExtractMode === 'rule-first' || data.smartPanExtractMode === 'quality-first')
-          ? data.smartPanExtractMode
-          : 'quality-first';
 
       renderSmartPanSettings();
       if (!silent) setSmartPrefStatus('', '');
@@ -7409,17 +7555,15 @@ export function initDashboardPage(bootstrap = {}) {
       }
       smartPlayEnabled = !!data.smartPlayEnabled;
       smartListEnabled = !!data.smartListEnabled;
-      smartQualityPref = typeof data.smartQualityPref === 'string' ? data.smartQualityPref : '';
+      smartQualityPref =
+        typeof data.smartQualityPref === 'string' && data.smartQualityPref.trim() ? data.smartQualityPref : '4k_1080p';
       smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
-      smartBalanceQuality = !!data.smartBalanceQuality;
-      smartBalanceFps = !!data.smartBalanceFps;
+      smartSourceExtractPriority =
+        typeof data.smartSourceExtractPriority === 'string' && data.smartSourceExtractPriority.trim()
+          ? data.smartSourceExtractPriority.trim()
+          : '画质';
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : [];
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : [];
-      smartPanExtractMode =
-        typeof data.smartPanExtractMode === 'string' &&
-        (data.smartPanExtractMode === 'pan-first' || data.smartPanExtractMode === 'rule-first' || data.smartPanExtractMode === 'quality-first')
-          ? data.smartPanExtractMode
-          : 'quality-first';
       renderSmartBasics();
       renderSmartPanSettings();
       setSmartStatus('', '');
@@ -7464,6 +7608,7 @@ export function initDashboardPage(bootstrap = {}) {
 	          : [];
 	      magicAggregateRegexRules = Array.isArray(data.aggregateRegexRules) ? data.aggregateRegexRules : [];
 	      renderMagicPanels();
+        updateMagicRulePreviews();
 	      setMagicStatus(magicEpisodeCleanRegexRuleStatus, '', '');
 	      setMagicStatus(magicEpisodeRuleStatus, '', '');
 	      setMagicStatus(magicMovieRuleStatus, '', '');
@@ -7585,6 +7730,15 @@ export function initDashboardPage(bootstrap = {}) {
       }
     });
   }
+  if (magicEpisodeRuleTestInput) {
+    magicEpisodeRuleTestInput.addEventListener('input', () => updateMagicRulePreviews());
+  }
+  if (magicAggregateRuleTestInput) {
+    magicAggregateRuleTestInput.addEventListener('input', () => updateMagicRulePreviews());
+  }
+  if (magicAggregateRuleTestQueryInput) {
+    magicAggregateRuleTestQueryInput.addEventListener('input', () => updateMagicRulePreviews());
+  }
 
 	  if (magicEpisodeCleanRegexRuleAdd && magicEpisodeCleanRegexRuleInput) {
 	    magicEpisodeCleanRegexRuleAdd.addEventListener('click', async () => {
@@ -7654,7 +7808,7 @@ export function initDashboardPage(bootstrap = {}) {
     String.raw`\([^)]*\)|（[^）]*）|\[[^\]]*\]|\{[^}]*\}|【[^】]*】`,
     String.raw`(?<!新)年\s*番\s*\d+|(?<!新)年\s*番`,
     String.raw`更新\s*中|(?:更新(?:至|到)?|更(?:至|到)?|更|首\s*更)\s*(?:EP|E)?\s*\d{1,4}\s*(?:集|话)?|首\s*更`,
-    String.raw`(?:HD\s*)?(?:4[kK]|8[kK])|(?:2160|1080|720)[pP]|国\s*漫|臻\s*彩|杜\s*比\s*音\s*效`,
+    String.raw`(?:HD\s*)?(?:4[kK]|8[kK])|(?:2160|1080|720)[pP]|国\s*漫|臻\s*彩|杜\s*比\s*音\s*效|已\s*刮\s*削|连\s*载\s*中|10\s*[- ]?bit`,
     String.raw`(?:19\d{2}|20\d{2})(?=\s*(?:(?:HD\s*)?(?:4[kK]|8[kK])|(?:更新|更)))`,
     String.raw`最\s*新\s*(?:一\s*集|更\s*新)`,
     String.raw`(?<=\D)\d{1,4}$`,
@@ -7725,6 +7879,7 @@ export function initDashboardPage(bootstrap = {}) {
 
   const DEFAULT_SMART_SOURCE_PRIORITY_TOKENS = [];
   const DEFAULT_SMART_PAN_MATCH_TOKENS = ['逸动', '天意', '夸父', '优夕', '百度'];
+  const DEFAULT_SMART_QUALITY_PREF = '4k_1080p';
 
   if (smartPanDefaultsRestore) {
     smartPanDefaultsRestore.addEventListener('click', () => {
@@ -7744,6 +7899,9 @@ export function initDashboardPage(bootstrap = {}) {
     smartPanDefaultsRestoreConfirm.addEventListener('click', () => {
       if (smartSaving) return;
       smartPanDefaultsConfirming = false;
+      smartQualityPref = DEFAULT_SMART_QUALITY_PREF;
+      smartFpsPref = '';
+      smartSourceExtractPriority = '画质';
       smartSourcePriorityTokens = DEFAULT_SMART_SOURCE_PRIORITY_TOKENS.slice();
       smartPanMatchTokens = DEFAULT_SMART_PAN_MATCH_TOKENS.slice();
       renderSmartPanSettings();

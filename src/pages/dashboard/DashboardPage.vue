@@ -145,6 +145,15 @@
                   </label>
                 </div>
               </div>
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">角标优先显示集数</div>
+                <div>
+                  <label class="enable-switch" title="角标优先显示集数">
+                    <input id="searchBadgePreferEpisode" name="searchBadgePreferEpisode" type="checkbox" form="siteSettingsForm" />
+                    <span class="enable-slider"></span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -176,7 +185,7 @@
             </div>
 
             <div class="pt-2 border-t border-gray-200 dark:border-white/10">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先匹配片源规则</div>
+              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">关键字匹配规则</div>
             </div>
             <div>
               <input id="smartSourcePriorityTokensInput" class="tv-field" placeholder="DDP,H.265" />
@@ -190,34 +199,17 @@
             </div>
 
             <div class="pt-2 border-t border-gray-200 dark:border-white/10">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">片源提取优先设置</div>
+              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先片源规则</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                只能填写：画质,帧率,关键字,网盘（可同时填写多个），填写的规则参与提取结果的优先匹配
+              </div>
             </div>
             <div>
-              <select id="smartPanExtractModeSelect" class="custom-select tv-field">
-                <option value="quality-first">画质优先</option>
-                <option value="rule-first">规则优先</option>
-                <option value="pan-first">网盘优先</option>
-              </select>
-            </div>
-            <div class="flex items-center gap-6">
-              <div class="flex items-center gap-2">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">兼顾画质</div>
-                <label class="enable-switch" title="兼顾画质">
-                  <input id="smartBalanceQuality" type="checkbox" />
-                  <span class="enable-slider"></span>
-                </label>
-              </div>
-              <div class="flex items-center gap-2">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">兼顾帧率</div>
-                <label class="enable-switch" title="兼顾帧率">
-                  <input id="smartBalanceFps" type="checkbox" />
-                  <span class="enable-slider"></span>
-                </label>
-              </div>
+              <input id="smartSourceExtractPriorityInput" class="tv-field" placeholder="画质/帧率/关键字/网盘" />
             </div>
             <div id="smartPanSettingsStatus" class="text-xs hidden"></div>
             <div class="text-xs text-gray-500 dark:text-gray-400">
-              说明：用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。
+              说明：规则用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。
             </div>
           </div>
 
@@ -875,7 +867,7 @@
 
 			          <div class="admin-card space-y-3">
 			            <div class="flex items-center gap-3">
-			              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能剧集列表</div>
+			              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">列表净化设置</div>
 			              <button id="magicEpisodeDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
 			              <button id="magicEpisodeDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
 			              <button id="magicEpisodeDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
@@ -981,7 +973,7 @@
 
           <div class="admin-card space-y-3">
             <div class="flex items-center gap-3">
-              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能搜索列表设置</div>
+              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">搜索列表净化设置</div>
               <button id="magicAggregateDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
               <button id="magicAggregateDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
               <button id="magicAggregateDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
@@ -1031,7 +1023,7 @@
               </div>
             </div>
           </div>
-        </section>
+	        </section>
       </div>
     </div>
   </div>

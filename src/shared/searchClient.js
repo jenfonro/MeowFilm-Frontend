@@ -49,6 +49,7 @@ export function initSearchPage() {
   let siteOrderMap = new Map();
   let magicSearchCleanRules = [];
   let searchDisplayMode = 'sites'; // sites | tmdb | both
+  let searchBadgePreferEpisode = false;
 
   const safeParseJsonArray = (text) => {
     try {
@@ -86,6 +87,9 @@ export function initSearchPage() {
 
     const modeRaw = ((configEl && configEl.getAttribute('data-search-display-mode')) || 'sites').trim();
     searchDisplayMode = modeRaw === 'tmdb' || modeRaw === 'both' || modeRaw === 'sites' ? modeRaw : 'sites';
+
+    const preferRaw = ((configEl && configEl.getAttribute('data-search-badge-prefer-episode')) || '').trim();
+    searchBadgePreferEpisode = preferRaw === '1' || preferRaw.toLowerCase() === 'true' || preferRaw.toLowerCase() === 'yes';
   };
 
   refreshSearchConfigFromDom();
@@ -591,7 +595,9 @@ export function initSearchPage() {
         new RegExp('\\p{Extended_Pictographic}', 'u');
         return (s) =>
           String(s || '')
-            .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Emoji}]/gu, '')
+            // Do NOT include `\\p{Emoji}` here: it also matches ASCII digits (keycap emoji),
+            // which would break titles like "仙逆4K".
+            .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}]/gu, '')
             .replace(/[\uFE0E\uFE0F]/g, '');
       } catch (_e) {
         // Fallback: remove surrogate-pair emoji + common BMP symbol blocks.
@@ -612,6 +618,16 @@ export function initSearchPage() {
         .replace(/\s+/g, ' ')
         .trim();
 
+    // Built-in episode extraction patterns for search result badges.
+    // Keep it simple and stable; controlled by the global toggle only.
+    const EPISODE_BADGE_PATTERNS = [
+      /(?:更新至|更至|更)\s*(\d{1,5})\s*(?:集|话|回|期)/i,
+      /第\s*(\d{1,5})\s*(?:集|话|回|期)/i,
+      /(\d{1,5})\s*(?:集|话|回|期)\b/i,
+      /\bEP?\s*(\d{1,5})\b/i,
+      /\bE\s*(\d{1,5})\b/i,
+    ];
+
     // Used for what we actually show on the card title. Keep original punctuation (like `:` / `：`)
     // and only collapse whitespace + strip zero-width chars.
     const sanitizeDisplayTitle = (s) =>
@@ -623,6 +639,43 @@ export function initSearchPage() {
     // Pre-clean before applying user regex rules: remove zero-width chars, normalize whitespace,
     // and strip emoji/pictographs to keep user rules stable.
     const preCleanForRules = (s) => stripEmojiSymbols(sanitizeDisplayTitle(s));
+
+    const parseEpisodeNumber = (text) => {
+      const s = typeof text === 'string' ? text : '';
+      if (!s) return 0;
+      const mE = s.match(/\bE\s*(\d{1,5})\b/i);
+      if (mE && mE[1]) return Math.max(0, Number.parseInt(mE[1], 10) || 0);
+      const mCn = s.match(/(?:更新至|更至|第)\s*(\d{1,5})\s*(?:集|话|期)/);
+      if (mCn && mCn[1]) return Math.max(0, Number.parseInt(mCn[1], 10) || 0);
+      const mNum = s.match(/(\d{1,5})/);
+      if (mNum && mNum[1]) return Math.max(0, Number.parseInt(mNum[1], 10) || 0);
+      return 0;
+    };
+
+    const extractMaxEpisodeFromSources = (sources) => {
+      if (!searchBadgePreferEpisode) return 0;
+      const list = Array.isArray(sources) ? sources : [];
+      if (!list.length) return 0;
+      let maxEp = 0;
+      list.forEach((src) => {
+        const title = src && src.videoTitle != null ? String(src.videoTitle) : '';
+        const remark = src && src.videoRemark != null ? String(src.videoRemark) : '';
+        const candidates = [remark, title].filter(Boolean);
+        candidates.forEach((raw) => {
+          const input = preCleanForRules(raw);
+          if (!input) return;
+          EPISODE_BADGE_PATTERNS.forEach((re) => {
+            if (!re) return;
+            const m = input.match(re);
+            if (!m || !m[1]) return;
+            const n = Number.parseInt(String(m[1]), 10);
+            if (!Number.isFinite(n) || n <= 0) return;
+            if (n > maxEp) maxEp = n;
+          });
+        });
+      });
+      return maxEp;
+    };
 
     const normalizeNoSpace = (s) =>
       String(s || '')
@@ -926,7 +979,16 @@ export function initSearchPage() {
             ? String(group.title)
             : '';
       const poster = tmdbCover && tmdbCover.pic ? String(tmdbCover.pic) : cover.videoPoster || '';
-      const remark = tmdbCover && tmdbCover.badge ? String(tmdbCover.badge) : cover.videoRemark || '';
+      const siteMaxEp = extractMaxEpisodeFromSources(sources);
+      let remark = tmdbCover && tmdbCover.badge ? String(tmdbCover.badge) : cover.videoRemark || '';
+      if (searchBadgePreferEpisode && siteMaxEp > 0) {
+        if (tmdbCover && tmdbCover.badge) {
+          const tmdbEp = parseEpisodeNumber(String(tmdbCover.badge || ''));
+          if (siteMaxEp > tmdbEp) remark = `更新至${siteMaxEp}集`;
+        } else {
+          remark = `更新至${siteMaxEp}集`;
+        }
+      }
       const storageKey = normalizeAggStorageKey(title);
       if (!storageKey) return;
 
