@@ -845,19 +845,13 @@ export function initSearchPage() {
 
     const tmdbCount = await runTMDBSearch();
     if (runId !== currentRunId) return;
-    if (searchDisplayMode === 'tmdb') {
-      // TMDB-only search results. Do not trigger site searches.
-      if (tmdbCount >= 0 && grid.children.length) setStatus('');
-      updateProgressAndCount(0, 0);
-      return;
-    }
+    if (tmdbCount >= 0 && grid.children.length) setStatus('');
 
     const isConfigCenter = (s) => {
       const api = s && typeof s.api === 'string' ? s.api : '';
       const key = s && typeof s.key === 'string' ? s.key : '';
       return api.includes('/spider/baseset/') || key.toLowerCase().includes('baseset');
     };
-    if (searchDisplayMode !== 'sites' && searchDisplayMode !== 'both') return;
     const sites = (await loadSites()).filter((s) => s && s.enabled !== false && s.search !== false && s.api && !isConfigCenter(s));
     if (runId !== currentRunId) return;
     if (!sites.length) {
@@ -1154,16 +1148,18 @@ export function initSearchPage() {
 
           const filteredItems = normalItems;
 
-          totalFound += appendItemsToGrid({
-            gridEl: grid,
-            items: filteredItems,
-            siteKey: site.key,
-            siteApi: site.api,
-            siteName: site.name || site.key || '',
-            seenKeys,
-            insertCardSorted,
-            computeMatchScore,
-          });
+          if (searchDisplayMode !== 'tmdb') {
+            totalFound += appendItemsToGrid({
+              gridEl: grid,
+              items: filteredItems,
+              siteKey: site.key,
+              siteApi: site.api,
+              siteName: site.name || site.key || '',
+              seenKeys,
+              insertCardSorted,
+              computeMatchScore,
+            });
+          }
           updateMeta();
 
           // Defensive: concurrent runners can insert cards before aggregation activates.
