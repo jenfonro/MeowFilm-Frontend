@@ -6888,15 +6888,36 @@ export function initDashboardPage(bootstrap = {}) {
     }
 
     const regexRules = Array.isArray(magicAggregateRegexRules) ? magicAggregateRegexRules : [];
-    if (!regexRules.length) {
-      setMagicAggregateTestOutput('error', '无净化规则');
-      return;
-    }
 
     const qTrailingDigitsMatch = query.match(/(\d+)\s*$/);
     const qTrailingDigits = qTrailingDigitsMatch ? String(qTrailingDigitsMatch[1] || '') : '';
 
-    let out = String(raw);
+    const sanitizeDisplayTitle = (s) =>
+      String(s || '')
+        .replace(/[\u200b\u200c\u200d\ufeff]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    let out = sanitizeDisplayTitle(raw);
+
+    const buildEmojiCleaner = () => {
+      try {
+        // eslint-disable-next-line no-new
+        new RegExp('\\p{Extended_Pictographic}', 'u');
+        return (s) =>
+          String(s || '')
+            .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Emoji}]/gu, '')
+            .replace(/[\uFE0E\uFE0F]/g, '');
+      } catch (_e) {
+        return (s) =>
+          String(s || '')
+            .replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]/g, '')
+            .replace(/[\u2600-\u27BF]/g, '')
+            .replace(/[\uFE0E\uFE0F]/g, '');
+      }
+    };
+    const stripEmojiSymbols = buildEmojiCleaner();
+    out = stripEmojiSymbols(out);
 
     const failures = [];
     regexRules.forEach((rule, idx) => {
@@ -6932,6 +6953,7 @@ export function initDashboardPage(bootstrap = {}) {
 
     // Keep the test output aligned with actual search aggregation behavior:
     // - apply user clean rules
+    // - apply default emoji cleaning
     // - normalize whitespace + punctuation separators (not brackets)
     const normalizeAggregateDisplay = (s) =>
       String(s || '')
@@ -6950,7 +6972,8 @@ export function initDashboardPage(bootstrap = {}) {
     const key = normalizeAggregateKey(out);
     const suffix = key ? `（聚合Key：${key}）` : '';
     const hint = qTrailingDigits ? `（搜索尾号保护：${qTrailingDigits}）` : '';
-    setMagicAggregateTestOutput('success', `净化后：${display}${suffix}${hint}`);
+    const noneHint = !regexRules.length ? '（仅默认清洗）' : '';
+    setMagicAggregateTestOutput('success', `净化后：${display}${suffix}${hint}${noneHint}`);
   };
 
   const fetchMagicSettings = async () => getSuccessJson('/dashboard/magic/settings');

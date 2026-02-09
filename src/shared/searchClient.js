@@ -11,6 +11,9 @@ export function initSearchPage() {
   const clearQueryBtn = document.getElementById('clearQueryBtn');
 
   const resultsSection = document.getElementById('searchResultsSection');
+  const rawListToggleWrap = document.getElementById('searchRawListToggleWrap');
+  const rawListToggle = document.getElementById('searchRawListToggle');
+  const resultsProgress = document.getElementById('searchResultsProgress');
   const resultsSummary = document.getElementById('searchResultsSummary');
   const resultsStatus = document.getElementById('searchResultsStatus');
   const resultsList = document.getElementById('searchResultsList');
@@ -24,6 +27,9 @@ export function initSearchPage() {
     !input ||
     !clearQueryBtn ||
     !resultsSection ||
+    !rawListToggleWrap ||
+    !rawListToggle ||
+    !resultsProgress ||
     !resultsSummary ||
     !resultsStatus ||
     !resultsList ||
@@ -118,6 +124,95 @@ export function initSearchPage() {
     resultsSummary.textContent = value;
     resultsSummary.classList.toggle('hidden', !value);
   };
+
+  const setProgress = (done, total) => {
+    const d = Number.isFinite(Number(done)) ? Number(done) : 0;
+    const t = Number.isFinite(Number(total)) ? Number(total) : 0;
+    const show = t > 0 && d >= 0 && d < t;
+    resultsProgress.textContent = show ? `(${d}/${t})` : '';
+    resultsProgress.classList.toggle('hidden', !show);
+  };
+
+  const setCount = (count) => {
+    const n = Number.isFinite(Number(count)) ? Math.max(0, Math.floor(Number(count))) : 0;
+    setSummary(`共 ${n} 条`);
+  };
+
+  const RAW_LIST_KEY = 'tv:search:raw_list:v1';
+  let rawListMode = false;
+  try {
+    rawListMode = localStorage.getItem(RAW_LIST_KEY) === '1';
+  } catch (_e) {
+    rawListMode = false;
+  }
+  rawListToggle.checked = rawListMode;
+
+  let activeResultsGrid = null;
+  let refreshAggregatesForCurrentRun = null;
+
+  const syncRawListToggleVisibility = () => {
+    const show = searchDisplayMode === 'sites' || searchDisplayMode === 'both';
+    rawListToggleWrap.classList.toggle('hidden', !show);
+  };
+
+  const getAggregatedGroupKeys = () => {
+    const grid = activeResultsGrid;
+    if (!grid) return new Set();
+    const keys = new Set();
+    Array.from(grid.children || []).forEach((el) => {
+      if (!el || !el.dataset) return;
+      if (el.dataset.aggregate !== '1') return;
+      const gk = (el.dataset.titleAggKey || '').trim();
+      if (gk) keys.add(gk);
+    });
+    return keys;
+  };
+
+  const applyRawListModeToGrid = () => {
+    const grid = activeResultsGrid;
+    if (!grid) return;
+    const aggKeys = getAggregatedGroupKeys();
+    Array.from(grid.children || []).forEach((el) => {
+      if (!el || !el.dataset || !el.classList) return;
+      const isAgg = el.dataset.aggregate === '1';
+      const gk = (el.dataset.titleAggKey || '').trim();
+      const isTMDB = (el.dataset.siteKey || '') === 'tmdb';
+      if (isAgg) {
+        el.classList.toggle('hidden', rawListMode);
+        return;
+      }
+      if (isTMDB) {
+        if (gk && aggKeys.has(gk)) el.classList.toggle('hidden', !rawListMode);
+        else el.classList.remove('hidden');
+        return;
+      }
+      if (gk && aggKeys.has(gk)) {
+        el.classList.toggle('hidden', !rawListMode);
+        return;
+      }
+      el.classList.remove('hidden');
+    });
+  };
+
+  const getVisibleCardCount = () => {
+    const grid = activeResultsGrid;
+    if (!grid) return 0;
+    return Array.from(grid.children || []).filter((el) => el && el.classList && !el.classList.contains('hidden')).length;
+  };
+
+  rawListToggle.addEventListener('change', () => {
+    rawListMode = !!rawListToggle.checked;
+    try {
+      localStorage.setItem(RAW_LIST_KEY, rawListMode ? '1' : '0');
+    } catch (_e) {}
+    if (!rawListMode && typeof refreshAggregatesForCurrentRun === 'function') {
+      try {
+        refreshAggregatesForCurrentRun();
+      } catch (_e) {}
+    }
+    applyRawListModeToGrid();
+    setCount(getVisibleCardCount());
+  });
 
   let showingResults = false;
   const setShowResults = (show) => {
@@ -295,6 +390,7 @@ export function initSearchPage() {
       wrapper.className = 'w-full';
       wrapper.dataset.siteKey = 'tmdb';
       wrapper.dataset.videoId = id;
+      if (it && typeof it.__groupKey === 'string' && it.__groupKey) wrapper.dataset.titleAggKey = it.__groupKey;
       wrapper.dataset.siteOrder = '-1';
       wrapper.dataset.titleLen = String(Math.max(0, Math.floor(titleLen)));
       if (typeof computeMatchScore === 'function' && computeMatchScore(titleText) === 1000) {
@@ -309,6 +405,7 @@ export function initSearchPage() {
       const score = typeof computeMatchScore === 'function' ? computeMatchScore(titleText) : 0;
       const scoreFinal = Number.isFinite(Number(it && it.__score)) ? Number(it.__score) : score;
 
+      const tmdbLabel = rawListMode && (searchDisplayMode === 'both' || searchDisplayMode === 'tmdb') ? 'TMDB' : '';
       const cardWrapper = createPosterCard({
         wrapperEl: wrapper,
         wrapperClass: 'w-full',
@@ -322,7 +419,7 @@ export function initSearchPage() {
         title: titleText,
         poster: it && it.pic ? String(it.pic) : '',
         remark: badgeText,
-        siteName: '',
+        siteName: tmdbLabel,
         cornerBadgeText: '',
         placeholder: true,
         overlays: false,
@@ -365,6 +462,8 @@ export function initSearchPage() {
     const q = (keyword || '').trim();
     if (!q) return;
 
+    refreshAggregatesForCurrentRun = null;
+
     try {
       sessionStorage.removeItem(AGG_STORAGE_KEY);
     } catch (_e) {}
@@ -372,11 +471,21 @@ export function initSearchPage() {
     setShowResults(true);
     resultsList.innerHTML = '';
     setSummary('');
-    setStatus('搜索中...');
+    setProgress(0, 0);
+    setCount(0);
+    setStatus('');
+    syncRawListToggleVisibility();
 
     const grid = document.createElement('div');
     grid.className = 'douban-grid';
     resultsList.appendChild(grid);
+    activeResultsGrid = grid;
+
+    const updateProgressAndCount = (done, total) => {
+      setProgress(done, total);
+      applyRawListModeToGrid();
+      setCount(getVisibleCardCount());
+    };
 
     const normalizeForMatch = (s) =>
       String(s || '')
@@ -475,6 +584,26 @@ export function initSearchPage() {
         .replace(/[\s\.\-_,，:：;；!！?？·•/\\|]+/g, '')
         .trim();
 
+    const buildEmojiCleaner = () => {
+      // Prefer Unicode property escapes when supported.
+      try {
+        // eslint-disable-next-line no-new
+        new RegExp('\\p{Extended_Pictographic}', 'u');
+        return (s) =>
+          String(s || '')
+            .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Emoji}]/gu, '')
+            .replace(/[\uFE0E\uFE0F]/g, '');
+      } catch (_e) {
+        // Fallback: remove surrogate-pair emoji + common BMP symbol blocks.
+        return (s) =>
+          String(s || '')
+            .replace(/[\uD83C-\uDBFF][\uDC00-\uDFFF]/g, '')
+            .replace(/[\u2600-\u27BF]/g, '')
+            .replace(/[\uFE0E\uFE0F]/g, '');
+      }
+    };
+    const stripEmojiSymbols = buildEmojiCleaner();
+
     const normalizeDisplayTitle = (s) =>
       String(s || '')
         .replace(/[\u200b\u200c\u200d\ufeff]+/g, '')
@@ -482,6 +611,57 @@ export function initSearchPage() {
         .replace(/[\s\.\-_,，:：;；!！?？·•/\\|]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+
+    // Used for what we actually show on the card title. Keep original punctuation (like `:` / `：`)
+    // and only collapse whitespace + strip zero-width chars.
+    const sanitizeDisplayTitle = (s) =>
+      String(s || '')
+        .replace(/[\u200b\u200c\u200d\ufeff]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    // Pre-clean before applying user regex rules: remove zero-width chars, normalize whitespace,
+    // and strip emoji/pictographs to keep user rules stable.
+    const preCleanForRules = (s) => stripEmojiSymbols(sanitizeDisplayTitle(s));
+
+    const normalizeNoSpace = (s) =>
+      String(s || '')
+        .replace(/[\u200b\u200c\u200d\ufeff]+/g, '')
+        .replace(/\s+/g, '')
+        .trim();
+
+    const normalizeNoSpaceNoColon = (s) => normalizeNoSpace(s).replace(/[:：]/g, '');
+
+    const isColonOnlyVariant = (a, b) => {
+      const sa = normalizeNoSpace(a);
+      const sb = normalizeNoSpace(b);
+      if (!sa || !sb) return false;
+      const ba = normalizeNoSpaceNoColon(sa);
+      const bb = normalizeNoSpaceNoColon(sb);
+      if (!ba || !bb || ba !== bb) return false;
+      // Ensure the only difference is presence/absence of ':'/ '：' (after removing whitespace).
+      const na = sa.replace(/[:：]/g, '');
+      const nb = sb.replace(/[:：]/g, '');
+      return na === nb;
+    };
+
+    const pickPreferredGroupTitle = (prevTitle, candidateTitle) => {
+      const prev = typeof prevTitle === 'string' ? prevTitle.trim() : '';
+      const cand = typeof candidateTitle === 'string' ? candidateTitle.trim() : '';
+      if (!prev) return cand;
+      if (!cand) return prev;
+
+      if (isColonOnlyVariant(prev, cand)) {
+        const prevHasColon = /[:：]/.test(prev);
+        const candHasColon = /[:：]/.test(cand);
+        if (candHasColon && !prevHasColon) return cand;
+        if (prevHasColon && !candHasColon) return prev;
+        // If both have colon (or neither), fall through to length heuristic.
+      }
+
+      if (cand.length > 0 && cand.length < prev.length) return cand;
+      return prev;
+    };
 
     const qTrailingDigitsMatch = q.match(/(\d+)\s*$/);
     const qTrailingDigits = qTrailingDigitsMatch ? String(qTrailingDigitsMatch[1] || '') : '';
@@ -546,6 +726,7 @@ export function initSearchPage() {
     };
 
     const seenKeys = new Set();
+    const tmdbByGroupKey = new Map(); // groupKey -> tmdb item (best match)
 
     const runTMDBSearch = async () => {
       if (searchDisplayMode !== 'tmdb' && searchDisplayMode !== 'both') return 0;
@@ -554,9 +735,45 @@ export function initSearchPage() {
           method: 'GET',
           credentials: 'same-origin',
         });
-        const items = data && Array.isArray(data.list) ? data.list : [];
+        const rawItems = data && Array.isArray(data.list) ? data.list : [];
+        const items = rawItems
+          .map((it) => {
+            const name = it && it.name ? String(it.name) : '';
+            const originalTitle = sanitizeDisplayTitle(name) || name;
+            const base = preCleanForRules(originalTitle) || originalTitle || name;
+            const cleanedRaw =
+              applyCleanRules(base, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) }) || base;
+            const cleanedTitle = sanitizeDisplayTitle(cleanedRaw) || cleanedRaw || base || name;
+            const cleanedForMatch = normalizeDisplayTitle(cleanedTitle) || cleanedTitle || name;
+            const groupKey = normalizeForGroupKey(cleanedForMatch) || normalizeForGroupKey(name);
+            const score = computeMatchScore(cleanedForMatch || name);
+            const titleLen = cleanedForMatch.replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '').length;
+            const out = {
+              ...it,
+              __groupKey: groupKey || '',
+              __displayTitle: originalTitle || name,
+              __score: score,
+              __titleLen: titleLen,
+            };
+            if (groupKey) {
+              const prev = tmdbByGroupKey.get(groupKey) || null;
+              if (!prev) tmdbByGroupKey.set(groupKey, out);
+              else {
+                const ps = Number(prev.__score || 0);
+                const ns = Number(out.__score || 0);
+                if (ns > ps) tmdbByGroupKey.set(groupKey, out);
+                else if (ns === ps) {
+                  const pl = Number(prev.__titleLen || 0);
+                  const nl = Number(out.__titleLen || 0);
+                  if (nl > 0 && (pl <= 0 || nl < pl)) tmdbByGroupKey.set(groupKey, out);
+                }
+              }
+            }
+            return out;
+          })
+          .filter(Boolean);
         if (!items.length) return 0;
-        return appendTMDBItemsToGrid({
+        const appended = appendTMDBItemsToGrid({
           gridEl: grid,
           items,
           siteName: 'TMDB',
@@ -564,6 +781,8 @@ export function initSearchPage() {
           insertCardSorted,
           computeMatchScore,
         });
+        updateProgressAndCount(0, 0);
+        return appended;
       } catch (err) {
         const msg = (err && err.message) || '服务器连接 TMDB 失败';
         setStatus(msg, true);
@@ -576,6 +795,7 @@ export function initSearchPage() {
     if (searchDisplayMode === 'tmdb') {
       // TMDB-only search results. Do not trigger site searches.
       if (tmdbCount >= 0 && grid.children.length) setStatus('');
+      updateProgressAndCount(0, 0);
       return;
     }
 
@@ -601,19 +821,15 @@ export function initSearchPage() {
 
     const removeExistingGroupCards = (groupKey) => {
       if (!groupKey) return 0;
-      let removed = 0;
       const children = Array.from(grid.children || []);
       children.forEach((el) => {
         if (!el || !el.dataset) return;
         const tag = (el.dataset.titleAggKey || '').trim();
         if (!tag || tag !== groupKey) return;
         if (el.dataset.aggregate === '1') return;
-        try {
-          el.remove();
-          removed += 1;
-        } catch (_e) {}
+        // Keep raw cards in DOM for "原始列表" toggle; visibility is controlled by applyRawListModeToGrid().
       });
-      return removed;
+      return 0;
     };
 
     const pickAggregateCover = (bySite) => {
@@ -702,7 +918,15 @@ export function initSearchPage() {
       const removed = removeExistingGroupCards(gk);
       if (removed) totalFound = Math.max(0, totalFound - removed);
 
-      const title = group && group.title ? String(group.title) : '';
+      const tmdbCover = !rawListMode && searchDisplayMode === 'both' ? tmdbByGroupKey.get(gk) : null;
+      const title =
+        tmdbCover && tmdbCover.__displayTitle
+          ? String(tmdbCover.__displayTitle)
+          : group && group.title
+            ? String(group.title)
+            : '';
+      const poster = tmdbCover && tmdbCover.pic ? String(tmdbCover.pic) : cover.videoPoster || '';
+      const remark = tmdbCover && tmdbCover.badge ? String(tmdbCover.badge) : cover.videoRemark || '';
       const storageKey = normalizeAggStorageKey(title);
       if (!storageKey) return;
 
@@ -719,18 +943,7 @@ export function initSearchPage() {
       // Ensure insertion isn't blocked by previous cards with the same uniq.
       seenKeys.delete(uniq);
 
-      // Also remove any existing non-aggregate card with the same uniq (defensive).
-      const children = Array.from(grid.children || []);
-      children.forEach((el) => {
-        if (!el || !el.dataset) return;
-        if (el.dataset.aggregate === '1') return;
-        if ((el.dataset.siteKey || '') === cover.siteKey && (el.dataset.videoId || '') === String(cover.videoId)) {
-          try {
-            el.remove();
-            totalFound = Math.max(0, totalFound - 1);
-          } catch (_e) {}
-        }
-      });
+      // Keep raw cards in DOM for "原始列表" toggle; visibility is controlled by applyRawListModeToGrid().
 
       syncAggregateStorage(storageKey, cover, sources);
 
@@ -750,8 +963,8 @@ export function initSearchPage() {
           {
             id: cover.videoId,
             name: title || cover.videoTitle || '',
-            pic: cover.videoPoster || '',
-            remark: cover.videoRemark || '',
+            pic: poster || '',
+            remark: remark || '',
             __groupKey: gk,
           },
         ],
@@ -779,14 +992,13 @@ export function initSearchPage() {
         totalFound += 1;
         applyAggregateSourceBadge(after, sourceSiteCount);
         aggregateCardByGroup.set(gk, { el: after, uniq, sourceSiteCount, storageKey });
+        applyRawListModeToGrid();
+        updateProgressAndCount(done, sites.length);
       }
     };
 
-    const updateSummary = () => {
-      const base = `已完成 ${done}/${sites.length}，共 ${totalFound} 条结果（并发 ${searchConcurrency}）`;
-      setSummary(failed ? `${base}，失败 ${failed}` : base);
-    };
-    updateSummary();
+    const updateMeta = () => updateProgressAndCount(done, sites.length);
+    updateMeta();
 
     const queue = sites.slice();
     const runners = new Array(Math.max(1, searchConcurrency)).fill(null).map(async () => {
@@ -811,18 +1023,20 @@ export function initSearchPage() {
           const normalItems = sliced
             .map((it) => {
               const name = it && it.name ? String(it.name) : '';
-              const cleaned =
-                normalizeDisplayTitle(
-                  applyCleanRules(name, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) })
-                ) || name;
-              const groupKey = normalizeForGroupKey(cleaned);
+              const originalTitle = sanitizeDisplayTitle(name) || name;
+              const base = preCleanForRules(originalTitle) || originalTitle || name;
+              const cleanedRaw =
+                applyCleanRules(base, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) }) || base;
+              const cleanedTitle = sanitizeDisplayTitle(cleanedRaw) || cleanedRaw || base || name;
+              const cleanedForMatch = normalizeDisplayTitle(cleanedTitle) || cleanedTitle || name;
+              const groupKey = normalizeForGroupKey(cleanedForMatch);
               const groupKeySafe = groupKey || normalizeForGroupKey(name);
-              if (!groupKeySafe) return { ...it, __groupKey: '', __cleanTitle: cleaned || name };
-              return { ...it, __groupKey: groupKeySafe, __cleanTitle: cleaned || name };
+              if (!groupKeySafe) return { ...it, __groupKey: '', __displayTitle: originalTitle || name };
+              return { ...it, __groupKey: groupKeySafe, __displayTitle: originalTitle || name };
             })
             .filter(Boolean);
 
-          // Update groups for this site.
+          // Always update groups for this site so we can build aggregate cards after toggling off "原始列表".
           if (site && site.key) {
             const sk = String(site.key);
             normalItems.forEach((it) => {
@@ -837,11 +1051,9 @@ export function initSearchPage() {
                 bySite: new Map(),
               };
 
-              const cleanedTitle = it && it.__cleanTitle ? String(it.__cleanTitle) : rawName;
-              const candidateTitle = normalizeDisplayTitle(cleanedTitle) || rawName;
-              if (!group.title || (candidateTitle && candidateTitle.length > 0 && candidateTitle.length < group.title.length)) {
-                group.title = candidateTitle;
-              }
+              const displayTitle = it && it.__displayTitle ? String(it.__displayTitle) : rawName;
+              const candidateTitle = sanitizeDisplayTitle(displayTitle) || rawName;
+              group.title = pickPreferredGroupTitle(group.title, candidateTitle);
 
               const entry = group.bySite.get(sk) || {
                 siteKey: sk,
@@ -865,23 +1077,20 @@ export function initSearchPage() {
             });
 
             // After updating groups, activate aggregate cards for any group that now has >=2 sites.
-            normalItems.forEach((it) => {
-              const gk = it && it.__groupKey ? String(it.__groupKey) : '';
-              if (!gk) return;
-              const group = aggregateByGroup.get(gk);
-              if (!group || !group.bySite) return;
-              if (computeAggregateSourceSiteCount(group.bySite) < 2) return;
-              groupKeysActivated.add(gk);
-              ensureStreamingAggregateCardForGroup(gk);
-            });
+            if (!rawListMode) {
+              normalItems.forEach((it) => {
+                const gk = it && it.__groupKey ? String(it.__groupKey) : '';
+                if (!gk) return;
+                const group = aggregateByGroup.get(gk);
+                if (!group || !group.bySite) return;
+                if (computeAggregateSourceSiteCount(group.bySite) < 2) return;
+                groupKeysActivated.add(gk);
+                ensureStreamingAggregateCardForGroup(gk);
+              });
+            }
           }
 
-          // If a group is already aggregated, don't render per-site cards for it.
-          const filteredItems = normalItems.filter((it) => {
-            const gk = it && it.__groupKey ? String(it.__groupKey) : '';
-            if (!gk) return true;
-            return !aggregateCardByGroup.has(gk);
-          });
+          const filteredItems = normalItems;
 
           totalFound += appendItemsToGrid({
             gridEl: grid,
@@ -893,10 +1102,11 @@ export function initSearchPage() {
             insertCardSorted,
             computeMatchScore,
           });
+          updateMeta();
 
           // Defensive: concurrent runners can insert cards before aggregation activates.
           // Re-run group aggregation after appending so duplicates collapse promptly.
-          if (groupKeysActivated.size) {
+          if (!rawListMode && groupKeysActivated.size) {
             Array.from(groupKeysActivated.values()).forEach((gk) => ensureStreamingAggregateCardForGroup(gk));
           }
         } catch (e) {
@@ -904,12 +1114,12 @@ export function initSearchPage() {
           failed += 1;
         } finally {
           done += 1;
-          updateSummary();
+          updateMeta();
           if (done >= sites.length) {
-            if (!totalFound) {
+            if (!grid.children.length) {
               setStatus('暂无搜索结果');
             } else {
-              setStatus(failed ? `部分站点搜索失败（${failed}）` : '');
+              setStatus('');
             }
           }
         }
@@ -920,16 +1130,28 @@ export function initSearchPage() {
     if (runId !== currentRunId) return;
 
     // Ensure aggregate cards are present after the search ends too (in case the last runner discovered a group).
-    for (const gk of aggregateByGroup.keys()) {
-      ensureStreamingAggregateCardForGroup(gk);
+    if (!rawListMode) {
+      for (const gk of aggregateByGroup.keys()) {
+        ensureStreamingAggregateCardForGroup(gk);
+      }
     }
 
-    updateSummary();
-    if (!totalFound) {
+    updateMeta();
+    if (!grid.children.length) {
       setStatus('暂无搜索结果');
     } else {
-      setStatus(failed ? `部分站点搜索失败（${failed}）` : '');
+      setStatus('');
     }
+
+    // Allow toggling off "原始列表" to build aggregate cards without re-searching.
+    refreshAggregatesForCurrentRun = () => {
+      if (!activeResultsGrid || activeResultsGrid !== grid) return;
+      for (const gk of aggregateByGroup.keys()) {
+        ensureStreamingAggregateCardForGroup(gk);
+      }
+      applyRawListModeToGrid();
+      setCount(getVisibleCardCount());
+    };
   };
 
   const startSearch = (keyword, { saveHistory } = { saveHistory: true }) => {

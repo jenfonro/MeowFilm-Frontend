@@ -324,9 +324,19 @@
 	              <div class="max-w-[95%] mx-auto mt-6 overflow-visible">
 	                <section id="searchResultsSection" class="tv-section hidden">
 	                  <div class="tv-section-head">
-	                    <h2 class="tv-section-title">搜索结果</h2>
-	                    <div id="searchResultsSummary" class="tv-section-status"></div>
+	                    <div class="flex items-center gap-2 min-w-0">
+	                      <h2 class="tv-section-title">搜索结果</h2>
+	                      <div id="searchResultsProgress" class="tv-section-status hidden"></div>
+	                    </div>
+	                    <div id="searchRawListToggleWrap" class="flex items-center gap-2 tv-section-status">
+	                      <span class="whitespace-nowrap">原始列表</span>
+	                      <label class="enable-switch" title="原始列表">
+	                        <input id="searchRawListToggle" type="checkbox" />
+	                        <span class="enable-slider"></span>
+	                      </label>
+	                    </div>
 	                  </div>
+	                  <div id="searchResultsSummary" class="tv-section-status hidden"></div>
 	                  <div id="searchResultsStatus" class="text-center text-gray-500 py-8 dark:text-gray-400 hidden"></div>
 	                  <div id="searchResultsList" class="space-y-6"></div>
 	                </section>
