@@ -1,3 +1,5 @@
+import { pauseCatLowPriority } from './catpawopen';
+
 export const TV_CARD_PLAY_ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" class="tv-card-play-icon"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>';
 
@@ -209,6 +211,29 @@ export function createPosterCard({
         return;
       }
       if (typeof window === 'undefined') return;
+      // Prioritize detail/play by pausing low-priority (search) spider requests for a short window.
+      // The play page will take over priority handling; this is just to stop new search dispatches immediately.
+      try {
+        const release = pauseCatLowPriority();
+        if (typeof window !== 'undefined') {
+          const prev = window.__tvLowPriorityPauseRelease;
+          if (typeof prev === 'function') {
+            try {
+              prev();
+            } catch (_e) {}
+          }
+          window.__tvLowPriorityPauseRelease = release;
+          window.__tvLowPriorityPauseAt = Date.now();
+          window.setTimeout(() => {
+            try {
+              if (window.__tvLowPriorityPauseRelease === release) {
+                window.__tvLowPriorityPauseRelease = null;
+                release();
+              }
+            } catch (_e) {}
+          }, 15000);
+        }
+      } catch (_e) {}
       window.dispatchEvent(new CustomEvent('tv:open-play', { detail: d }));
     } catch (_e) {}
   };

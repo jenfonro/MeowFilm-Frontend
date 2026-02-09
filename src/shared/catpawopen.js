@@ -21,6 +21,38 @@ export function normalizeCatPawOpenApiBase(inputUrl) {
   }
 }
 
+let lowPriorityPauseCount = 0;
+let lowPriorityWaiters = [];
+
+const flushLowPriorityWaiters = () => {
+  if (!lowPriorityWaiters.length) return;
+  const waiters = lowPriorityWaiters;
+  lowPriorityWaiters = [];
+  waiters.forEach((fn) => {
+    try {
+      fn();
+    } catch (_e) {}
+  });
+};
+
+const waitIfLowPriorityPaused = async () => {
+  if (lowPriorityPauseCount <= 0) return;
+  await new Promise((resolve) => {
+    lowPriorityWaiters.push(resolve);
+  });
+};
+
+export function pauseCatLowPriority() {
+  lowPriorityPauseCount += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    lowPriorityPauseCount = Math.max(0, lowPriorityPauseCount - 1);
+    if (lowPriorityPauseCount === 0) flushLowPriorityWaiters();
+  };
+}
+
 export async function requestCatSpider({
   apiBase,
   username,
@@ -38,6 +70,8 @@ export async function requestCatSpider({
 
   if (!safeAction) throw new Error('action 不能为空');
   if (!safeSpider || !(/^\/spider\/|^\/[a-f0-9]{10}\/spider\//.test(safeSpider))) throw new Error('站点 API 无效');
+
+  if (safeAction === 'search') await waitIfLowPriorityPaused();
 
   const normalizedBase = normalizeCatPawOpenApiBase(apiBase);
   if (!normalizedBase) throw new Error('CatPawOpen 接口地址未设置');

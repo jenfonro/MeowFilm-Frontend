@@ -603,7 +603,7 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, onBeforeUpdate, ref, watch } from 'vue';
 import { initPlayPage } from './playClient.js';
 	import ArtPlayer from '../../shared/ArtPlayer.vue';
-import { normalizeCatPawOpenApiBase, requestCatPlay, requestCatSpider } from '../../shared/catpawopen';
+import { normalizeCatPawOpenApiBase, pauseCatLowPriority, requestCatPlay, requestCatSpider } from '../../shared/catpawopen';
 import { apiGetJson, apiPostJson, buildQuery } from '../../shared/apiClient';
 import { processPosterUrl } from '../../shared/posterCard';
 
@@ -4002,6 +4002,15 @@ const requestPlay = async () => {
     await playRequestState.inFlight;
     return true;
   }
+
+  const releaseLowPriority = pauseCatLowPriority();
+  try {
+    const release = typeof window !== 'undefined' ? window.__tvLowPriorityPauseRelease : null;
+    if (typeof release === 'function') {
+      window.__tvLowPriorityPauseRelease = null;
+      release();
+    }
+  } catch (_e) {}
   const panKeyAtCall = selectedPanKey.value;
   const idxAtCall = idx;
   const epNameAtCall = ep && ep.name ? String(ep.name) : '';
@@ -4168,6 +4177,7 @@ const requestPlay = async () => {
     await run;
   } finally {
     if (playRequestState.inFlight === run) playRequestState.inFlight = null;
+    releaseLowPriority();
   }
   return true;
 };
@@ -4754,6 +4764,14 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
     return;
   }
 
+  const releaseLowPriority = pauseCatLowPriority();
+  try {
+    const release = typeof window !== 'undefined' ? window.__tvLowPriorityPauseRelease : null;
+    if (typeof release === 'function') {
+      window.__tvLowPriorityPauseRelease = null;
+      release();
+    }
+  } catch (_e) {}
   detailFetchState.seq += 1;
   const seqAtCall = detailFetchState.seq;
   detailFetchState.key = key;
@@ -4804,6 +4822,7 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
     } finally {
       if (shouldShowDetailLoading && seqAtCall === detailFetchState.seq) introLoading.value = false;
       if (detailFetchState.key === key && detailFetchState.seq === seqAtCall) detailFetchState.inFlight = null;
+      releaseLowPriority();
     }
   })();
   await detailFetchState.inFlight;
