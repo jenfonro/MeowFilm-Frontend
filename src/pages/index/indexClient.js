@@ -1,7 +1,83 @@
 import { requestCatSpider } from '../../shared/catpawopen';
 import { initSearchPage } from '../../shared/searchClient';
 import { appendTvCardHoverOverlays, createPosterCard } from '../../shared/posterCard';
-import { apiDeleteJson, apiGetJson, buildQuery } from '../../shared/apiClient';
+import { apiDeleteJson, apiGetJson, apiInvalidateCache, buildQuery } from '../../shared/apiClient';
+
+const TMDB_DETAIL_CACHE_MS = 10 * 60 * 1000;
+const tmdbDetailInFlight = new Map(); // key -> Promise
+
+const normalizeTmdbType = (t) => {
+  const s = typeof t === 'string' ? t.trim().toLowerCase() : '';
+  return s === 'tv' || s === 'movie' ? s : '';
+};
+
+const tmdbTypeLabel = (t) => (t === 'tv' ? '剧集' : t === 'movie' ? '电影' : '');
+
+const fetchTmdbDetailCached = async ({ id, type } = {}) => {
+  const tmdbId = Number.isFinite(Number(id)) ? Math.floor(Number(id)) : 0;
+  const tmdbType = normalizeTmdbType(type);
+  if (tmdbId <= 0 || !tmdbType) return null;
+  const key = `${tmdbType}::${tmdbId}`;
+  if (tmdbDetailInFlight.has(key)) return await tmdbDetailInFlight.get(key);
+  const p = (async () => {
+    try {
+      const data = await apiGetJson(`/api/tmdb/detail${buildQuery({ id: tmdbId, type: tmdbType })}`, { cacheMs: TMDB_DETAIL_CACHE_MS });
+      if (!data || data.success !== true) return null;
+      return data;
+    } catch (_e) {
+      return null;
+    }
+  })();
+  tmdbDetailInFlight.set(key, p);
+  try {
+    return await p;
+  } finally {
+    if (tmdbDetailInFlight.get(key) === p) tmdbDetailInFlight.delete(key);
+  }
+};
+
+const patchPosterCardWithTmdb = (wrapper, tmdb) => {
+  if (!wrapper || !tmdb || tmdb.success !== true) return;
+  const title = typeof tmdb.title === 'string' ? tmdb.title.trim() : '';
+  const pic = typeof tmdb.pic === 'string' ? tmdb.pic.trim() : '';
+  const typ = normalizeTmdbType(tmdb.mediaType);
+  const year = Number.isFinite(Number(tmdb.year)) && Number(tmdb.year) > 0 ? String(Math.floor(Number(tmdb.year))) : '';
+  const badge = typeof tmdb.badge === 'string' ? tmdb.badge.trim() : '';
+
+  const titleEl = wrapper.querySelector('.douban-card-title');
+  if (titleEl && title) titleEl.textContent = title;
+
+  const siteBadge = wrapper.querySelector('.tv-site-badge');
+  if (siteBadge) siteBadge.textContent = tmdbTypeLabel(typ) || siteBadge.textContent;
+
+  // Right-top orange badge: series uses "更新至xx集" (tmdb.badge), movie uses year.
+  const desiredRemark = typ === 'movie' ? (year || badge) : (badge || '');
+  const posterWrap = wrapper.querySelector('.douban-poster');
+  if (posterWrap) {
+    let remarkEl = posterWrap.querySelector('.tv-card-badge');
+    if (!remarkEl && desiredRemark) {
+      remarkEl = document.createElement('div');
+      remarkEl.className = 'tv-card-badge';
+      posterWrap.appendChild(remarkEl);
+    }
+    if (remarkEl) {
+      if (desiredRemark) remarkEl.textContent = desiredRemark;
+      else remarkEl.remove();
+    }
+  }
+
+  // Update poster (best-effort). If image isn't loaded yet, adjust data-src for IO; otherwise swap src.
+  if (pic) {
+    const img = wrapper.querySelector('.douban-poster img');
+    if (img) {
+      try {
+        img.dataset.originalSrc = pic;
+        img.dataset.src = pic;
+        if (img.getAttribute('src')) img.setAttribute('src', pic);
+      } catch (_e) {}
+    }
+  }
+};
 
 function attachScrollableRowControls(scrollEl, scrollDistance = 1000) {
   if (!scrollEl) return;
@@ -218,6 +294,8 @@ function setupHomeSpiderBrowse() {
         const query = contentKey ? { contentKey } : { siteKey, videoId };
         const data = await apiDeleteJson(`/api/playhistory${buildQuery(query)}`, { dedupe: false });
         if (!data || data.success !== true) throw new Error((data && data.message) || '删除失败');
+        apiInvalidateCache({ urlPrefix: '/api/playhistory', method: 'GET' });
+        apiInvalidateCache({ urlPrefix: '/api/home', method: 'GET' });
         continueItems = (Array.isArray(continueItems) ? continueItems : []).filter((it) => {
           if (!it || typeof it !== 'object') return false;
           if (contentKey) return String(it.contentKey || '').trim() !== contentKey;
@@ -373,6 +451,9 @@ function setupHomeSpiderBrowse() {
       const videoId = it && typeof it.videoId === 'string' ? it.videoId : '';
       const videoTitle = it && typeof it.videoTitle === 'string' ? it.videoTitle : '';
       if (!siteKey || !spiderApi || !videoId || !videoTitle) return;
+      const tmdbId = it && Number.isFinite(Number(it.tmdbId)) ? Math.floor(Number(it.tmdbId)) : 0;
+      const tmdbType = normalizeTmdbType(it && typeof it.tmdbType === 'string' ? it.tmdbType : '');
+      const displaySiteBadge = tmdbId > 0 && tmdbType ? tmdbTypeLabel(tmdbType) : (it && typeof it.siteName === 'string' ? it.siteName : '');
       const wrapper = createPosterCard({
         wrapperClass: 'min-w-[96px] w-24 sm:min-w-[180px] sm:w-44',
         io,
@@ -384,11 +465,13 @@ function setupHomeSpiderBrowse() {
           videoTitle,
           videoPoster: it && typeof it.videoPoster === 'string' ? it.videoPoster : '',
           videoRemark: it && typeof it.videoRemark === 'string' ? it.videoRemark : '',
+          tmdbId,
+          tmdbType,
         },
         title: videoTitle,
         poster: it && typeof it.videoPoster === 'string' ? it.videoPoster : '',
         remark: it && typeof it.videoRemark === 'string' ? it.videoRemark : '',
-        siteName: it && typeof it.siteName === 'string' ? it.siteName : '',
+        siteName: displaySiteBadge,
         placeholder: true,
       });
       const card = wrapper && wrapper.querySelector ? wrapper.querySelector('[role="link"]') : null;
@@ -396,6 +479,11 @@ function setupHomeSpiderBrowse() {
         card.addEventListener('contextmenu', (e) => openHistoryContextMenu(e, it));
       }
       if (wrapper) frag.appendChild(wrapper);
+
+      if (wrapper && tmdbId > 0 && tmdbType) {
+        // Best-effort refresh: keep UI updated without storing TMDB data into DB.
+        void fetchTmdbDetailCached({ id: tmdbId, type: tmdbType }).then((meta) => patchPosterCardWithTmdb(wrapper, meta));
+      }
     });
 
     continueRow.appendChild(frag);

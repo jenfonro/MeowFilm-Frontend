@@ -4,7 +4,7 @@ import { createPosterCard } from './posterCard';
 export function initSearchPage() {
   const historyEndpoint = '/api/searchhistory';
   const sitesEndpoint = '/api/user/sites';
-  const AGG_STORAGE_KEY = 'tv:search:aggregate:sources:v1';
+  const AGG_STORAGE_KEY = 'tv:search:aggregate:sources:v3';
 
   const form = document.getElementById('searchForm');
   const input = document.getElementById('searchInput');
@@ -43,6 +43,8 @@ export function initSearchPage() {
   const configEl = document.getElementById('homeDoubanConfig');
   let catApiBase = (configEl && configEl.getAttribute('data-cat-api-base')) || '';
   const tvUser = (configEl && configEl.getAttribute('data-tv-user')) || '';
+  let doubanDataProxy = (configEl && configEl.getAttribute('data-douban-data-proxy')) || '';
+  let doubanDataCustom = (configEl && configEl.getAttribute('data-douban-data-custom')) || '';
   let searchConcurrency = 5;
   let searchCoverSiteKey = '';
   let siteOrderList = [];
@@ -62,6 +64,8 @@ export function initSearchPage() {
 
   const refreshSearchConfigFromDom = () => {
     catApiBase = (configEl && configEl.getAttribute('data-cat-api-base')) || '';
+    doubanDataProxy = (configEl && configEl.getAttribute('data-douban-data-proxy')) || '';
+    doubanDataCustom = (configEl && configEl.getAttribute('data-douban-data-custom')) || '';
     const threadRaw = (configEl && configEl.getAttribute('data-search-thread-count')) || '5';
     const threadNum = Number(threadRaw);
     searchConcurrency =
@@ -105,6 +109,261 @@ export function initSearchPage() {
       throw err;
     }
     return data;
+  };
+
+  const normalizeProxyBase = (base) => {
+    const raw = typeof base === 'string' ? base.trim() : '';
+    if (!raw) return '';
+    if (/[?&=]$/.test(raw)) return raw;
+    return raw.endsWith('/') ? raw : `${raw}/`;
+  };
+
+  const normalizeTmdbMediaType = (t) => {
+    const raw = typeof t === 'string' ? t.trim().toLowerCase() : '';
+    if (raw === 'tv' || raw === 'movie') return raw;
+    if (raw === 'series') return 'tv';
+    if (raw === 'film') return 'movie';
+    return '';
+  };
+
+  const toProxiedUrl = (targetUrl, proxyBase) => {
+    const base = normalizeProxyBase(proxyBase);
+    if (!base) return targetUrl;
+    if (base.includes('cors-anywhere.com/')) return `${base}${targetUrl}`;
+    return `${base}${encodeURIComponent(targetUrl)}`;
+  };
+
+  const getDoubanDataApiBase = () => {
+    const p = String(doubanDataProxy || '').trim();
+    if (p === 'cdn-tx' || p === 'cmliussss-cdn-tencent') {
+      return { m: 'https://m.douban.cmliussss.net', proxyBase: '' };
+    }
+    if (p === 'cdn-ali' || p === 'cmliussss-cdn-ali') {
+      return { m: 'https://m.douban.cmliussss.com', proxyBase: '' };
+    }
+    if (p === 'cors' || p === 'cors-proxy-zwei') {
+      return { m: 'https://m.douban.com', proxyBase: 'https://ciao-cors.is-an.org/' };
+    }
+    if (p === 'cors-anywhere') {
+      return { m: 'https://m.douban.com', proxyBase: 'https://cors-anywhere.com/' };
+    }
+    if (p === 'custom') {
+      return { m: 'https://m.douban.com', proxyBase: String(doubanDataCustom || '').trim() };
+    }
+    return { m: 'https://m.douban.com', proxyBase: '' };
+  };
+
+  const requestDoubanJson = async (targetUrl) => {
+    const { proxyBase } = getDoubanDataApiBase();
+    const target = typeof targetUrl === 'string' ? targetUrl.trim() : '';
+    if (!target) return null;
+    const url = proxyBase ? toProxiedUrl(target, proxyBase) : target;
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+      },
+      credentials: 'omit',
+      cache: 'no-store',
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) return null;
+    return data;
+  };
+
+  const parseChineseSeasonNo = (raw) => {
+    const s = typeof raw === 'string' ? raw.trim() : '';
+    if (!s) return 0;
+    const digits = s.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
+    if (/^\d+$/.test(digits)) {
+      const n = Number.parseInt(digits, 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+    const map = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+    if (s === '十') return 10;
+    if (s.includes('十')) {
+      const [a, b] = s.split('十');
+      const tens = a ? (map[a] || 0) : 1;
+      const ones = b ? (map[b] || 0) : 0;
+      const n = tens * 10 + ones;
+      return n > 0 ? n : 0;
+    }
+    return map[s] || 0;
+  };
+
+  const parseSeasonNoFromTitle = (title, { baseHasSeason1 = false } = {}) => {
+    const s = typeof title === 'string' ? title.trim() : '';
+    if (!s) return 0;
+    const m = s.match(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})\s*季/i);
+    if (m && m[1]) return parseChineseSeasonNo(String(m[1]));
+    const yb = s.match(/年番\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})/i);
+    if (yb && yb[1]) {
+      const n = parseChineseSeasonNo(String(yb[1]));
+      if (n > 0) return baseHasSeason1 ? n + 1 : n;
+    }
+    return 0;
+  };
+
+  const parseEpisodeCountFromDoubanInfo = (text) => {
+    const s = typeof text === 'string' ? text.trim() : '';
+    if (!s) return 0;
+    const mAll = s.match(/(\d{1,4})\s*集\s*全/);
+    if (mAll && mAll[1]) {
+      const n = Number.parseInt(String(mAll[1]), 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+    const mUp = s.match(/更新至\s*(\d{1,4})\s*集/);
+    if (mUp && mUp[1]) {
+      const n = Number.parseInt(String(mUp[1]), 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+    const mCnt = s.match(/(\d{1,4})\s*集/);
+    if (mCnt && mCnt[1]) {
+      const n = Number.parseInt(String(mCnt[1]), 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+    return 0;
+  };
+
+  const doubanSeasonMetaByGroupKey = new Map(); // groupKey -> { seasonCount, seasons: [{season, episodeCount}] }
+  const doubanSeasonProbeInFlight = new Map(); // groupKey -> Promise
+
+  const getEffectiveTVSeasonCountForGroupKey = (groupKey, { fallback } = {}) => {
+    const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+    if (!gk) return 0;
+    const override = doubanSeasonMetaByGroupKey.get(gk) || null;
+    const overrideCount =
+      override && Number.isFinite(Number(override.seasonCount)) ? Math.floor(Number(override.seasonCount)) : 0;
+    if (overrideCount > 0) return overrideCount;
+    if (typeof fallback === 'function') {
+      const n = fallback(gk);
+      return Number.isFinite(Number(n)) && Number(n) > 0 ? Math.floor(Number(n)) : 0;
+    }
+    return 0;
+  };
+
+  const storeDoubanSeasonMetaToSession = (tmdbId, meta) => {
+    const id = Number.isFinite(Number(tmdbId)) ? Math.floor(Number(tmdbId)) : 0;
+    if (id <= 0 || !meta || typeof meta !== 'object') return;
+    try {
+      const seasons = Array.isArray(meta.seasons) ? meta.seasons : [];
+      const out = {
+        tmdbId: id,
+        seasonCount: Number.isFinite(Number(meta.seasonCount)) ? Math.floor(Number(meta.seasonCount)) : 0,
+        seasons: seasons
+          .map((s) => ({
+            season: Number.isFinite(Number(s.season)) ? Math.floor(Number(s.season)) : 0,
+            episodeCount: Number.isFinite(Number(s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
+          }))
+          .filter((s) => s.season > 0 && s.episodeCount > 0),
+        updatedAt: Date.now(),
+      };
+      if (!out.seasonCount) out.seasonCount = out.seasons.length;
+      sessionStorage.setItem(`tv:douban:tmdbSeasons:${id}`, JSON.stringify(out));
+    } catch (_e) {}
+  };
+
+  const ensureDoubanSeasonMetaForGroupKey = async ({ groupKey, keyword, tmdbId, minSeasonHint = 0 } = {}) => {
+    const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+    if (!gk) return null;
+    const existing = doubanSeasonMetaByGroupKey.get(gk) || null;
+    if (existing && existing.seasonCount && existing.seasonCount >= Math.max(2, minSeasonHint || 0)) return existing;
+    const inFlight = doubanSeasonProbeInFlight.get(gk) || null;
+    if (inFlight) return await inFlight;
+
+    const task = (async () => {
+      try {
+        const debugDouban = (() => {
+          try {
+            const qs = String(window.location && window.location.search ? window.location.search : '');
+            return qs.includes('debug=1');
+          } catch (_e) {
+            return false;
+          }
+        })();
+        const dbg = (event, payload) => {
+          if (!debugDouban) return;
+          try {
+            const row = { t: Date.now(), event, ...(payload || {}) };
+            window.__tvDoubanProbe = Array.isArray(window.__tvDoubanProbe) ? window.__tvDoubanProbe : [];
+            window.__tvDoubanProbe.push(row);
+            // eslint-disable-next-line no-console
+            console.log('[douban-probe]', row);
+          } catch (_e) {}
+        };
+
+        const { m } = getDoubanDataApiBase();
+        const q = typeof keyword === 'string' ? keyword.trim() : '';
+        if (!q) return null;
+        dbg('search_start', { groupKey: gk, tmdbId: Number(tmdbId) || 0, q, minSeasonHint: Number(minSeasonHint) || 0 });
+        const searchUrl = new URL(`${m}/rexxar/api/v2/search`);
+        searchUrl.searchParams.set('q', q);
+        searchUrl.searchParams.set('type', 'tv');
+        searchUrl.searchParams.set('start', '0');
+        searchUrl.searchParams.set('count', '20');
+        const searchData = await requestDoubanJson(searchUrl.toString());
+        dbg('search_done', { ok: Boolean(searchData), hasSubjects: Boolean(searchData && searchData.subjects), hasSmartBox: Boolean(searchData && searchData.smart_box) });
+        const subjectItems = searchData && searchData.subjects && Array.isArray(searchData.subjects.items) ? searchData.subjects.items : [];
+        const smartBox = Array.isArray(searchData && searchData.smart_box) ? searchData.smart_box : [];
+        const raw = subjectItems.concat(smartBox);
+
+        const items = raw
+          .map((it) => {
+            const t = it && it.target ? it.target : null;
+            const targetType = it && typeof it.target_type === 'string' ? it.target_type : '';
+            const id = t && (t.id != null ? String(t.id) : it && it.target_id != null ? String(it.target_id) : '');
+            const title = t && typeof t.title === 'string' ? t.title : '';
+            if (!id || !title || targetType !== 'tv') return null;
+            return { id, title };
+          })
+          .filter(Boolean);
+        if (!items.length) return null;
+
+        const baseHasSeason1 = items.some((x) => /第\s*(?:1|01|一)\s*季/.test(x.title));
+        const candidates = items
+          .map((x) => {
+            const season = parseSeasonNoFromTitle(x.title, { baseHasSeason1 });
+            return { ...x, season: season > 0 ? season : 0 };
+          })
+          .filter((x) => x.season > 0);
+        if (!candidates.length) return null;
+
+        const bySeason = new Map();
+        candidates.forEach((x) => {
+          const prev = bySeason.get(x.season);
+          if (!prev) bySeason.set(x.season, x);
+        });
+
+        const seasons = [];
+        const list = Array.from(bySeason.values()).slice(0, 10);
+        for (let i = 0; i < list.length; i += 1) {
+          const it = list[i];
+          const detailUrl = `${m}/rexxar/api/v2/tv/${encodeURIComponent(it.id)}`;
+          // eslint-disable-next-line no-await-in-loop
+          const d = await requestDoubanJson(detailUrl);
+          const epCountRaw = d && Number.isFinite(Number(d.episodes_count)) ? Math.floor(Number(d.episodes_count)) : 0;
+          const epInfo = d && typeof d.episodes_info === 'string' ? d.episodes_info : '';
+          const epCount = epCountRaw > 0 ? epCountRaw : parseEpisodeCountFromDoubanInfo(epInfo);
+          if (epCount > 0) seasons.push({ season: it.season, episodeCount: epCount });
+        }
+        dbg('detail_done', { seasonsFound: seasons.length });
+        seasons.sort((a, b) => a.season - b.season);
+        if (seasons.length < 2) return null;
+        const seasonCount = seasons.reduce((mmax, s) => Math.max(mmax, s.season), 0) || seasons.length;
+        const meta = { seasonCount, seasons };
+        doubanSeasonMetaByGroupKey.set(gk, meta);
+        storeDoubanSeasonMetaToSession(tmdbId, meta);
+        dbg('meta_saved', { seasonCount, seasons: seasons.slice(0, 10) });
+        return meta;
+      } catch (_e) {
+        return null;
+      } finally {
+        doubanSeasonProbeInFlight.delete(gk);
+      }
+    })();
+
+    doubanSeasonProbeInFlight.set(gk, task);
+    return await task;
   };
 
   const setStatus = (text, isError = false) => {
@@ -182,12 +441,12 @@ export function initSearchPage() {
       const gk = (el.dataset.titleAggKey || '').trim();
       const isTMDB = (el.dataset.siteKey || '') === 'tmdb';
       if (isAgg) {
-        el.classList.toggle('hidden', rawListMode);
+        if (isTMDB) el.classList.remove('hidden');
+        else el.classList.toggle('hidden', rawListMode);
         return;
       }
       if (isTMDB) {
-        if (gk && aggKeys.has(gk)) el.classList.toggle('hidden', !rawListMode);
-        else el.classList.remove('hidden');
+        el.classList.remove('hidden');
         return;
       }
       if (gk && aggKeys.has(gk)) {
@@ -289,6 +548,14 @@ export function initSearchPage() {
       wrapper.dataset.videoId = id || '';
       if (it && typeof it.__groupKey === 'string' && it.__groupKey) wrapper.dataset.titleAggKey = it.__groupKey;
       if (isAggregate) wrapper.dataset.aggregate = '1';
+      if (it && (it.__tmdbRank != null || it.tmdbRank != null)) {
+        const r = Number.isFinite(Number(it.__tmdbRank))
+          ? Number(it.__tmdbRank)
+          : Number.isFinite(Number(it.tmdbRank))
+            ? Number(it.tmdbRank)
+            : 0;
+        if (r > 0) wrapper.dataset.tmdbRank = String(Math.max(1, Math.floor(r)));
+      }
       wrapper.dataset.siteOrder = String(
         Number.isFinite(Number(siteOrderOverride))
           ? Number(siteOrderOverride)
@@ -308,13 +575,28 @@ export function initSearchPage() {
         wrapperEl: wrapper,
         wrapperClass: 'w-full',
         io,
-        detail: {
-          siteKey: siteKey || '',
-          spiderApi: siteApi || '',
-          videoId: it && it.id ? String(it.id) : '',
-          videoTitle: name,
-          videoPoster: it && it.pic ? String(it.pic) : '',
-          videoRemark: it && it.remark ? String(it.remark) : '',
+	        detail: {
+	          siteKey: siteKey || '',
+	          spiderApi: siteApi || '',
+	          videoId: it && it.id ? String(it.id) : '',
+	          videoTitle: name,
+	          videoPoster: it && it.pic ? String(it.pic) : '',
+	          videoRemark: it && it.remark ? String(it.remark) : '',
+	          contentKey: it && typeof it.__groupKey === 'string' ? it.__groupKey : '',
+	          videoYear: it && it.year != null ? String(it.year) : '',
+	          searchType:
+	            it && typeof it.__searchType === 'string'
+	              ? it.__searchType
+	              : it && typeof it.searchType === 'string'
+	                ? it.searchType
+	                : '',
+	          tmdbId: it && it.tmdbId != null && Number.isFinite(Number(it.tmdbId)) ? Number(it.tmdbId) : 0,
+	          tmdbType:
+	            it && typeof it.mediaType === 'string'
+	              ? it.mediaType
+              : it && typeof it.tmdbType === 'string'
+                ? it.tmdbType
+                : '',
         },
         title: name,
         poster: it && it.pic ? String(it.pic) : '',
@@ -325,6 +607,16 @@ export function initSearchPage() {
         placeholder: true,
       });
       if (!cardWrapper) return;
+
+      try {
+        const seasonLabel = it && typeof it.__seasonHintLabel === 'string' ? it.__seasonHintLabel.trim() : '';
+        if (seasonLabel) {
+          const badge = wrapper.querySelector && wrapper.querySelector('.tv-site-badge');
+          if (badge && badge.textContent && !String(badge.textContent).includes(seasonLabel)) {
+            badge.textContent = `${String(badge.textContent)}·${seasonLabel}`;
+          }
+        }
+      } catch (_e) {}
 
       if (typeof insertCardSorted === 'function') {
         const score = Number.isFinite(Number(scoreOverride))
@@ -385,6 +677,14 @@ export function initSearchPage() {
       const tmdbIdRaw = it && it.tmdbId != null ? Number(it.tmdbId) : 0;
       const tmdbId = Number.isFinite(tmdbIdRaw) && tmdbIdRaw > 0 ? Math.floor(tmdbIdRaw) : 0;
       const badgeText = it && typeof it.badge === 'string' ? it.badge.trim() : '';
+      const yearText = (() => {
+        const y = it && it.year != null ? Number(it.year) : 0;
+        return Number.isFinite(y) && y > 0 ? String(Math.floor(y)) : '';
+      })();
+      const remarkText =
+        mediaType && mediaType.trim().toLowerCase() === 'movie'
+          ? yearText
+          : badgeText;
 
       const titleText = it && it.name ? String(it.name) : '';
       const fallbackTitleLen = titleText.replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '').length;
@@ -394,43 +694,55 @@ export function initSearchPage() {
       wrapper.className = 'w-full';
       wrapper.dataset.siteKey = 'tmdb';
       wrapper.dataset.videoId = id;
+      if (mediaType) wrapper.dataset.tmdbType = mediaType;
       if (it && typeof it.__groupKey === 'string' && it.__groupKey) wrapper.dataset.titleAggKey = it.__groupKey;
       wrapper.dataset.siteOrder = '-1';
+      if (it && it.__tmdbRank != null) {
+        const r = Number.isFinite(Number(it.__tmdbRank)) ? Number(it.__tmdbRank) : 0;
+        if (r > 0) wrapper.dataset.tmdbRank = String(Math.max(1, Math.floor(r)));
+      }
       wrapper.dataset.titleLen = String(Math.max(0, Math.floor(titleLen)));
       if (typeof computeMatchScore === 'function' && computeMatchScore(titleText) === 1000) {
         wrapper.dataset.exactMatch = '1';
       }
 
-      const openUrl =
-        tmdbId && (mediaType === 'movie' || mediaType === 'tv')
-          ? `https://www.themoviedb.org/${mediaType}/${tmdbId}`
-          : '';
-
       const score = typeof computeMatchScore === 'function' ? computeMatchScore(titleText) : 0;
       const scoreFinal = Number.isFinite(Number(it && it.__score)) ? Number(it.__score) : score;
+      const scoreFinalBoosted = scoreFinal;
 
-      const tmdbLabel = rawListMode && (searchDisplayMode === 'both' || searchDisplayMode === 'tmdb') ? 'TMDB' : '';
+	      const mt = normalizeTmdbMediaType(mediaType);
+	      const typeLabel = mt === 'tv' ? '剧集' : mt === 'movie' ? '电影' : '';
+	      const siteLabel = typeLabel;
+	      const groupKey = it && typeof it.__groupKey === 'string' ? String(it.__groupKey) : '';
+	      const detail = {
+        tmdbId,
+        tmdbType: mediaType,
+        contentKey: groupKey || '',
+        videoTitle: titleText,
+        videoYear: it && it.year != null ? String(it.year) : '',
+        searchType: mediaType === 'movie' ? 'movie' : mediaType === 'tv' ? 'tv' : '',
+        siteKey: '',
+        spiderApi: '',
+        videoId: it && it.id != null ? String(it.id) : '',
+        videoPoster: it && it.pic ? String(it.pic) : '',
+        videoRemark: remarkText,
+      };
       const cardWrapper = createPosterCard({
         wrapperEl: wrapper,
         wrapperClass: 'w-full',
         io,
-        onActivate: () => {
-          if (!openUrl) return;
-          try {
-            window.open(openUrl, '_blank', 'noopener,noreferrer');
-          } catch (_e) {}
-        },
+        detail,
         title: titleText,
         poster: it && it.pic ? String(it.pic) : '',
-        remark: badgeText,
-        siteName: tmdbLabel,
+        remark: remarkText,
+        siteName: siteLabel,
         cornerBadgeText: '',
         placeholder: true,
-        overlays: false,
+        overlays: true,
       });
       if (!cardWrapper) return;
 
-      if (typeof insertCardSorted === 'function') insertCardSorted(wrapper, scoreFinal);
+      if (typeof insertCardSorted === 'function') insertCardSorted(wrapper, scoreFinalBoosted);
       else grid.appendChild(wrapper);
       appended += 1;
     });
@@ -465,6 +777,25 @@ export function initSearchPage() {
     const runId = (currentRunId += 1);
     const q = (keyword || '').trim();
     if (!q) return;
+
+    const debugEnabled = (() => {
+      try {
+        return String(window.location && window.location.search ? window.location.search : '').includes('debug=1');
+      } catch (_e) {
+        return false;
+      }
+    })();
+    const dbg = (event, payload) => {
+      if (!debugEnabled) return;
+      try {
+        const row = { t: Date.now(), event, ...(payload || {}) };
+        window.__tvSearchDebug = Array.isArray(window.__tvSearchDebug) ? window.__tvSearchDebug : [];
+        window.__tvSearchDebug.push(row);
+        // eslint-disable-next-line no-console
+        console.log('[search-debug]', row);
+      } catch (_e) {}
+    };
+    dbg('run_start', { q, searchDisplayMode, doubanDataProxy });
 
     refreshAggregatesForCurrentRun = null;
 
@@ -531,7 +862,7 @@ export function initSearchPage() {
       list.forEach((rule) => {
         const raw = typeof rule === 'string' ? rule.trim() : '';
         if (!raw) return;
-        const re = buildRegexFromInput(raw, { defaultFlags: 'g', forceGlobal: true });
+        const re = buildRegexFromInput(raw, { defaultFlags: 'ig', forceGlobal: true });
         if (!re) return;
         let isTrailingDigitsRule = false;
         if (tailDigits) {
@@ -639,6 +970,48 @@ export function initSearchPage() {
     // Pre-clean before applying user regex rules: remove zero-width chars, normalize whitespace,
     // and strip emoji/pictographs to keep user rules stable.
     const preCleanForRules = (s) => stripEmojiSymbols(sanitizeDisplayTitle(s));
+
+    const stripSeasonMarkers = (s) =>
+      String(s || '')
+        // Remove "第X季" markers (supports Arabic + full-width digits + common Chinese numerals).
+        .replace(/第\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})\s*季/gi, ' ')
+        // Also remove "2季/3季" style markers (some sources omit "第").
+        .replace(/(?:^|\s)([0-9０-９]{1,3})\s*季(?![度节])/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const parseChineseSeasonNo = (raw) => {
+      const s = typeof raw === 'string' ? raw.trim() : '';
+      if (!s) return 0;
+      const digits = s.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
+      if (/^\d+$/.test(digits)) {
+        const n = Number.parseInt(digits, 10);
+        return Number.isFinite(n) && n > 0 ? n : 0;
+      }
+      const map = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+      if (s === '十') return 10;
+      if (s.includes('十')) {
+        const [a, b] = s.split('十');
+        const tens = a ? (map[a] || 0) : 1;
+        const ones = b ? (map[b] || 0) : 0;
+        const n = tens * 10 + ones;
+        return n > 0 ? n : 0;
+      }
+      return map[s] || 0;
+    };
+
+    const extractSeasonHintFromText = (text) => {
+      const s = typeof text === 'string' ? text.trim() : '';
+      if (!s) return 0;
+      const mSe = s.match(/S(\d{1,2})\s*E\d{1,5}/i);
+      if (mSe && mSe[1]) {
+        const n = Number.parseInt(String(mSe[1]), 10);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      const mCn = s.match(/(?:第\s*)?([0-9０-９]{1,3}|[一二三四五六七八九十两〇零]{1,6})\s*季/i);
+      if (mCn && mCn[1]) return parseChineseSeasonNo(String(mCn[1]));
+      return 0;
+    };
 
     const parseEpisodeNumber = (text) => {
       const s = typeof text === 'string' ? text : '';
@@ -753,23 +1126,107 @@ export function initSearchPage() {
       const wrapperScore = Number(wrapperEl.dataset.score || 0);
       const wrapperTitleLen = Number(wrapperEl.dataset.titleLen || 0);
       const wrapperSeq = Number(wrapperEl.dataset.seq || 0);
+      const wrapperSiteKey = wrapperEl && wrapperEl.dataset ? String(wrapperEl.dataset.siteKey || '') : '';
+      const wrapperKindPriority = !rawListMode && wrapperSiteKey === 'tmdb' ? 0 : 1;
+      const wrapperSiteOrder = Number(wrapperEl && wrapperEl.dataset ? wrapperEl.dataset.siteOrder : 0);
+      const wrapperTmdbRank = Number(wrapperEl && wrapperEl.dataset ? wrapperEl.dataset.tmdbRank : 0);
+
+      const getAggKeysForSort = () => {
+        const keys = new Set();
+        try {
+          Array.from(grid.children || []).forEach((el) => {
+            if (!el || !el.dataset) return;
+            if (el.dataset.aggregate !== '1') return;
+            const gk = (el.dataset.titleAggKey || '').trim();
+            if (gk) keys.add(gk);
+          });
+        } catch (_e) {}
+        try {
+          if (wrapperEl && wrapperEl.dataset && wrapperEl.dataset.aggregate === '1') {
+            const gk = (wrapperEl.dataset.titleAggKey || '').trim();
+            if (gk) keys.add(gk);
+          }
+        } catch (_e) {}
+        return keys;
+      };
+
+      const isHiddenByCurrentMode = (el, aggKeys) => {
+        if (!el || !el.dataset) return false;
+        const isAgg = el.dataset.aggregate === '1';
+        if (isAgg) {
+          if ((el.dataset.siteKey || '') === 'tmdb') return false;
+          return !!rawListMode;
+        }
+        const gk = (el.dataset.titleAggKey || '').trim();
+        const isTMDB = (el.dataset.siteKey || '') === 'tmdb';
+        if (isTMDB) {
+          return false;
+        }
+        if (gk && aggKeys && aggKeys.has(gk)) return !rawListMode;
+        return false;
+      };
+
+      const aggKeys = getAggKeysForSort();
+      const wrapperHidden = isHiddenByCurrentMode(wrapperEl, aggKeys);
       const children = Array.from(grid.children || []);
       for (let i = 0; i < children.length; i += 1) {
         const el = children[i];
         const elScore = Number(el && el.dataset ? el.dataset.score : 0);
         const elTitleLen = Number(el && el.dataset ? el.dataset.titleLen : 0);
         const elSeq = Number(el && el.dataset ? el.dataset.seq : 0);
+        const elSiteKey = el && el.dataset ? String(el.dataset.siteKey || '') : '';
+        const elKindPriority = !rawListMode && elSiteKey === 'tmdb' ? 0 : 1;
+        const elSiteOrder = Number(el && el.dataset ? el.dataset.siteOrder : 0);
+        const elTmdbRank = Number(el && el.dataset ? el.dataset.tmdbRank : 0);
+        const elHidden = isHiddenByCurrentMode(el, aggKeys);
+
+        // Keep visible cards contiguous: hidden cards (under current raw/aggregate mode) should not affect ranking.
+        if (wrapperHidden !== elHidden) {
+          if (!wrapperHidden && elHidden) {
+            grid.insertBefore(wrapperEl, el);
+            return;
+          }
+          // Wrapper is hidden, keep it after all visible cards.
+          continue;
+        }
+
+        // In non-raw list mode, always show TMDB cards first; keep other sorting rules unchanged within each block.
+        if (elKindPriority > wrapperKindPriority) {
+          grid.insertBefore(wrapperEl, el);
+          return;
+        }
+        if (elKindPriority < wrapperKindPriority) continue;
 
         if (Number.isFinite(elScore) && elScore < wrapperScore) {
           grid.insertBefore(wrapperEl, el);
           return;
         }
         if (Number.isFinite(elScore) && elScore === wrapperScore) {
+          if (Number.isFinite(elTmdbRank) && Number.isFinite(wrapperTmdbRank) && elTmdbRank > 0 && wrapperTmdbRank > 0 && elTmdbRank !== wrapperTmdbRank) {
+            if (elTmdbRank > wrapperTmdbRank) {
+              grid.insertBefore(wrapperEl, el);
+              return;
+            }
+            continue;
+          }
+          if (Number.isFinite(elSiteOrder) && Number.isFinite(wrapperSiteOrder) && elSiteOrder !== wrapperSiteOrder) {
+            if (elSiteOrder > wrapperSiteOrder) {
+              grid.insertBefore(wrapperEl, el);
+              return;
+            }
+            continue;
+          }
           if (Number.isFinite(elTitleLen) && Number.isFinite(wrapperTitleLen) && elTitleLen > wrapperTitleLen) {
             grid.insertBefore(wrapperEl, el);
             return;
           }
-          if (Number.isFinite(elTitleLen) && Number.isFinite(wrapperTitleLen) && elTitleLen === wrapperTitleLen && Number.isFinite(elSeq) && elSeq > wrapperSeq) {
+          if (
+            Number.isFinite(elTitleLen) &&
+            Number.isFinite(wrapperTitleLen) &&
+            elTitleLen === wrapperTitleLen &&
+            Number.isFinite(elSeq) &&
+            elSeq > wrapperSeq
+          ) {
             grid.insertBefore(wrapperEl, el);
             return;
           }
@@ -778,53 +1235,88 @@ export function initSearchPage() {
       grid.appendChild(wrapperEl);
     };
 
-    const seenKeys = new Set();
-    const tmdbByGroupKey = new Map(); // groupKey -> tmdb item (best match)
+	    const seenKeys = new Set();
+	    const tmdbByGroupKeyByType = new Map(); // groupKey -> { tv?: item, movie?: item }
 
-    const runTMDBSearch = async () => {
-      if (searchDisplayMode !== 'tmdb' && searchDisplayMode !== 'both') return 0;
-      try {
+	    const hasTMDBTVForGroupKey = (groupKey) => {
+	      const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+	      if (!gk) return false;
+	      const typed = tmdbByGroupKeyByType.get(gk) || null;
+	      return Boolean(typed && typed.tv);
+	    };
+
+	    const getTMDBTVSeasonCountForGroupKey = (groupKey) => {
+	      const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+	      if (!gk) return 0;
+	      const typed = tmdbByGroupKeyByType.get(gk) || null;
+	      const tv = typed && typed.tv ? typed.tv : null;
+	      const n = tv && Number.isFinite(Number(tv.seasonCount)) ? Math.floor(Number(tv.seasonCount)) : 0;
+	      return n > 0 ? n : 0;
+	    };
+
+	    const pickBetterTMDBItem = (prev, out) => {
+	      if (!prev) return out;
+	      const ps = Number(prev.__score || 0);
+	      const ns = Number(out.__score || 0);
+	      if (ns > ps) return out;
+	      if (ns < ps) return prev;
+	      const pr = Number.isFinite(Number(prev.__tmdbRank)) ? Number(prev.__tmdbRank) : 0;
+	      const nr = Number.isFinite(Number(out.__tmdbRank)) ? Number(out.__tmdbRank) : 0;
+	      if (pr > 0 && nr > 0 && nr !== pr) return nr < pr ? out : prev;
+	      const pl = Number(prev.__titleLen || 0);
+	      const nl = Number(out.__titleLen || 0);
+	      if (nl > 0 && (pl <= 0 || nl < pl)) return out;
+	      return prev;
+	    };
+
+	    const pickTMDBCoverForGroup = (groupKey) => {
+	      const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+	      if (!gk) return null;
+	      const typed = tmdbByGroupKeyByType.get(gk) || null;
+	      if (!typed) return null;
+	      return typed.tv || typed.movie || null;
+	    };
+
+	    const runTMDBSearch = async () => {
+	        if (searchDisplayMode !== 'tmdb' && searchDisplayMode !== 'both') return 0;
+	        try {
         const data = await requestJson(`/api/tmdb/search?q=${encodeURIComponent(q)}`, {
           method: 'GET',
           credentials: 'same-origin',
         });
         const rawItems = data && Array.isArray(data.list) ? data.list : [];
         const items = rawItems
-          .map((it) => {
+          .map((it, idx) => {
             const name = it && it.name ? String(it.name) : '';
             const originalTitle = sanitizeDisplayTitle(name) || name;
-            const base = preCleanForRules(originalTitle) || originalTitle || name;
-            const cleanedRaw =
-              applyCleanRules(base, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) }) || base;
-            const cleanedTitle = sanitizeDisplayTitle(cleanedRaw) || cleanedRaw || base || name;
-            const cleanedForMatch = normalizeDisplayTitle(cleanedTitle) || cleanedTitle || name;
-            const groupKey = normalizeForGroupKey(cleanedForMatch) || normalizeForGroupKey(name);
-            const score = computeMatchScore(cleanedForMatch || name);
-            const titleLen = cleanedForMatch.replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '').length;
-            const out = {
-              ...it,
-              __groupKey: groupKey || '',
-              __displayTitle: originalTitle || name,
-              __score: score,
-              __titleLen: titleLen,
-            };
-            if (groupKey) {
-              const prev = tmdbByGroupKey.get(groupKey) || null;
-              if (!prev) tmdbByGroupKey.set(groupKey, out);
-              else {
-                const ps = Number(prev.__score || 0);
-                const ns = Number(out.__score || 0);
-                if (ns > ps) tmdbByGroupKey.set(groupKey, out);
-                else if (ns === ps) {
-                  const pl = Number(prev.__titleLen || 0);
-                  const nl = Number(out.__titleLen || 0);
-                  if (nl > 0 && (pl <= 0 || nl < pl)) tmdbByGroupKey.set(groupKey, out);
-                }
-              }
-            }
-            return out;
-          })
-          .filter(Boolean);
+            // TMDB titles should NOT be aggressively "cleaned" for aggregation; otherwise distinct titles
+            // like "xx 0 剧场版" may be merged into "xx 剧场版".
+            const groupKey = normalizeForGroupKey(originalTitle) || normalizeForGroupKey(name);
+            const score = computeMatchScore(originalTitle || name);
+            const titleLen = String(originalTitle || name).replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '').length;
+            const seasonCount = it && Number.isFinite(Number(it.seasonCount)) ? Math.floor(Number(it.seasonCount)) : 0;
+	            const out = {
+	              ...it,
+	              __groupKey: groupKey || '',
+	              __displayTitle: originalTitle || name,
+	              __score: score,
+	              __tmdbRank: Math.max(1, Math.floor(Number(idx) + 1)),
+	              __titleLen: titleLen,
+	              seasonCount: seasonCount > 0 ? seasonCount : 0,
+	            };
+	            if (groupKey) {
+	              const key = normalizeTmdbMediaType(out && typeof out.mediaType === 'string' ? out.mediaType : '');
+	              if (key) {
+	                const prev = tmdbByGroupKeyByType.get(groupKey) || {};
+	                const next = { ...prev };
+	                next[key] = pickBetterTMDBItem(prev[key] || null, out);
+	                tmdbByGroupKeyByType.set(groupKey, next);
+	              }
+	            }
+	            return out;
+	          })
+	          .filter(Boolean);
+        dbg('tmdb_map', { size: tmdbByGroupKeyByType.size, items: items.length });
         if (!items.length) return 0;
         const appended = appendTMDBItemsToGrid({
           gridEl: grid,
@@ -839,6 +1331,7 @@ export function initSearchPage() {
       } catch (err) {
         const msg = (err && err.message) || '服务器连接 TMDB 失败';
         setStatus(msg, true);
+        dbg('tmdb_error', { message: msg });
         return -1;
       }
     };
@@ -919,31 +1412,53 @@ export function initSearchPage() {
 
     const applyAggregateSourceBadge = (el, count) => {
       if (!el) return;
-      const badge = el.querySelector && el.querySelector('.tv-aggregate-source-count');
-      if (!badge) return;
       const n = Number.isFinite(Number(count)) ? Number(count) : 0;
+      const posterWrap = el.querySelector && el.querySelector('.douban-poster');
+      let badge = el.querySelector && el.querySelector('.tv-aggregate-source-count');
+      if (!badge && posterWrap) {
+        badge = document.createElement('div');
+        badge.className = 'douban-rate tv-aggregate-source-count';
+        posterWrap.appendChild(badge);
+      }
+      if (!badge) return;
       badge.textContent = formatSourceCountText(n);
       badge.title = `${Math.max(0, Math.floor(n))}个源`;
     };
 
-    const syncAggregateStorage = (storageKey, cover, sources) => {
+    const applyAggregateRemarkBadge = (el, remarkText) => {
+      if (!el) return;
+      const txt = typeof remarkText === 'string' ? remarkText.trim() : '';
+      const posterWrap = el.querySelector && el.querySelector('.douban-poster');
+      if (!posterWrap) return;
+      let tag = el.querySelector && el.querySelector('.tv-card-badge');
+      if (!tag && txt) {
+        tag = document.createElement('div');
+        tag.className = 'tv-card-badge';
+        posterWrap.appendChild(tag);
+      }
+      if (!tag) return;
+      if (txt) tag.textContent = txt;
+      else tag.textContent = '';
+      const hasCount = !!(el.querySelector && el.querySelector('.tv-aggregate-source-count'));
+      tag.classList.toggle('tv-card-badge--left', hasCount);
+    };
+
+    const syncAggregateStorage = (storageKey, sources) => {
       const key = typeof storageKey === 'string' ? storageKey.trim() : '';
-      if (!key || !cover || !cover.siteKey || !cover.videoId) return;
+      if (!key) return;
       try {
         const prevRaw = sessionStorage.getItem(AGG_STORAGE_KEY) || '';
         const prev = prevRaw && prevRaw.trim() ? JSON.parse(prevRaw) : null;
-        const groups = prev && prev.groups && typeof prev.groups === 'object' ? prev.groups : {};
-        groups[key] = {
-          createdAt: Date.now(),
-          forSiteKey: cover.siteKey,
-          forVideoId: cover.videoId,
-          sources,
-        };
-        sessionStorage.setItem(AGG_STORAGE_KEY, JSON.stringify({ version: 2, q, groups, lastKey: key }));
+        const groups =
+          prev && prev.version === 4 && prev.groups && typeof prev.groups === 'object'
+            ? { ...prev.groups }
+            : {};
+        groups[key] = { sources, updatedAt: Date.now(), q };
+        sessionStorage.setItem(AGG_STORAGE_KEY, JSON.stringify({ version: 4, q, groups, lastKey: key }));
       } catch (_e) {}
     };
 
-    const ensureStreamingAggregateCardForGroup = (groupKey) => {
+	      const ensureStreamingAggregateCardForGroup = (groupKey) => {
       const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
       if (!gk) return;
       const group = aggregateByGroup.get(gk);
@@ -961,30 +1476,93 @@ export function initSearchPage() {
       if (!cover || !cover.siteKey || !cover.videoId) return;
       if (sources.length < 1) return;
 
-      // Replace per-site cards with one aggregate card as soon as we have >=2 sources.
       const removed = removeExistingGroupCards(gk);
       if (removed) totalFound = Math.max(0, totalFound - removed);
 
-      const tmdbCover = !rawListMode && searchDisplayMode === 'both' ? tmdbByGroupKey.get(gk) : null;
-      const title =
-        tmdbCover && tmdbCover.__displayTitle
-          ? String(tmdbCover.__displayTitle)
-          : group && group.title
-            ? String(group.title)
+	      const tmdbCover = !rawListMode && searchDisplayMode === 'both' ? pickTMDBCoverForGroup(gk) : null;
+	      const title =
+	        tmdbCover && tmdbCover.__displayTitle
+	          ? String(tmdbCover.__displayTitle)
+	          : group && group.title
+	            ? String(group.title)
             : '';
       const poster = tmdbCover && tmdbCover.pic ? String(tmdbCover.pic) : cover.videoPoster || '';
+      const tmdbCoverType = normalizeTmdbMediaType(
+        tmdbCover && (tmdbCover.mediaType || tmdbCover.tmdbType || tmdbCover.type)
+      );
+      const tmdbCoverTypeLabel = tmdbCoverType === 'tv' ? '剧集' : tmdbCoverType === 'movie' ? '电影' : '';
+      const inferAggregateTypeLabel = (t) => {
+        const s = typeof t === 'string' ? t.trim() : '';
+        if (!s) return '剧集';
+        if (/剧场版|總集篇|总集篇|电影版|劇場版/i.test(s)) return '电影';
+        return '剧集';
+      };
+      const aggregateTypeLabel = tmdbCoverTypeLabel || inferAggregateTypeLabel(title || cover.videoTitle || '');
       const siteMaxEp = extractMaxEpisodeFromSources(sources);
       let remark = tmdbCover && tmdbCover.badge ? String(tmdbCover.badge) : cover.videoRemark || '';
-      if (searchBadgePreferEpisode && siteMaxEp > 0) {
-        if (tmdbCover && tmdbCover.badge) {
-          const tmdbEp = parseEpisodeNumber(String(tmdbCover.badge || ''));
-          if (siteMaxEp > tmdbEp) remark = `更新至${siteMaxEp}集`;
-        } else {
-          remark = `更新至${siteMaxEp}集`;
+      if (tmdbCoverType === 'movie') {
+        const y = tmdbCover && tmdbCover.year != null ? Number(tmdbCover.year) : 0;
+        remark = Number.isFinite(y) && y > 0 ? String(Math.floor(y)) : '';
+      } else if (searchBadgePreferEpisode && siteMaxEp > 0) {
+        if (!tmdbCover || !tmdbCover.badge) remark = `更新至${siteMaxEp}集`;
+      }
+      const storageKey = normalizeAggStorageKey(gk) || normalizeAggStorageKey(title);
+      if (!storageKey) return;
+
+      const removeNonTmdbAggregateCardsForGroup = () => {
+        try {
+          Array.from(grid.children || []).forEach((el) => {
+            if (!el || !el.dataset) return;
+            if (el.dataset.aggregate !== '1') return;
+            if ((el.dataset.titleAggKey || '') !== gk) return;
+            if ((el.dataset.siteKey || '') === 'tmdb') return;
+            try {
+              el.remove();
+            } catch (_e) {}
+          });
+        } catch (_e) {}
+      };
+
+      const findTmdbCardForGroup = () => {
+        try {
+          const wantType = tmdbCoverType || '';
+          let first = null;
+          let typed = null;
+          Array.from(grid.children || []).forEach((el) => {
+            if (!el || !el.dataset) return;
+            if ((el.dataset.siteKey || '') !== 'tmdb') return;
+            if ((el.dataset.titleAggKey || '') !== gk) return;
+            if (!first) first = el;
+            const t = normalizeTmdbMediaType(el.dataset.tmdbType || '');
+            if (wantType && t && t === wantType) typed = el;
+          });
+          return typed || first || null;
+        } catch (_e) {
+          return null;
+        }
+      };
+
+      // If a TMDB card exists for this group, aggregate sources directly into that TMDB card
+      // instead of creating a separate aggregate card (prevents duplicates in "both" mode).
+      if (tmdbCover && !rawListMode && searchDisplayMode === 'both') {
+        const tmdbEl = findTmdbCardForGroup();
+        if (tmdbEl) {
+          removeNonTmdbAggregateCardsForGroup();
+          tmdbEl.dataset.aggregate = '1';
+          applyAggregateSourceBadge(tmdbEl, sourceSiteCount);
+          applyAggregateRemarkBadge(tmdbEl, remark || '');
+          syncAggregateStorage(storageKey, sources);
+          aggregateCardByGroup.set(gk, {
+            el: tmdbEl,
+            uniq: `tmdb::${String(tmdbEl.dataset.videoId || '')}`,
+            sourceSiteCount,
+            storageKey,
+          });
+          applyRawListModeToGrid();
+          updateProgressAndCount(done, sites.length);
+          return;
         }
       }
-      const storageKey = normalizeAggStorageKey(title);
-      if (!storageKey) return;
 
       const uniq = `${cover.siteKey}::${String(cover.videoId)}`;
       const cached = aggregateCardByGroup.get(gk) || null;
@@ -996,18 +1574,16 @@ export function initSearchPage() {
         aggregateCardByGroup.delete(gk);
       }
 
-      // Ensure insertion isn't blocked by previous cards with the same uniq.
       seenKeys.delete(uniq);
 
-      // Keep raw cards in DOM for "原始列表" toggle; visibility is controlled by applyRawListModeToGrid().
-
-      syncAggregateStorage(storageKey, cover, sources);
+      syncAggregateStorage(storageKey, sources);
 
       const existing = aggregateCardByGroup.get(gk) || null;
       if (existing && existing.el) {
         if (sourceSiteCount !== existing.sourceSiteCount) {
           existing.sourceSiteCount = sourceSiteCount;
           applyAggregateSourceBadge(existing.el, sourceSiteCount);
+          applyAggregateRemarkBadge(existing.el, remark || '');
           aggregateCardByGroup.set(gk, existing);
         }
         return;
@@ -1022,16 +1598,22 @@ export function initSearchPage() {
             pic: poster || '',
             remark: remark || '',
             __groupKey: gk,
+            __tmdbRank: tmdbCover && tmdbCover.__tmdbRank != null ? tmdbCover.__tmdbRank : 0,
+            tmdbId: tmdbCover && tmdbCover.tmdbId != null ? tmdbCover.tmdbId : 0,
+            mediaType: tmdbCover && typeof tmdbCover.mediaType === 'string' ? tmdbCover.mediaType : '',
+            year: tmdbCover && tmdbCover.year != null ? tmdbCover.year : 0,
           },
         ],
         siteKey: cover.siteKey,
         siteApi: cover.spiderApi,
-        siteName: '',
+        siteName: aggregateTypeLabel,
         cornerBadgeText: formatSourceCountText(sourceSiteCount),
         cornerBadgeTitle: `${sourceSiteCount}个源`,
         seenKeys,
         insertCardSorted,
         computeMatchScore,
+        scoreOverride:
+          computeMatchScore(title || cover.videoTitle || ''),
         isAggregate: true,
       });
 
@@ -1074,21 +1656,92 @@ export function initSearchPage() {
           const items = normalizeSearchList(data);
 
           const sliced = items.slice(0, 12);
+          const slicedForProbe = items.slice(0, 30);
           const groupKeysActivated = new Set();
+
+          if ((searchDisplayMode === 'tmdb' || searchDisplayMode === 'both') && tmdbByGroupKeyByType.size) {
+            const probes = [];
+            for (let i = 0; i < slicedForProbe.length; i += 1) {
+              const it = slicedForProbe[i];
+              const name = it && it.name ? String(it.name) : '';
+              const originalTitle = sanitizeDisplayTitle(name) || name;
+              const seasonHint =
+                extractSeasonHintFromText(originalTitle) ||
+                extractSeasonHintFromText(it && it.remark ? String(it.remark) : '');
+              if (!(seasonHint >= 2)) continue;
+
+              const base = preCleanForRules(originalTitle) || originalTitle || name;
+              const cleanedRaw =
+                applyCleanRules(base, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) }) || base;
+              const cleanedTitle = sanitizeDisplayTitle(cleanedRaw) || cleanedRaw || base || name;
+              const cleanedForMatch = normalizeDisplayTitle(cleanedTitle) || cleanedTitle || name;
+              const seasonStripped = stripSeasonMarkers(cleanedForMatch);
+              if (!seasonStripped || seasonStripped === cleanedForMatch) continue;
+
+              const gkStripped = normalizeForGroupKey(seasonStripped);
+              if (!gkStripped || !hasTMDBTVForGroupKey(gkStripped)) continue;
+
+              const tmdbSeasonCount = getTMDBTVSeasonCountForGroupKey(gkStripped);
+              dbg('douban_probe_check', {
+                site: site && site.key ? String(site.key) : '',
+                title: originalTitle,
+                seasonHint,
+                gk: gkStripped,
+                tmdbSeasonCount,
+              });
+              if (tmdbSeasonCount >= seasonHint) continue;
+              if (tmdbSeasonCount > 1) continue; // only probe when TMDB still reports single-season
+
+              const typed = tmdbByGroupKeyByType.get(gkStripped) || null;
+              const tv = typed && typed.tv ? typed.tv : null;
+              const tmdbIdRaw = tv && tv.tmdbId != null ? tv.tmdbId : tv && tv.id != null ? tv.id : 0;
+              const tmdbId = Number(tmdbIdRaw) || 0;
+              if (!Number.isFinite(tmdbId) || tmdbId <= 0) continue;
+
+              probes.push(
+                ensureDoubanSeasonMetaForGroupKey({
+                  groupKey: gkStripped,
+                  keyword: q,
+                  tmdbId,
+                  minSeasonHint: seasonHint,
+                })
+              );
+              dbg('douban_probe_push', { gk: gkStripped, tmdbId, seasonHint });
+            }
+            if (probes.length) await Promise.allSettled(probes);
+          }
 
           const normalItems = sliced
             .map((it) => {
               const name = it && it.name ? String(it.name) : '';
               const originalTitle = sanitizeDisplayTitle(name) || name;
+              const seasonHint = extractSeasonHintFromText(originalTitle) || extractSeasonHintFromText(it && it.remark ? String(it.remark) : '');
               const base = preCleanForRules(originalTitle) || originalTitle || name;
               const cleanedRaw =
                 applyCleanRules(base, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) }) || base;
               const cleanedTitle = sanitizeDisplayTitle(cleanedRaw) || cleanedRaw || base || name;
               const cleanedForMatch = normalizeDisplayTitle(cleanedTitle) || cleanedTitle || name;
               const groupKey = normalizeForGroupKey(cleanedForMatch);
-              const groupKeySafe = groupKey || normalizeForGroupKey(name);
-              if (!groupKeySafe) return { ...it, __groupKey: '', __displayTitle: originalTitle || name };
-              return { ...it, __groupKey: groupKeySafe, __displayTitle: originalTitle || name };
+              let groupKeySafe = groupKey || normalizeForGroupKey(name);
+              if ((searchDisplayMode === 'tmdb' || searchDisplayMode === 'both') && tmdbByGroupKeyByType.size) {
+                const seasonStripped = stripSeasonMarkers(cleanedForMatch);
+                if (seasonStripped && seasonStripped !== cleanedForMatch) {
+                  const gkStripped = normalizeForGroupKey(seasonStripped);
+                  if (gkStripped && hasTMDBTVForGroupKey(gkStripped)) {
+                    const effectiveSeasonCount = getEffectiveTVSeasonCountForGroupKey(gkStripped, {
+                      fallback: getTMDBTVSeasonCountForGroupKey,
+                    });
+                    if (effectiveSeasonCount > 0 && seasonHint > effectiveSeasonCount) {
+                      // Do not merge site titles beyond TMDB-known seasons.
+                    } else {
+                      groupKeySafe = gkStripped;
+                    }
+                  }
+                }
+              }
+              const seasonHintLabel = seasonHint > 0 ? `第${Math.floor(seasonHint)}季` : '';
+              if (!groupKeySafe) return { ...it, __groupKey: '', __displayTitle: originalTitle || name, __seasonHint: seasonHint, __seasonHintLabel: seasonHintLabel };
+              return { ...it, __groupKey: groupKeySafe, __displayTitle: originalTitle || name, __seasonHint: seasonHint, __seasonHintLabel: seasonHintLabel };
             })
             .filter(Boolean);
 
@@ -1126,6 +1779,10 @@ export function initSearchPage() {
                   videoTitle: rawName,
                   videoPoster: it && it.pic ? String(it.pic) : '',
                   videoRemark: it && it.remark ? String(it.remark) : '',
+                  seasonHint:
+                    it && Number.isFinite(Number(it.__seasonHint)) && Number(it.__seasonHint) > 0
+                      ? Math.floor(Number(it.__seasonHint))
+                      : 0,
                 });
               }
               group.bySite.set(sk, entry);

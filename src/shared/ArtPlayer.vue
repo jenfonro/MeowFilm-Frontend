@@ -7,6 +7,9 @@
     <div ref="container" class="artplayer-root" />
 
     <teleport :to="teleportTarget || 'body'" :disabled="!teleportTarget">
+      <div v-if="toastVisible && toastText" class="yt-toast" aria-live="polite">
+        {{ toastText }}
+      </div>
       <div v-show="showBufferRing" class="m-buffer-mask" aria-hidden="true"></div>
       <div v-show="showBufferRing" class="m-buffer-ring" aria-hidden="true"></div>
 
@@ -100,6 +103,43 @@
           </div>
 
           <div class="yt-pill yt-right">
+            <div v-for="m in extraMenusResolved" :key="m.key" class="yt-proxy" :ref="(el) => setExtraMenuEl(m.key, el)">
+              <button
+                class="yt-proxy__btn"
+                type="button"
+                :disabled="!!m.disabled"
+                :aria-label="m.ariaLabel || m.label"
+                :data-open="extraMenuOpenKey === m.key ? 'true' : 'false'"
+                @click.stop="toggleExtraMenu(m.key)"
+              >
+                {{ m.label }}
+              </button>
+              <div class="yt-proxy__menu" :class="{ 'yt-proxy__menu--open': extraMenuOpenKey === m.key }">
+                <button
+                  v-for="o in m.options"
+                  :key="`${m.key}::${o.value}`"
+                  type="button"
+                  class="yt-proxy__item"
+                  :data-active="String(o.value) === String(m.value) ? 'true' : 'false'"
+                  @click.stop="selectExtraMenu(m.key, o.value)"
+                >
+                  {{ o.label }}
+                </button>
+              </div>
+            </div>
+
+            <button
+              v-for="a in extraActionsResolved"
+              :key="a.key"
+              class="yt-proxy__btn"
+              type="button"
+              :disabled="!!a.disabled"
+              :aria-label="a.ariaLabel || a.label"
+              @click.stop="fireExtraAction(a.key)"
+            >
+              {{ a.label }}
+            </button>
+
             <div v-if="goProxyOptions.length > 1" class="yt-proxy" ref="goProxyEl">
               <button
                 class="yt-proxy__btn"
@@ -151,7 +191,7 @@
             </button>
 
             <div class="yt-setting" ref="settingEl">
-              <button class="yt-btn" type="button" aria-label="设置" @click.stop="settingsOpen = !settingsOpen">
+              <button class="yt-btn" type="button" aria-label="设置" @click.stop="toggleSettingsMenu">
                 <svg viewBox="0 0 24 24" class="yt-ico">
                   <path
                     fill="currentColor"
@@ -219,7 +259,7 @@
       </div>
       <div v-else class="m-bar" @click.stop @mousedown.stop @touchstart.stop>
         <div class="yt-setting m-setting" ref="settingEl">
-          <button class="yt-btn" type="button" aria-label="设置" @click.stop="settingsOpen = !settingsOpen">
+          <button class="yt-btn" type="button" aria-label="设置" @click.stop="toggleSettingsMenu">
             <svg viewBox="0 0 24 24" class="yt-ico">
               <path
                 fill="currentColor"
@@ -336,7 +376,7 @@
 	import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 	import Artplayer from 'artplayer';
 
-		const emit = defineEmits(['loadedmetadata', 'error', 'buffering', 'playing', 'firstframe', 'goproxyselect']);
+			const emit = defineEmits(['loadedmetadata', 'videoinfo', 'error', 'buffering', 'playing', 'firstframe', 'ended', 'goproxyselect', 'extramenuselect', 'extraaction']);
 
 	const props = defineProps({
 	  url: { type: String, default: '' },
@@ -348,13 +388,20 @@
 	  goProxyOptions: { type: Array, default: () => [] }, // [{ base, label }]
 	  goProxySelectedBase: { type: String, default: '' },
 	  goProxyLabel: { type: String, default: '' },
-	});
+	    statsExtra: { type: Object, default: () => ({}) }, // { displayName, siteName, panName, rawFileName }
+	    extraMenus: { type: Array, default: () => [] }, // [{ key, label, ariaLabel?, value, disabled?, options:[{value,label}] }]
+	    extraActions: { type: Array, default: () => [] }, // [{ key, label, ariaLabel?, disabled? }]
+	    toastText: { type: String, default: '' },
+		});
 
 	const container = ref(null);
 	const shell = ref(null);
 	const settingEl = ref(null);
 	const goProxyEl = ref(null);
+	const extraMenuEls = new Map();
 	const teleportTarget = ref(null);
+
+	const extraMenuOpenKey = ref('');
 
 let art = null;
 let cleanupPipListeners = null;
@@ -362,6 +409,8 @@ let cleanupFsListeners = null;
 let cleanupNativeVideoListeners = null;
 let cleanupPlayerElListeners = null;
 let cleanupNoCorsEnforcer = null;
+let cleanupInfoExtraObserver = null;
+let infoExtraSyncing = false;
 
 let timeUpdateRaf = 0;
 let timeUpdatePending = 0;
@@ -388,10 +437,133 @@ const aspectRatio = ref('default');
 	const isPip = ref(false);
 	const isMobile = ref(false);
 	const isIos = ref(false);
-	const overlayVisible = computed(() => {
-	  if (isMobile.value) return uiVisible.value || !playing.value || settingsOpen.value || goProxyMenuOpen.value;
-	  return desktopControlsVisible.value || settingsOpen.value || goProxyMenuOpen.value || !playing.value;
+const overlayVisible = computed(() => {
+	  const hasExtraMenu = !!extraMenuOpenKey.value;
+	  if (isMobile.value) return uiVisible.value || !playing.value || settingsOpen.value || goProxyMenuOpen.value || hasExtraMenu;
+	  return desktopControlsVisible.value || settingsOpen.value || goProxyMenuOpen.value || hasExtraMenu || !playing.value;
 	});
+
+const extraMenusResolved = computed(() => {
+  const list = Array.isArray(props.extraMenus) ? props.extraMenus : [];
+  return list
+    .map((m) => {
+      const key = m && m.key != null ? String(m.key).trim() : '';
+      const label = m && m.label != null ? String(m.label) : '';
+      const ariaLabel = m && m.ariaLabel != null ? String(m.ariaLabel) : '';
+      const value = m && m.value != null ? String(m.value) : '';
+      const disabled = !!(m && m.disabled);
+      const optionsRaw = m && Array.isArray(m.options) ? m.options : [];
+      const options = optionsRaw
+        .map((o) => ({
+          value: o && o.value != null ? String(o.value) : '',
+          label: o && o.label != null ? String(o.label) : '',
+        }))
+        .filter((o) => o.value || o.label);
+      if (!key || !label || !options.length) return null;
+      return { key, label, ariaLabel, value, disabled, options };
+    })
+    .filter(Boolean);
+});
+
+const extraActionsResolved = computed(() => {
+  const list = Array.isArray(props.extraActions) ? props.extraActions : [];
+  return list
+    .map((a) => {
+      const key = a && a.key != null ? String(a.key).trim() : '';
+      const label = a && a.label != null ? String(a.label) : '';
+      const ariaLabel = a && a.ariaLabel != null ? String(a.ariaLabel) : '';
+      const disabled = !!(a && a.disabled);
+      if (!key || !label) return null;
+      return { key, label, ariaLabel, disabled };
+    })
+    .filter(Boolean);
+});
+
+const toastText = computed(() => (props.toastText || '').trim());
+const toastVisible = ref(false);
+let toastTimer = 0;
+watch(
+  () => toastText.value,
+  (v) => {
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = 0;
+    const text = (v || '').trim();
+    if (!text) {
+      toastVisible.value = false;
+      return;
+    }
+    toastVisible.value = true;
+    toastTimer = window.setTimeout(() => {
+      toastTimer = 0;
+      toastVisible.value = false;
+    }, 2200);
+  },
+  { immediate: true }
+);
+
+const normalizeInfoValue = (v) => {
+  const s = typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim();
+  return s;
+};
+
+const escapeHtml = (s) =>
+  String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+	const renderInfoExtra = () => {
+	  const extra = props.statsExtra && typeof props.statsExtra === 'object' ? props.statsExtra : {};
+	  const displayName = normalizeInfoValue(extra.displayName);
+	  const siteName = normalizeInfoValue(extra.siteName);
+	  const panName = normalizeInfoValue(extra.panName);
+	  const rawFileName = normalizeInfoValue(extra.rawFileName);
+
+	  const lines = [];
+	  if (displayName) lines.push({ k: '名称', v: displayName });
+	  if (siteName) lines.push({ k: '站源', v: siteName });
+	  if (panName) lines.push({ k: '网盘', v: panName });
+	  if (rawFileName) lines.push({ k: '文件', v: rawFileName });
+	  if (!lines.length) return '';
+
+  return lines
+    .map((x) => `<div class="tv-art-info-extra__line">${x.k}：${escapeHtml(String(x.v || ''))}</div>`)
+    .join('');
+};
+
+const syncInfoExtraIntoArtInfoPanel = () => {
+  try {
+    if (infoExtraSyncing) return;
+    const playerEl = teleportTarget.value;
+    if (!playerEl) return;
+    const infoPanel = playerEl.querySelector && playerEl.querySelector('.art-info');
+    if (!infoPanel) return;
+
+    let box = infoPanel.querySelector && infoPanel.querySelector('.tv-art-info-extra');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'tv-art-info-extra';
+      infoPanel.appendChild(box);
+    }
+
+    const html = renderInfoExtra();
+    const prev = box.dataset && typeof box.dataset.lastHtml === 'string' ? box.dataset.lastHtml : null;
+    if (prev === html) {
+      box.classList.toggle('hidden', !html);
+      return;
+    }
+    infoExtraSyncing = true;
+    try {
+      if (box.dataset) box.dataset.lastHtml = html;
+      box.innerHTML = html;
+      box.classList.toggle('hidden', !html);
+    } finally {
+      infoExtraSyncing = false;
+    }
+  } catch (_e) {}
+};
 
 let mediaQuery = null;
 const updateIsMobile = () => {
@@ -864,6 +1036,22 @@ const destroyNow = () => {
 
   let metaEmitted = false;
   let firstFrameEmitted = false;
+  const readVideoResolution = () => {
+    try {
+      const v = art && art.video ? art.video : null;
+      const w = v && Number.isFinite(Number(v.videoWidth)) ? Math.floor(Number(v.videoWidth)) : 0;
+      const h = v && Number.isFinite(Number(v.videoHeight)) ? Math.floor(Number(v.videoHeight)) : 0;
+      return { width: w > 0 ? w : 0, height: h > 0 ? h : 0 };
+    } catch (_e) {
+      return { width: 0, height: 0 };
+    }
+  };
+  const emitVideoInfo = () => {
+    try {
+      const { width, height } = readVideoResolution();
+      emit('videoinfo', { width, height });
+    } catch (_e) {}
+  };
   const emitMetaOnce = () => {
     if (metaEmitted) return;
     metaEmitted = true;
@@ -871,7 +1059,8 @@ const destroyNow = () => {
       const v = art && art.video ? art.video : null;
       const d = (art && typeof art.duration === 'number' ? art.duration : null) ?? (v ? v.duration : 0);
       duration.value = Number.isFinite(d) ? d : 0;
-      emit('loadedmetadata', { duration: duration.value });
+      const { width, height } = readVideoResolution();
+      emit('loadedmetadata', { duration: duration.value, width, height });
     } catch (_e) {}
   };
 
@@ -971,6 +1160,38 @@ const destroyNow = () => {
   } catch (_e) {
     teleportTarget.value = null;
   }
+  try {
+    if (typeof cleanupInfoExtraObserver === 'function') cleanupInfoExtraObserver();
+  } catch (_e) {}
+  cleanupInfoExtraObserver = null;
+
+  try {
+    const playerEl = teleportTarget.value;
+    if (playerEl && typeof MutationObserver !== 'undefined') {
+      // Only use the observer to wait until `.art-info` exists; disconnect afterwards
+      // to avoid reacting to our own DOM writes and causing mutation loops.
+      const obs = new MutationObserver(() => {
+        try {
+          const infoPanel = playerEl.querySelector && playerEl.querySelector('.art-info');
+          if (!infoPanel) return;
+          syncInfoExtraIntoArtInfoPanel();
+          try {
+            obs.disconnect();
+          } catch (_e) {}
+          cleanupInfoExtraObserver = null;
+        } catch (_e) {}
+      });
+      obs.observe(playerEl, { childList: true, subtree: true });
+      cleanupInfoExtraObserver = () => {
+        try {
+          obs.disconnect();
+        } catch (_e) {}
+      };
+    }
+  } catch (_e) {
+    cleanupInfoExtraObserver = null;
+  }
+  syncInfoExtraIntoArtInfoPanel();
   try {
     if (typeof cleanupPlayerElListeners === 'function') cleanupPlayerElListeners();
   } catch (_e) {}
@@ -1094,11 +1315,26 @@ const destroyNow = () => {
         v.load();
       } catch (_e) {}
 
-      const onLoadedMetadata = () => emitMetaOnce();
-      const onDurationChange = () => {
-        try {
-          const d = (art && typeof art.duration === 'number' ? art.duration : null) ?? v.duration;
-          duration.value = Number.isFinite(d) ? d : 0;
+		      const onLoadedMetadata = () => emitMetaOnce();
+		      const onResize = () => emitVideoInfo();
+		      const onEnded = () => {
+		        try {
+		          playing.value = false;
+		        } catch (_e) {}
+		        try {
+		          setBuffering(false);
+		        } catch (_e) {}
+		        try {
+		          uiVisible.value = true;
+		        } catch (_e) {}
+		        try {
+		          emit('ended');
+		        } catch (_e) {}
+		      };
+	      const onDurationChange = () => {
+	        try {
+	          const d = (art && typeof art.duration === 'number' ? art.duration : null) ?? v.duration;
+	          duration.value = Number.isFinite(d) ? d : 0;
         } catch (_e) {}
         if (typeof v.readyState === 'number' && v.readyState >= 1) emitMetaOnce();
       };
@@ -1119,23 +1355,27 @@ const destroyNow = () => {
 	      };
 	      const onProgress = () => scheduleBufferedSync();
 	      v.addEventListener('loadedmetadata', onLoadedMetadata);
+	      v.addEventListener('resize', onResize);
 	      v.addEventListener('durationchange', onDurationChange);
-	      v.addEventListener('progress', onProgress);
-	      v.addEventListener('seeking', onProgress);
-	      v.addEventListener('seeked', onProgress);
-	      v.addEventListener('error', onError);
-	      cleanupNativeVideoListeners = () => {
-	        try {
-	          v.removeEventListener('loadedmetadata', onLoadedMetadata);
-	          v.removeEventListener('durationchange', onDurationChange);
-	          v.removeEventListener('progress', onProgress);
-	          v.removeEventListener('seeking', onProgress);
-	          v.removeEventListener('seeked', onProgress);
-	          v.removeEventListener('error', onError);
-	        } catch (_e) {}
-	      };
-    }
-  } catch (_e) {}
+		      v.addEventListener('progress', onProgress);
+		      v.addEventListener('seeking', onProgress);
+		      v.addEventListener('seeked', onProgress);
+		      v.addEventListener('error', onError);
+		      v.addEventListener('ended', onEnded);
+		      cleanupNativeVideoListeners = () => {
+		        try {
+		          v.removeEventListener('loadedmetadata', onLoadedMetadata);
+		          v.removeEventListener('resize', onResize);
+		          v.removeEventListener('durationchange', onDurationChange);
+		          v.removeEventListener('progress', onProgress);
+		          v.removeEventListener('seeking', onProgress);
+		          v.removeEventListener('seeked', onProgress);
+		          v.removeEventListener('error', onError);
+		          v.removeEventListener('ended', onEnded);
+		        } catch (_e) {}
+		      };
+	    }
+	  } catch (_e) {}
 
   // Ensure UI auto-hide behaves like a player overlay.
   uiVisible.value = true;
@@ -1169,6 +1409,7 @@ const destroyNow = () => {
 	      duration.value = Number.isFinite(d) ? d : 0;
 	    } catch (_e) {}
 	    emitMetaOnce();
+	    emitVideoInfo();
 	    scheduleBufferedSync();
 	  });
 	  art.on('video:durationchange', () => {
@@ -1188,15 +1429,23 @@ const destroyNow = () => {
 	    showUiTemporarily();
 	    scheduleBufferedSync();
 	  });
-  art.on('video:pause', () => {
-    playing.value = false;
-    setBuffering(false);
-    uiVisible.value = true;
-  });
-  art.on('video:waiting', () => {
-    setBuffering(true);
-    showUiTemporarily();
-  });
+	  art.on('video:pause', () => {
+	    playing.value = false;
+	    setBuffering(false);
+	    uiVisible.value = true;
+	  });
+	  art.on('video:ended', () => {
+	    playing.value = false;
+	    setBuffering(false);
+	    uiVisible.value = true;
+	    try {
+	      emit('ended');
+	    } catch (_e) {}
+	  });
+	  art.on('video:waiting', () => {
+	    setBuffering(true);
+	    showUiTemporarily();
+	  });
   art.on('video:stalled', () => {
     setBuffering(true);
     showUiTemporarily();
@@ -1219,6 +1468,7 @@ const destroyNow = () => {
 	  art.on('video:canplay', () => {
 	    setBuffering(false);
 	    emitMetaOnce();
+	    emitVideoInfo();
 	    scheduleBufferedSync();
 	  });
   art.on('video:error', () => {
@@ -1467,10 +1717,10 @@ let desktopHideTimer = 0;
 	  desktopHideTimer = 0;
 	  if (!art) return;
 	  if (!art.playing) return;
-	  if (settingsOpen.value || goProxyMenuOpen.value || buffering.value) return;
+	  if (settingsOpen.value || goProxyMenuOpen.value || extraMenuOpenKey.value || buffering.value) return;
 	  desktopHideTimer = window.setTimeout(() => {
 	    if (!art) return;
-	    if (art.playing && !settingsOpen.value && !goProxyMenuOpen.value && !buffering.value) desktopControlsVisible.value = false;
+	    if (art.playing && !settingsOpen.value && !goProxyMenuOpen.value && !extraMenuOpenKey.value && !buffering.value) desktopControlsVisible.value = false;
 	  }, 2200);
 	};
 
@@ -1499,11 +1749,59 @@ const showUiTemporarily = () => {
 	    const el = goProxyEl.value;
 	    if (!(el && target && el.contains(target))) goProxyMenuOpen.value = false;
 	  }
+	  if (extraMenuOpenKey.value) {
+	    const el = extraMenuEls.get(extraMenuOpenKey.value) || null;
+	    if (!(el && target && el.contains(target))) extraMenuOpenKey.value = '';
+	  }
+	};
+
+	const setExtraMenuEl = (key, el) => {
+	  try {
+	    const k = typeof key === 'string' ? key : String(key || '');
+	    if (!k) return;
+	    if (el) extraMenuEls.set(k, el);
+	    else extraMenuEls.delete(k);
+	  } catch (_e) {}
+	};
+
+	const toggleExtraMenu = (key) => {
+	  const k = typeof key === 'string' ? key : String(key || '');
+	  if (!k) return;
+	  settingsOpen.value = false;
+	  goProxyMenuOpen.value = false;
+	  extraMenuOpenKey.value = extraMenuOpenKey.value === k ? '' : k;
+	  showUiTemporarily();
+	};
+
+	const selectExtraMenu = (key, value) => {
+	  const k = typeof key === 'string' ? key : String(key || '');
+	  if (!k) return;
+	  extraMenuOpenKey.value = '';
+	  showUiTemporarily();
+	  emit('extramenuselect', { key: k, value: value != null ? String(value) : '' });
+	};
+
+	const fireExtraAction = (key) => {
+	  const k = typeof key === 'string' ? key : String(key || '');
+	  if (!k) return;
+	  extraMenuOpenKey.value = '';
+	  settingsOpen.value = false;
+	  goProxyMenuOpen.value = false;
+	  showUiTemporarily();
+	  emit('extraaction', k);
+	};
+
+	const toggleSettingsMenu = () => {
+	  goProxyMenuOpen.value = false;
+	  extraMenuOpenKey.value = '';
+	  settingsOpen.value = !settingsOpen.value;
+	  showUiTemporarily();
 	};
 
 	const toggleGoProxyMenu = () => {
 	  if (!props.goProxyOptions || !props.goProxyOptions.length) return;
 	  settingsOpen.value = false;
+	  extraMenuOpenKey.value = '';
 	  goProxyMenuOpen.value = !goProxyMenuOpen.value;
 	  showUiTemporarily();
 	};
@@ -1656,6 +1954,15 @@ watch(
   }
 );
 
+	watch(
+	  () => {
+	    const extra = props.statsExtra && typeof props.statsExtra === 'object' ? props.statsExtra : {};
+	    return `${normalizeInfoValue(extra.displayName)}|${normalizeInfoValue(extra.siteName)}|${normalizeInfoValue(extra.panName)}|${normalizeInfoValue(extra.rawFileName)}`;
+	  },
+	  () => syncInfoExtraIntoArtInfoPanel(),
+	  { immediate: true }
+	);
+
 onBeforeUnmount(() => {
   if (hideTimer) {
     window.clearTimeout(hideTimer);
@@ -1738,6 +2045,28 @@ defineExpose({ destroy: destroyNow, pause, play, tryAutoplay });
   height: 100%;
 }
 
+.yt-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  max-width: min(80vw, 520px);
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(18, 18, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  user-select: none;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 160;
+}
+
 :deep(.art-video-player) {
   position: relative;
   width: 100% !important;
@@ -1751,6 +2080,27 @@ defineExpose({ destroy: destroyNow, pause, play, tryAutoplay });
 :deep(.art-info) {
   z-index: 140 !important;
   pointer-events: auto;
+}
+
+:deep(.art-info) .tv-art-info-extra {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.86);
+  display: block;
+  width: 100%;
+  flex: 0 0 100%;
+  grid-column: 1 / -1;
+}
+
+:deep(.art-info) .tv-art-info-extra__line {
+  display: block;
+  width: 100%;
+  margin: 4px 0;
+  color: rgba(255, 255, 255, 0.82);
+  word-break: break-all;
 }
 
 .tv-artplayer.tv-artplayer--fullscreen :deep(.art-video-player),

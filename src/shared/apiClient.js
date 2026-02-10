@@ -173,3 +173,30 @@ export const apiPutJson = async (url, body, opts = {}) => {
 export const apiDeleteJson = async (url, opts = {}) => {
   return await apiRequestJson(url, { ...(opts || {}), method: 'DELETE' });
 };
+
+export const apiInvalidateCache = ({ urlPrefix, method } = {}) => {
+  const prefix = typeof urlPrefix === 'string' ? urlPrefix.trim() : '';
+  const m = typeof method === 'string' ? method.trim().toUpperCase() : '';
+  try {
+    Array.from(cache.keys()).forEach((key) => {
+      const s = typeof key === 'string' ? key : '';
+      const mm = s.match(/^(\S+)\s+(\S+)\s/);
+      if (!mm) return;
+      const km = mm[1] ? String(mm[1]).toUpperCase() : '';
+      const ku = mm[2] ? String(mm[2]) : '';
+      if (m && km !== m) return;
+      if (prefix && !ku.startsWith(prefix)) return;
+      cache.delete(key);
+    });
+    Array.from(inflight.keys()).forEach((key) => {
+      const s = typeof key === 'string' ? key : '';
+      const mm = s.match(/^(\S+)\s+(\S+)\s/);
+      if (!mm) return;
+      const km = mm[1] ? String(mm[1]).toUpperCase() : '';
+      const ku = mm[2] ? String(mm[2]) : '';
+      if (m && km !== m) return;
+      if (prefix && !ku.startsWith(prefix)) return;
+      inflight.delete(key);
+    });
+  } catch (_e) {}
+};

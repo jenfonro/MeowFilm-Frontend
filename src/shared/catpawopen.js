@@ -23,6 +23,7 @@ export function normalizeCatPawOpenApiBase(inputUrl) {
 
 let lowPriorityPauseCount = 0;
 let lowPriorityWaiters = [];
+let lowPrioritySearchTickets = 0;
 
 const flushLowPriorityWaiters = () => {
   if (!lowPriorityWaiters.length) return;
@@ -37,6 +38,10 @@ const flushLowPriorityWaiters = () => {
 
 const waitIfLowPriorityPaused = async () => {
   if (lowPriorityPauseCount <= 0) return;
+  if (lowPrioritySearchTickets > 0) {
+    lowPrioritySearchTickets = Math.max(0, lowPrioritySearchTickets - 1);
+    return;
+  }
   await new Promise((resolve) => {
     lowPriorityWaiters.push(resolve);
   });
@@ -51,6 +56,12 @@ export function pauseCatLowPriority() {
     lowPriorityPauseCount = Math.max(0, lowPriorityPauseCount - 1);
     if (lowPriorityPauseCount === 0) flushLowPriorityWaiters();
   };
+}
+
+export function grantCatLowPrioritySearchTickets(count) {
+  const n = Number.isFinite(Number(count)) ? Math.floor(Number(count)) : 0;
+  if (n <= 0) return;
+  lowPrioritySearchTickets = Math.min(5000, Math.max(0, lowPrioritySearchTickets + n));
 }
 
 export async function requestCatSpider({

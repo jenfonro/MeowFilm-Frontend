@@ -100,7 +100,7 @@ export function initDashboardPage(bootstrap = {}) {
 
   const smartSourcePriorityTokensInput = document.getElementById('smartSourcePriorityTokensInput');
   const smartPanMatchTokensInput = document.getElementById('smartPanMatchTokensInput');
-  const smartSourceExtractPriorityInput = document.getElementById('smartSourceExtractPriorityInput');
+  const smartSourceExtractPrioritySelect = document.getElementById('smartSourceExtractPriority');
   const smartPanSettingsSave = document.getElementById('smartPanSettingsSave');
   const smartPanSettingsStatus = document.getElementById('smartPanSettingsStatus');
   const smartPanDefaultsRestore = document.getElementById('smartPanDefaultsRestore');
@@ -110,8 +110,6 @@ export function initDashboardPage(bootstrap = {}) {
   const smartSettingsSave = document.getElementById('smartSettingsSave');
   const smartPlayEnabledInput = document.getElementById('smartPlayEnabled');
   const smartListEnabledInput = document.getElementById('smartListEnabled');
-  const smartQualityPrefSelect = document.getElementById('smartQualityPref');
-  const smartFpsPrefSelect = document.getElementById('smartFpsPref');
 
   const tmdbSettingsForm = document.getElementById('tmdbSettingsForm');
   const tmdbSaveStatus = document.getElementById('tmdbSaveStatus');
@@ -1918,8 +1916,7 @@ export function initDashboardPage(bootstrap = {}) {
   setupCustomSelect('doubanDataSelect');
   setupCustomSelect('doubanImgSelect');
   setupCustomSelect('searchDisplayModeSelect');
-  setupCustomSelect('smartQualityPref');
-  setupCustomSelect('smartFpsPref');
+  setupCustomSelect('smartSourceExtractPriority');
   setupCustomSelect('catPawOpenServerSelect');
   setupCustomSelect('catPawOpenSyncFromServerSelect');
 
@@ -6602,9 +6599,7 @@ export function initDashboardPage(bootstrap = {}) {
   // 智能设置
   let smartPlayEnabled = true;
   let smartListEnabled = true;
-  let smartQualityPref = '4k';
-  let smartFpsPref = '';
-  let smartSourceExtractPriority = '画质';
+  let smartSourceExtractPriority = '无';
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
   let smartPanDefaultsConfirming = false;
@@ -6634,16 +6629,11 @@ export function initDashboardPage(bootstrap = {}) {
     return out;
   };
 
-  const normalizeSmartSourceExtractPriorityList = (raw) =>
-    parseDelimitedTokens(raw, {
-      split: /[,/\s]+/g,
-      allow: new Set(['画质', '帧率', '关键字', '网盘']),
-      keyOf: (v) => v,
-      defaultList: ['画质'],
-    });
-
-  const encodeSmartSourceExtractPriorityList = (list) =>
-    (Array.isArray(list) ? list : normalizeSmartSourceExtractPriorityList(list)).join(',');
+  const normalizeSmartSourceExtractPriorityMode = (raw) => {
+    const s = typeof raw === 'string' ? raw.trim() : String(raw || '').trim();
+    if (s === '无' || s === '网盘' || s === '关键字') return s;
+    return '无';
+  };
 
   const normalizeCommaTokenLine = (text) =>
     parseDelimitedTokens(text, {
@@ -6653,14 +6643,6 @@ export function initDashboardPage(bootstrap = {}) {
     });
 
   const renderSmartPanSettings = () => {
-    if (smartQualityPrefSelect) {
-      syncCustomSelectValue('smartQualityPref', smartQualityPref || '', { dispatch: false });
-      smartQualityPrefSelect.disabled = smartSaving;
-    }
-    if (smartFpsPrefSelect) {
-      syncCustomSelectValue('smartFpsPref', smartFpsPref || '', { dispatch: false });
-      smartFpsPrefSelect.disabled = smartSaving;
-    }
     if (smartSourcePriorityTokensInput) {
       smartSourcePriorityTokensInput.value = Array.isArray(smartSourcePriorityTokens) ? smartSourcePriorityTokens.join(',') : '';
       smartSourcePriorityTokensInput.disabled = smartSaving;
@@ -6669,9 +6651,9 @@ export function initDashboardPage(bootstrap = {}) {
       smartPanMatchTokensInput.value = Array.isArray(smartPanMatchTokens) ? smartPanMatchTokens.join(',') : '';
       smartPanMatchTokensInput.disabled = smartSaving;
     }
-    if (smartSourceExtractPriorityInput) {
-      smartSourceExtractPriorityInput.value = encodeSmartSourceExtractPriorityList(smartSourceExtractPriority || '画质');
-      smartSourceExtractPriorityInput.disabled = smartSaving;
+    if (smartSourceExtractPrioritySelect) {
+      syncCustomSelectValue('smartSourceExtractPriority', normalizeSmartSourceExtractPriorityMode(smartSourceExtractPriority), { dispatch: false });
+      smartSourceExtractPrioritySelect.disabled = smartSaving;
     }
     if (smartPanSettingsSave) smartPanSettingsSave.disabled = smartSaving;
     if (smartPanDefaultsRestore) smartPanDefaultsRestore.disabled = smartSaving;
@@ -6791,7 +6773,7 @@ export function initDashboardPage(bootstrap = {}) {
 	    cleanRules.forEach((r) => {
 	      const raw = typeof r === 'string' ? r.trim() : '';
 	      if (!raw) return;
-	      const re = buildRegexFromInput(raw, { defaultFlags: 'g', forceGlobal: true });
+	      const re = buildRegexFromInput(raw, { defaultFlags: 'ig', forceGlobal: true });
 	      if (!re) return;
 	      cleaned = cleaned.replace(re, '');
 	    });
@@ -6940,7 +6922,7 @@ export function initDashboardPage(bootstrap = {}) {
       const s = typeof rule === 'string' ? rule.trim() : '';
       if (!s) return;
       try {
-        const re = buildRegexFromInput(s, { defaultFlags: 'g', forceGlobal: true });
+        const re = buildRegexFromInput(s, { defaultFlags: 'ig', forceGlobal: true });
         if (!re) throw new Error('invalid');
 
         if (qTrailingDigits) {
@@ -7204,7 +7186,7 @@ export function initDashboardPage(bootstrap = {}) {
             return;
           }
           try {
-            const re = buildRegexFromInput(s, { defaultFlags: 'g', forceGlobal: true });
+            const re = buildRegexFromInput(s, { defaultFlags: 'ig', forceGlobal: true });
             if (!re) throw new Error('invalid');
 
             if (qTrailingDigits) {
@@ -7241,7 +7223,7 @@ export function initDashboardPage(bootstrap = {}) {
             previews[idx] = out.replace(/\s+/g, ' ').trim();
             return;
           }
-          const re = buildRegexFromInput(s, { defaultFlags: 'g', forceGlobal: true });
+          const re = buildRegexFromInput(s, { defaultFlags: 'ig', forceGlobal: true });
           if (!re) {
             previews[idx] = '正则无效';
             return;
@@ -7452,28 +7434,19 @@ export function initDashboardPage(bootstrap = {}) {
     smartSaving = true;
     if (!silent) setSmartPrefStatus('', '');
     try {
-      smartQualityPref = smartQualityPrefSelect ? String(smartQualityPrefSelect.value || '').trim() : '';
-      smartFpsPref = smartFpsPrefSelect ? String(smartFpsPrefSelect.value || '').trim() : '';
-      smartSourceExtractPriority = encodeSmartSourceExtractPriorityList(
-        smartSourceExtractPriorityInput ? smartSourceExtractPriorityInput.value : smartSourceExtractPriority
+      smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(
+        smartSourceExtractPrioritySelect ? smartSourceExtractPrioritySelect.value : smartSourceExtractPriority
       );
       smartSourcePriorityTokens = normalizeCommaTokenLine(smartSourcePriorityTokensInput ? smartSourcePriorityTokensInput.value : '');
       smartPanMatchTokens = normalizeCommaTokenLine(smartPanMatchTokensInput ? smartPanMatchTokensInput.value : '');
 
       const data = await saveSmartSettings({
-        smartQualityPref,
-        smartFpsPref,
         smartSourceExtractPriority,
         smartSourcePriorityTokens,
         smartPanMatchTokens,
       });
 
-      smartQualityPref = typeof data.smartQualityPref === 'string' ? data.smartQualityPref : '';
-      smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
-      smartSourceExtractPriority =
-        typeof data.smartSourceExtractPriority === 'string' && data.smartSourceExtractPriority.trim()
-          ? data.smartSourceExtractPriority.trim()
-          : smartSourceExtractPriority;
+      smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(data.smartSourceExtractPriority);
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : smartSourcePriorityTokens;
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : smartPanMatchTokens;
 
@@ -7560,12 +7533,7 @@ export function initDashboardPage(bootstrap = {}) {
       }
       smartPlayEnabled = !!data.smartPlayEnabled;
       smartListEnabled = !!data.smartListEnabled;
-      smartQualityPref = typeof data.smartQualityPref === 'string' && data.smartQualityPref.trim() ? data.smartQualityPref : '4k';
-      smartFpsPref = typeof data.smartFpsPref === 'string' ? data.smartFpsPref : '';
-      smartSourceExtractPriority =
-        typeof data.smartSourceExtractPriority === 'string' && data.smartSourceExtractPriority.trim()
-          ? data.smartSourceExtractPriority.trim()
-          : '画质';
+      smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(data.smartSourceExtractPriority);
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : [];
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : [];
       renderSmartBasics();
@@ -7757,7 +7725,10 @@ export function initDashboardPage(bootstrap = {}) {
 	  }
 
     const DEFAULT_EPISODE_CLEAN_RULES = [
-      String.raw`\[\s*\d+(?:\.\d+)?\s*(?:B|KB|MB|GB|TB)\s*\]|【[^】]*】`,
+      String.raw`\[(?!\s*[Ss]\d{1,2}(?:\s*[Ee]\d{1,5})?\s*\])[^\]]*\]`,
+      String.raw`【(?!\s*[Ss]\d{1,2}(?:\s*[Ee]\d{1,5})?\s*】)[^】]*】`,
+      String.raw`\((?!\s*[Ss]\d{1,2}(?:\s*[Ee]\d{1,5})?\s*\))[^)]*\)`,
+      String.raw`（(?!\s*[Ss]\d{1,2}(?:\s*[Ee]\d{1,5})?\s*）)[^）]*）`,
       String.raw`(?:^|[\s\[\]\(\){}【】._-])(?:4k|8k|2160p|1080p|720p)(?=$|[\s\[\]\(\){}【】._-])`,
       String.raw`高\s*码\s*(?:率|资源|直链)?|码\s*率`,
     ];
@@ -7883,7 +7854,6 @@ export function initDashboardPage(bootstrap = {}) {
 
   const DEFAULT_SMART_SOURCE_PRIORITY_TOKENS = [];
   const DEFAULT_SMART_PAN_MATCH_TOKENS = ['逸动', '天意', '夸父', '优夕', '百度'];
-  const DEFAULT_SMART_QUALITY_PREF = '4k';
 
   if (smartPanDefaultsRestore) {
     smartPanDefaultsRestore.addEventListener('click', () => {
@@ -7903,9 +7873,7 @@ export function initDashboardPage(bootstrap = {}) {
     smartPanDefaultsRestoreConfirm.addEventListener('click', () => {
       if (smartSaving) return;
       smartPanDefaultsConfirming = false;
-      smartQualityPref = DEFAULT_SMART_QUALITY_PREF;
-      smartFpsPref = '';
-      smartSourceExtractPriority = '画质';
+      smartSourceExtractPriority = '无';
       smartSourcePriorityTokens = DEFAULT_SMART_SOURCE_PRIORITY_TOKENS.slice();
       smartPanMatchTokens = DEFAULT_SMART_PAN_MATCH_TOKENS.slice();
       renderSmartPanSettings();

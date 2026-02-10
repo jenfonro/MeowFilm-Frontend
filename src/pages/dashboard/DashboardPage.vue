@@ -167,19 +167,14 @@
 
             <div class="space-y-3">
               <div class="space-y-1">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">画质设置</div>
-                <select id="smartQualityPref" class="custom-select tv-field">
-                  <option value="4k_high_bitrate">4K高码率</option>
-                  <option value="4k">4K</option>
-                  <option value="8k">8K（慎用）</option>
-                  <option value="">未设置</option>
-                </select>
-              </div>
-              <div class="space-y-1">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">帧率设置</div>
-                <select id="smartFpsPref" class="custom-select tv-field">
-                  <option value="">未设置</option>
-                  <option value="60">60帧</option>
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先片源规则</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  仅影响同等画质/特征下的优先提取，不再依赖画质/帧率偏好设置
+                </div>
+                <select id="smartSourceExtractPriority" class="custom-select tv-field">
+                  <option value="无">无</option>
+                  <option value="网盘">网盘</option>
+                  <option value="关键字">关键字</option>
                 </select>
               </div>
             </div>
@@ -198,15 +193,6 @@
               <input id="smartPanMatchTokensInput" class="tv-field" placeholder="百度,夸克,天翼,UC,115" />
             </div>
 
-            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先片源规则</div>
-              <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                只能填写：画质,帧率,关键字,网盘（可同时填写多个），填写的规则参与提取结果的优先匹配
-              </div>
-            </div>
-            <div>
-              <input id="smartSourceExtractPriorityInput" class="tv-field" placeholder="画质/帧率/关键字/网盘" />
-            </div>
             <div id="smartPanSettingsStatus" class="text-xs hidden"></div>
             <div class="text-xs text-gray-500 dark:text-gray-400">
               说明：规则用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。

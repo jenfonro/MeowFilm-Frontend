@@ -224,14 +224,6 @@ export function createPosterCard({
           }
           window.__tvLowPriorityPauseRelease = release;
           window.__tvLowPriorityPauseAt = Date.now();
-          window.setTimeout(() => {
-            try {
-              if (window.__tvLowPriorityPauseRelease === release) {
-                window.__tvLowPriorityPauseRelease = null;
-                release();
-              }
-            } catch (_e) {}
-          }, 15000);
         }
       } catch (_e) {}
       window.dispatchEvent(new CustomEvent('tv:open-play', { detail: d }));

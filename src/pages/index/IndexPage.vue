@@ -509,7 +509,8 @@
 	import { initIndexPage } from './indexClient.js';
 	import UserSettingsModal from '../../shared/UserSettingsModal.vue';
 	import PlayPage from '../play/PlayPage.vue';
-import LoginPage from '../login/LoginPage.vue';
+	import LoginPage from '../login/LoginPage.vue';
+	import { apiGetJson, buildQuery } from '../../shared/apiClient';
 
 const props = defineProps({ bootstrap: { type: Object, required: true } });
 const bootstrap = props.bootstrap;
@@ -719,11 +720,11 @@ const syncMobileContextFromStorage = () => {
   } catch (_e) {}
 };
 
-	const onExitPlay = () => {
-	  isPlayView.value = false;
-	  if (!hasScrollBeforePlay) return;
-	  const restoreY = scrollBeforePlayY;
-	  hasScrollBeforePlay = false;
+		const onExitPlay = () => {
+		  isPlayView.value = false;
+		  if (!hasScrollBeforePlay) return;
+		  const restoreY = scrollBeforePlayY;
+		  hasScrollBeforePlay = false;
 	  scrollBeforePlayY = 0;
 	  nextTick(() => {
 	    try {
@@ -733,48 +734,106 @@ const syncMobileContextFromStorage = () => {
 	        window.scrollTo(0, restoreY);
 	      } catch (_e2) {}
 	    }
-	  });
-	};
+		  });
+		};
 
-	const onOpenPlay = (e) => {
-	  const wasInPlay = isPlayView.value;
-	  if (!wasInPlay && typeof window !== 'undefined') {
-	    scrollBeforePlayY = window.scrollY || window.pageYOffset || 0;
-	    hasScrollBeforePlay = true;
-	  }
-	  const d = e && e.detail && typeof e.detail === 'object' ? e.detail : {};
-    const prevParams = playParams.value && typeof playParams.value === 'object' ? playParams.value : {};
-    const prevContentKey = typeof prevParams.contentKey === 'string' ? prevParams.contentKey.trim() : '';
-    const nextContentKey = typeof d.contentKey === 'string' ? d.contentKey.trim() : '';
+		const openPlayState = { seq: 0 };
+		const resolveOpenPlayDetail = async (d) => {
+		  const input = d && typeof d === 'object' ? d : {};
+		  const tmdbId = Number.isFinite(Number(input.tmdbId)) ? Number(input.tmdbId) : 0;
+		  const tmdbType = typeof input.tmdbType === 'string' ? input.tmdbType.trim().toLowerCase() : '';
+		  if (!(tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie'))) return input;
+		  try {
+		    const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 2000 });
+		    const items = Array.isArray(list) ? list : [];
+		    const match =
+		      items.find((r) => r && Number(r.tmdbId || 0) === tmdbId && String(r.tmdbType || '').trim().toLowerCase() === tmdbType) ||
+		      null;
+		    if (!match) return input;
+		    const siteKey = typeof match.siteKey === 'string' ? match.siteKey : '';
+		    const spiderApi = typeof match.spiderApi === 'string' ? match.spiderApi : '';
+		    const videoId = typeof match.videoId === 'string' ? match.videoId : '';
+		    if (!siteKey || !spiderApi || !videoId) return input;
+		    return {
+		      ...input,
+		      siteKey,
+		      spiderApi,
+		      videoId,
+		      // Fill from history when missing; keep TMDB meta from the clicked card.
+		      contentKey: typeof input.contentKey === 'string' && input.contentKey.trim() ? input.contentKey : (typeof match.contentKey === 'string' ? match.contentKey : ''),
+		      videoTitle: typeof input.videoTitle === 'string' && input.videoTitle.trim() ? input.videoTitle : (typeof match.videoTitle === 'string' ? match.videoTitle : ''),
+		      videoPoster: typeof input.videoPoster === 'string' && input.videoPoster.trim() ? input.videoPoster : (typeof match.videoPoster === 'string' ? match.videoPoster : ''),
+		      videoRemark: typeof input.videoRemark === 'string' && input.videoRemark.trim() ? input.videoRemark : (typeof match.videoRemark === 'string' ? match.videoRemark : ''),
+		    };
+		  } catch (_e) {
+		    return input;
+		  }
+		};
 
-	  playParams.value = {
-	    videoTitle: typeof d.videoTitle === 'string' ? d.videoTitle : '',
-	    videoYear: typeof d.videoYear === 'string' ? d.videoYear : '',
-    searchType: typeof d.searchType === 'string' ? d.searchType : '',
-    siteKey: typeof d.siteKey === 'string' ? d.siteKey : '',
-    spiderApi: typeof d.spiderApi === 'string' ? d.spiderApi : '',
-    videoId: typeof d.videoId === 'string' ? d.videoId : '',
-    videoIntro: typeof d.videoIntro === 'string' ? d.videoIntro : '',
-    videoPoster: typeof d.videoPoster === 'string' ? d.videoPoster : '',
-    videoRemark: typeof d.videoRemark === 'string' ? d.videoRemark : '',
-    videoPanDir: typeof d.videoPanDir === 'string' ? d.videoPanDir : '',
-    contentKey: typeof d.contentKey === 'string' ? d.contentKey : '',
-	  };
-    const shouldReusePlayPage = !!(wasInPlay && prevContentKey && nextContentKey && prevContentKey === nextContentKey);
-    if (!shouldReusePlayPage) playKey.value += 1;
-	  isPlayView.value = true;
-	  if (!wasInPlay) {
-	    nextTick(() => {
-	      try {
-	        requestAnimationFrame(() => window.scrollTo(0, 0));
-	      } catch (_e) {
-	        try {
-	          window.scrollTo(0, 0);
-	        } catch (_e2) {}
-	      }
-	    });
-	  }
-	};
+		const onOpenPlay = (e) => {
+		  const seqAtCall = (openPlayState.seq += 1);
+		  const wasInPlay = isPlayView.value;
+		  if (!wasInPlay && typeof window !== 'undefined') {
+		    scrollBeforePlayY = window.scrollY || window.pageYOffset || 0;
+		    hasScrollBeforePlay = true;
+		  }
+		  const d0 = e && e.detail && typeof e.detail === 'object' ? e.detail : {};
+		  void (async () => {
+		    const d = await resolveOpenPlayDetail(d0);
+		    if (seqAtCall !== openPlayState.seq) return;
+
+		    const prevParams = playParams.value && typeof playParams.value === 'object' ? playParams.value : {};
+		    const prevContentKey = typeof prevParams.contentKey === 'string' ? prevParams.contentKey.trim() : '';
+		    const nextContentKey = typeof d.contentKey === 'string' ? d.contentKey.trim() : '';
+
+		    playParams.value = {
+		      videoTitle: typeof d.videoTitle === 'string' ? d.videoTitle : '',
+		      videoYear: typeof d.videoYear === 'string' ? d.videoYear : '',
+		      searchType: typeof d.searchType === 'string' ? d.searchType : '',
+		      siteKey: typeof d.siteKey === 'string' ? d.siteKey : '',
+		      spiderApi: typeof d.spiderApi === 'string' ? d.spiderApi : '',
+		      videoId: typeof d.videoId === 'string' ? d.videoId : '',
+		      videoIntro: typeof d.videoIntro === 'string' ? d.videoIntro : '',
+		      videoPoster: typeof d.videoPoster === 'string' ? d.videoPoster : '',
+		      videoRemark: typeof d.videoRemark === 'string' ? d.videoRemark : '',
+		      videoPanDir: typeof d.videoPanDir === 'string' ? d.videoPanDir : '',
+		      contentKey: typeof d.contentKey === 'string' ? d.contentKey : '',
+		      tmdbId: Number.isFinite(Number(d.tmdbId)) ? Number(d.tmdbId) : 0,
+		      tmdbType: typeof d.tmdbType === 'string' ? d.tmdbType.trim().toLowerCase() : '',
+		    };
+
+		    const prevTmdbId = Number.isFinite(Number(prevParams.tmdbId)) ? Number(prevParams.tmdbId) : 0;
+		    const prevTmdbType = typeof prevParams.tmdbType === 'string' ? prevParams.tmdbType.trim().toLowerCase() : '';
+		    const nextTmdbId = Number.isFinite(Number(d.tmdbId)) ? Number(d.tmdbId) : 0;
+		    const nextTmdbType = typeof d.tmdbType === 'string' ? d.tmdbType.trim().toLowerCase() : '';
+
+		    const prevSiteKey = typeof prevParams.siteKey === 'string' ? prevParams.siteKey : '';
+		    const prevSpiderApi = typeof prevParams.spiderApi === 'string' ? prevParams.spiderApi : '';
+		    const prevVideoId = typeof prevParams.videoId === 'string' ? prevParams.videoId : '';
+		    const nextSiteKey = typeof d.siteKey === 'string' ? d.siteKey : '';
+		    const nextSpiderApi = typeof d.spiderApi === 'string' ? d.spiderApi : '';
+		    const nextVideoId = typeof d.videoId === 'string' ? d.videoId : '';
+
+		    const sameContentKey = !!(prevContentKey && nextContentKey && prevContentKey === nextContentKey);
+		    const sameTMDB = !!(prevTmdbId > 0 && nextTmdbId > 0 && prevTmdbId === nextTmdbId && prevTmdbType && prevTmdbType === nextTmdbType);
+		    const sameSite = !!(prevSiteKey && nextSiteKey && prevSiteKey === nextSiteKey && prevSpiderApi === nextSpiderApi && prevVideoId === nextVideoId);
+
+		    const shouldReusePlayPage = !!(wasInPlay && sameContentKey && (sameTMDB || sameSite));
+		    if (!shouldReusePlayPage) playKey.value += 1;
+		    isPlayView.value = true;
+		    if (!wasInPlay) {
+		      nextTick(() => {
+		        try {
+		          requestAnimationFrame(() => window.scrollTo(0, 0));
+		        } catch (_e) {
+		          try {
+		            window.scrollTo(0, 0);
+		          } catch (_e2) {}
+		        }
+		      });
+		    }
+		  })();
+		};
 
 onMounted(() => {
   if (!bootstrap || !bootstrap.authenticated) return;
