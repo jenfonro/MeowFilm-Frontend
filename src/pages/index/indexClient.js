@@ -4,7 +4,7 @@ import { appendTvCardHoverOverlays, createPosterCard } from '../../shared/poster
 import { apiDeleteJson, apiGetJson, apiInvalidateCache, buildQuery } from '../../shared/apiClient';
 
 const TMDB_DETAIL_CACHE_MS = 10 * 60 * 1000;
-const tmdbDetailInFlight = new Map(); // key -> Promise
+const tmdbDetailInFlight = new Map();
 
 const normalizeTmdbType = (t) => {
   const s = typeof t === 'string' ? t.trim().toLowerCase() : '';
@@ -50,7 +50,6 @@ const patchPosterCardWithTmdb = (wrapper, tmdb) => {
   const siteBadge = wrapper.querySelector('.tv-site-badge');
   if (siteBadge) siteBadge.textContent = tmdbTypeLabel(typ) || siteBadge.textContent;
 
-  // Right-top orange badge: series uses "更新至xx集" (tmdb.badge), movie uses year.
   const desiredRemark = typ === 'movie' ? (year || badge) : (badge || '');
   const posterWrap = wrapper.querySelector('.douban-poster');
   if (posterWrap) {
@@ -66,7 +65,6 @@ const patchPosterCardWithTmdb = (wrapper, tmdb) => {
     }
   }
 
-  // Update poster (best-effort). If image isn't loaded yet, adjust data-src for IO; otherwise swap src.
   if (pic) {
     const img = wrapper.querySelector('.douban-poster img');
     if (img) {
@@ -481,7 +479,6 @@ function setupHomeSpiderBrowse() {
       if (wrapper) frag.appendChild(wrapper);
 
       if (wrapper && tmdbId > 0 && tmdbType) {
-        // Best-effort refresh: keep UI updated without storing TMDB data into DB.
         void fetchTmdbDetailCached({ id: tmdbId, type: tmdbType }).then((meta) => patchPosterCardWithTmdb(wrapper, meta));
       }
     });

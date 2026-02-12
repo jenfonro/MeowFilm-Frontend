@@ -225,8 +225,8 @@ export function initSearchPage() {
     return 0;
   };
 
-  const doubanSeasonMetaByGroupKey = new Map(); // groupKey -> { seasonCount, seasons: [{season, episodeCount}] }
-  const doubanSeasonProbeInFlight = new Map(); // groupKey -> Promise
+  const doubanSeasonMetaByGroupKey = new Map();
+  const doubanSeasonProbeInFlight = new Map();
 
   const getEffectiveTVSeasonCountForGroupKey = (groupKey, { fallback } = {}) => {
     const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
@@ -971,14 +971,12 @@ export function initSearchPage() {
     // and strip emoji/pictographs to keep user rules stable.
     const preCleanForRules = (s) => stripEmojiSymbols(sanitizeDisplayTitle(s));
 
-    const stripSeasonMarkers = (s) =>
-      String(s || '')
-        // Remove "第X季" markers (supports Arabic + full-width digits + common Chinese numerals).
-        .replace(/第\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})\s*季/gi, ' ')
-        // Also remove "2季/3季" style markers (some sources omit "第").
-        .replace(/(?:^|\s)([0-9０-９]{1,3})\s*季(?![度节])/gi, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+	    const stripSeasonMarkers = (s) =>
+	      String(s || '')
+	        .replace(/第\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})\s*季/gi, ' ')
+	        .replace(/(?:^|\s)([0-9０-９]{1,3})\s*季(?![度节])/gi, ' ')
+	        .replace(/\s+/g, ' ')
+	        .trim();
 
     const parseChineseSeasonNo = (raw) => {
       const s = typeof raw === 'string' ? raw.trim() : '';
@@ -1180,21 +1178,18 @@ export function initSearchPage() {
         const elTmdbRank = Number(el && el.dataset ? el.dataset.tmdbRank : 0);
         const elHidden = isHiddenByCurrentMode(el, aggKeys);
 
-        // Keep visible cards contiguous: hidden cards (under current raw/aggregate mode) should not affect ranking.
-        if (wrapperHidden !== elHidden) {
-          if (!wrapperHidden && elHidden) {
-            grid.insertBefore(wrapperEl, el);
-            return;
-          }
-          // Wrapper is hidden, keep it after all visible cards.
-          continue;
-        }
+	        if (wrapperHidden !== elHidden) {
+	          if (!wrapperHidden && elHidden) {
+	            grid.insertBefore(wrapperEl, el);
+	            return;
+	          }
+	          continue;
+	        }
 
-        // In non-raw list mode, always show TMDB cards first; keep other sorting rules unchanged within each block.
-        if (elKindPriority > wrapperKindPriority) {
-          grid.insertBefore(wrapperEl, el);
-          return;
-        }
+	        if (elKindPriority > wrapperKindPriority) {
+	          grid.insertBefore(wrapperEl, el);
+	          return;
+	        }
         if (elKindPriority < wrapperKindPriority) continue;
 
         if (Number.isFinite(elScore) && elScore < wrapperScore) {
@@ -1233,10 +1228,10 @@ export function initSearchPage() {
         }
       }
       grid.appendChild(wrapperEl);
-    };
+		    };
 
-	    const seenKeys = new Set();
-	    const tmdbByGroupKeyByType = new Map(); // groupKey -> { tv?: item, movie?: item }
+		    const seenKeys = new Set();
+		    const tmdbByGroupKeyByType = new Map();
 
 	    const hasTMDBTVForGroupKey = (groupKey) => {
 	      const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
@@ -1356,8 +1351,8 @@ export function initSearchPage() {
     let failed = 0;
     let totalFound = 0;
 
-    const aggregateByGroup = new Map(); // groupKey -> { groupKey, title, bySite: Map(siteKey -> {meta..., matches: Map(videoId -> source)}) }
-    const aggregateCardByGroup = new Map(); // groupKey -> { el, uniq, sourceSiteCount, storageKey }
+	    const aggregateByGroup = new Map();
+	    const aggregateCardByGroup = new Map();
 
     const removeExistingGroupCards = (groupKey) => {
       if (!groupKey) return 0;
@@ -1690,7 +1685,7 @@ export function initSearchPage() {
                 tmdbSeasonCount,
               });
               if (tmdbSeasonCount >= seasonHint) continue;
-              if (tmdbSeasonCount > 1) continue; // only probe when TMDB still reports single-season
+	              if (tmdbSeasonCount > 1) continue;
 
               const typed = tmdbByGroupKeyByType.get(gkStripped) || null;
               const tv = typed && typed.tv ? typed.tv : null;

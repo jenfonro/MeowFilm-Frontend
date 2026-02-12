@@ -376,23 +376,23 @@
 	import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 	import Artplayer from 'artplayer';
 
-			const emit = defineEmits(['loadedmetadata', 'videoinfo', 'error', 'buffering', 'playing', 'firstframe', 'ended', 'goproxyselect', 'extramenuselect', 'extraaction']);
+	const emit = defineEmits(['loadedmetadata', 'videoinfo', 'error', 'buffering', 'playing', 'firstframe', 'ended', 'goproxyselect', 'extramenuselect', 'extraaction']);
 
 	const props = defineProps({
-	  url: { type: String, default: '' },
-	  poster: { type: String, default: '' },
-	  headers: { type: Object, default: () => ({}) },
-	  title: { type: String, default: '' },
-	  autoplay: { type: Boolean, default: true },
-	  showBufferRing: { type: Boolean, default: false },
-	  goProxyOptions: { type: Array, default: () => [] }, // [{ base, label }]
-	  goProxySelectedBase: { type: String, default: '' },
-	  goProxyLabel: { type: String, default: '' },
-	    statsExtra: { type: Object, default: () => ({}) }, // { displayName, siteName, panName, rawFileName }
-	    extraMenus: { type: Array, default: () => [] }, // [{ key, label, ariaLabel?, value, disabled?, options:[{value,label}] }]
-	    extraActions: { type: Array, default: () => [] }, // [{ key, label, ariaLabel?, disabled? }]
-	    toastText: { type: String, default: '' },
-		});
+		url: { type: String, default: '' },
+		poster: { type: String, default: '' },
+		headers: { type: Object, default: () => ({}) },
+		title: { type: String, default: '' },
+		autoplay: { type: Boolean, default: true },
+		showBufferRing: { type: Boolean, default: false },
+		goProxyOptions: { type: Array, default: () => [] }, // [{ base, label }]
+		goProxySelectedBase: { type: String, default: '' },
+		goProxyLabel: { type: String, default: '' },
+		statsExtra: { type: Object, default: () => ({}) },
+		extraMenus: { type: Array, default: () => [] },
+		extraActions: { type: Array, default: () => [] },
+		toastText: { type: String, default: '' },
+	});
 
 	const container = ref(null);
 	const shell = ref(null);
@@ -1168,8 +1168,6 @@ const destroyNow = () => {
   try {
     const playerEl = teleportTarget.value;
     if (playerEl && typeof MutationObserver !== 'undefined') {
-      // Only use the observer to wait until `.art-info` exists; disconnect afterwards
-      // to avoid reacting to our own DOM writes and causing mutation loops.
       const obs = new MutationObserver(() => {
         try {
           const infoPanel = playerEl.querySelector && playerEl.querySelector('.art-info');

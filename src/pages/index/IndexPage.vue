@@ -756,15 +756,14 @@ const syncMobileContextFromStorage = () => {
 		    if (!siteKey || !spiderApi || !videoId) return input;
 		    return {
 		      ...input,
-		      siteKey,
-		      spiderApi,
-		      videoId,
-		      // Fill from history when missing; keep TMDB meta from the clicked card.
-		      contentKey: typeof input.contentKey === 'string' && input.contentKey.trim() ? input.contentKey : (typeof match.contentKey === 'string' ? match.contentKey : ''),
-		      videoTitle: typeof input.videoTitle === 'string' && input.videoTitle.trim() ? input.videoTitle : (typeof match.videoTitle === 'string' ? match.videoTitle : ''),
-		      videoPoster: typeof input.videoPoster === 'string' && input.videoPoster.trim() ? input.videoPoster : (typeof match.videoPoster === 'string' ? match.videoPoster : ''),
-		      videoRemark: typeof input.videoRemark === 'string' && input.videoRemark.trim() ? input.videoRemark : (typeof match.videoRemark === 'string' ? match.videoRemark : ''),
-		    };
+			      siteKey,
+			      spiderApi,
+			      videoId,
+			      contentKey: typeof input.contentKey === 'string' && input.contentKey.trim() ? input.contentKey : (typeof match.contentKey === 'string' ? match.contentKey : ''),
+			      videoTitle: typeof input.videoTitle === 'string' && input.videoTitle.trim() ? input.videoTitle : (typeof match.videoTitle === 'string' ? match.videoTitle : ''),
+			      videoPoster: typeof input.videoPoster === 'string' && input.videoPoster.trim() ? input.videoPoster : (typeof match.videoPoster === 'string' ? match.videoPoster : ''),
+			      videoRemark: typeof input.videoRemark === 'string' && input.videoRemark.trim() ? input.videoRemark : (typeof match.videoRemark === 'string' ? match.videoRemark : ''),
+			    };
 		  } catch (_e) {
 		    return input;
 		  }

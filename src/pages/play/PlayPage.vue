@@ -707,14 +707,13 @@ let playerToastTimer = 0;
 const showPlayerToast = (msg) => {
   try {
     const text = typeof msg === 'string' ? msg.trim() : String(msg || '').trim();
-    if (!text) return;
-    if (playerToastTimer) window.clearTimeout(playerToastTimer);
-    playerToastTimer = 0;
-    // Force retrigger even when the message is the same.
-    playerToastText.value = '';
-    window.setTimeout(() => {
-      playerToastText.value = text;
-    }, 0);
+	    if (!text) return;
+	    if (playerToastTimer) window.clearTimeout(playerToastTimer);
+	    playerToastTimer = 0;
+	    playerToastText.value = '';
+	    window.setTimeout(() => {
+	      playerToastText.value = text;
+	    }, 0);
     playerToastTimer = window.setTimeout(() => {
       playerToastTimer = 0;
       playerToastText.value = '';
@@ -1181,14 +1180,13 @@ const fetchAggregatedSourcesExactMatches = async () => {
 
   const insertAggSorted = (entry) => {
     const list = Array.isArray(aggregatedSources.value) ? aggregatedSources.value : [];
-    if (!list.length) {
-      aggregatedSources.value = [entry];
-      return;
-    }
-    // Binary insert (keep list sorted by compareAgg: "better" entries first).
-    let lo = 0;
-    let hi = list.length;
-    while (lo < hi) {
+	    if (!list.length) {
+	      aggregatedSources.value = [entry];
+	      return;
+	    }
+	    let lo = 0;
+	    let hi = list.length;
+	    while (lo < hi) {
       const mid = (lo + hi) >> 1;
       if (compareAgg(entry, list[mid]) < 0) hi = mid;
       else lo = mid + 1;
@@ -1329,10 +1327,9 @@ const fetchAggregatedSourcesExactMatches = async () => {
           pushed = true;
         });
         if (pushed && seqAtCall === sourcesSearchState.seq) await yieldToUi();
-      } catch (_e) {
-        // ignore per-site failures; continue
-      }
-    };
+	      } catch (_e) {
+	      }
+	    };
 
     await Promise.allSettled(batch.map(runOne));
     if (seqAtCall !== sourcesSearchState.seq) return;
@@ -1561,8 +1558,8 @@ const detail = ref({
   playUrl: '',
 });
 
-	const tmdbMeta = ref(null); // { tmdbId, mediaType, title, year, pic, overview, badge, latestEpisode, episodeCount }
-	const doubanSeasonMeta = ref(null); // { tmdbId, seasonCount, seasons:[{season, episodeCount}], updatedAt }
+		const tmdbMeta = ref(null);
+		const doubanSeasonMeta = ref(null);
 
 	const readDoubanSeasonMetaFromSession = (tmdbId) => {
 	  const id = Number.isFinite(Number(tmdbId)) ? Math.floor(Number(tmdbId)) : 0;
@@ -1761,9 +1758,8 @@ const sourcesTabItems = computed(() => {
           ? smartSourceExtractPrioritySetting.value.order
           : ['网盘'];
 
-      // Make Map-backed caches reactive for this computed().
-      const _cacheVersion = tmdbSmartPickCacheVersion.value + tmdbSmartDetailCacheVersion.value;
-      if (_cacheVersion < 0) return [];
+	      const _cacheVersion = tmdbSmartPickCacheVersion.value + tmdbSmartDetailCacheVersion.value;
+	      if (_cacheVersion < 0) return [];
 
       const computeHitCount = (m) => {
         const conds = Array.isArray(explicit) ? explicit : [];
@@ -1837,10 +1833,9 @@ const sourcesTabItems = computed(() => {
           if (q) return q;
         }
 
-        // Extra feature tokens (beyond resolution): 60fps/60帧/hdr/ddp/臻彩
-        const aEx = a && a.__smartEnhanceMatch ? a.__smartEnhanceMatch : { count: 0, indices: [] };
-        const bEx = b && b.__smartEnhanceMatch ? b.__smartEnhanceMatch : { count: 0, indices: [] };
-        const ex = comparePriorityMatch(aEx, bEx);
+	        const aEx = a && a.__smartEnhanceMatch ? a.__smartEnhanceMatch : { count: 0, indices: [] };
+	        const bEx = b && b.__smartEnhanceMatch ? b.__smartEnhanceMatch : { count: 0, indices: [] };
+	        const ex = comparePriorityMatch(aEx, bEx);
         if (ex) return ex;
 
         return 0;
@@ -2021,25 +2016,21 @@ const sourcesTabItems = computed(() => {
 
       if (picked) pushCand(picked, { force: true });
 
-      const qualityTierRankOf = (label) => {
-        const s = typeof label === 'string' ? label.trim() : '';
-        if (!s) return 0;
-        if (s.includes('4K') && s.includes('60')) return 50; // 4K·60帧
-        if (s.includes('4K')) return 40;
-        if (s.includes('1080')) return 30;
-        if (s.includes('720')) return 20;
-        if (s.includes('未知')) return 10;
-        return 1;
-      };
+	      const qualityTierRankOf = (label) => {
+	        const s = typeof label === 'string' ? label.trim() : '';
+	        if (!s) return 0;
+	        if (s.includes('4K') && s.includes('60')) return 50;
+	        if (s.includes('4K')) return 40;
+	        if (s.includes('1080')) return 30;
+	        if (s.includes('720')) return 20;
+	        if (s.includes('未知')) return 10;
+	        return 1;
+	      };
 
-      // Merge same-site candidates into a single card:
-      // - Sorting: quality tier desc -> site order
-      // - Active: if any candidate is the current picked one
-      // - Display: best candidate's quality; pan uses active pan when available
-      const bySite = new Map(); // siteKey -> { siteKey, siteName, bestItem, activeItem, items[] }
-      list.forEach((it) => {
-        if (!it || !it.siteKey) return;
-        const k = String(it.siteKey);
+	      const bySite = new Map();
+	      list.forEach((it) => {
+	        if (!it || !it.siteKey) return;
+	        const k = String(it.siteKey);
         const hit = bySite.get(k);
         if (!hit) {
           bySite.set(k, {
@@ -3014,37 +3005,31 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
   if (!raw) return [];
 
   const stripMeta = (s) => {
-    let out = typeof s === 'string' ? s.trim() : '';
-    if (!out) return '';
-    // Some spiders append `...$nextToken` after a raw filename list.
-    const dollarIdx = out.indexOf('$');
-    if (dollarIdx > 0) out = out.slice(0, dollarIdx);
-    // Drop size suffix like `#[872.74 MB]` (common for netdisk ids).
-    out = out.replace(/#\[[^\]]*\]\s*$/g, '');
-    // Drop plain size suffix like `[838MB]` / `[1.2 GB]`.
-    out = out.replace(/\s*\[\s*\d+(?:\.\d+)?\s*(?:[KMGT]?B)\s*\]\s*$/gi, '');
-    // Drop leading season prefix like `【S01】` when it's injected as metadata.
-    out = out.replace(/^【[^】]{1,16}】\s*/g, '');
-    return out.trim();
-  };
+	    let out = typeof s === 'string' ? s.trim() : '';
+	    if (!out) return '';
+	    const dollarIdx = out.indexOf('$');
+	    if (dollarIdx > 0) out = out.slice(0, dollarIdx);
+	    out = out.replace(/#\[[^\]]*\]\s*$/g, '');
+	    out = out.replace(/\s*\[\s*\d+(?:\.\d+)?\s*(?:[KMGT]?B)\s*\]\s*$/gi, '');
+	    out = out.replace(/^【[^】]{1,16}】\s*/g, '');
+	    return out.trim();
+	  };
 
-  const pickSuffix = () => {
-    if (raw.includes('***')) return raw.split('***').pop() || '';
-    if (raw.includes('|||')) return raw.split('|||').pop() || '';
-    // Netdisk ids often append the original filename as the last `|...|filename#[size]` segment.
-    const pipeParts = raw.split('|');
-    if (pipeParts.length >= 4) return pipeParts[pipeParts.length - 1] || '';
-    return '';
-  };
+	  const pickSuffix = () => {
+	    if (raw.includes('***')) return raw.split('***').pop() || '';
+	    if (raw.includes('|||')) return raw.split('|||').pop() || '';
+	    const pipeParts = raw.split('|');
+	    if (pipeParts.length >= 4) return pipeParts[pipeParts.length - 1] || '';
+	    return '';
+	  };
 
-  const suffix = pickSuffix();
-  if (!suffix) return [];
+	  const suffix = pickSuffix();
+	  if (!suffix) return [];
 
-  // Some formats append multiple raw filenames separated by `#`.
-  const parts = String(suffix || '')
-    .split('#')
-    .map((s) => stripMeta(String(s || '')))
-    .filter(Boolean);
+	  const parts = String(suffix || '')
+	    .split('#')
+	    .map((s) => stripMeta(String(s || '')))
+	    .filter(Boolean);
 
   return parts;
 };
@@ -3224,18 +3209,16 @@ const smartSourceExtractPrioritySetting = computed(() => {
   const raw = props.bootstrap?.settings?.smartSourceExtractPriority;
   const text = typeof raw === 'string' ? raw.trim() : String(raw || '').trim();
 
-  // New mode: one of "无" | "网盘" | "关键字"
-  const mode = (() => {
-    if (text === '网盘') return '网盘';
-    if (text === '关键字') return '关键字';
-    return '无';
-  })();
+	  const mode = (() => {
+	    if (text === '网盘') return '网盘';
+	    if (text === '关键字') return '关键字';
+	    return '无';
+	  })();
 
-  const explicit = mode === '网盘' ? ['网盘'] : mode === '关键字' ? ['关键字'] : [];
-  // Always keep "网盘" as a stable tie-breaker even when mode is "无".
-  const order = mode === '关键字' ? ['关键字', '网盘'] : ['网盘'];
-  return { mode, explicit, order };
-});
+	  const explicit = mode === '网盘' ? ['网盘'] : mode === '关键字' ? ['关键字'] : [];
+	  const order = mode === '关键字' ? ['关键字', '网盘'] : ['网盘'];
+	  return { mode, explicit, order };
+	});
 
 const smartSourcePriorityTokensSetting = computed(() => {
   const list = props.bootstrap?.settings?.smartSourcePriorityTokens;
@@ -3301,11 +3284,10 @@ const fetchTMDBMetaIfNeeded = async () => {
         seasons: Array.isArray(data.seasons) ? data.seasons : [],
       };
       tmdbMeta.value = meta;
-      if (meta && meta.overview) introText.value = meta.overview;
-    } catch (_e) {
-      // Best-effort: keep existing UI; TMDB meta isn't strictly required for playback.
-      if (seqAtCall === tmdbFetchState.seq) tmdbMeta.value = null;
-    } finally {
+	    if (meta && meta.overview) introText.value = meta.overview;
+	  } catch (_e) {
+	      if (seqAtCall === tmdbFetchState.seq) tmdbMeta.value = null;
+	  } finally {
       if (tmdbFetchState.key === k && tmdbFetchState.seq === seqAtCall) tmdbFetchState.inFlight = null;
     }
   })();
@@ -3422,10 +3404,8 @@ const compiledSmartSourcePriorityTokenGroups = computed(() => {
     keywordTokens.push(key);
   });
 
-  // Smart playback uses a fixed strategy (prefer 4K, then enhance tokens like HDR/60fps)
-  // instead of relying on backend-configured quality/fps preferences.
-  return { keywordTokens, qualityTokens: [], fpsTokens: [] };
-});
+	  return { keywordTokens, qualityTokens: [], fpsTokens: [] };
+	});
 
 const compiledSmartSourcePriorityTokens = computed(() => {
   const { keywordTokens, qualityTokens, fpsTokens } = compiledSmartSourcePriorityTokenGroups.value || {};
@@ -3560,12 +3540,11 @@ const extractEpisodeCandidateTexts = (ep) => {
   return out;
 };
 
-const contentKind = computed(() => {
-  // TMDB provides authoritative media type; do not let site filenames misclassify it.
-  if (tmdbMode.value) {
-    const typ = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
-    if (typ === 'movie') return 'movie';
-    if (typ === 'tv') return 'series';
+	const contentKind = computed(() => {
+	  if (tmdbMode.value) {
+	    const typ = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+	    if (typ === 'movie') return 'movie';
+	    if (typ === 'tv') return 'series';
   }
 
   const pans = sitePanOptions.value;
@@ -5625,15 +5604,15 @@ const resolveSmartEpisodeNo = (ep) => {
   return 0;
 };
 
-const tmdbSmartPickCache = new Map(); // episodeNo -> best candidate (site + ep)
-const tmdbSmartPickInFlight = new Map(); // episodeNo -> Promise
-const tmdbSmartPickCacheVersion = ref(0);
-const SMART_DETAIL_FAIL_COOLDOWN_BASE_MS = 30 * 1000;
-const SMART_DETAIL_FAIL_COOLDOWN_MAX_MS = 5 * 60 * 1000;
-const tmdbSmartDetailCache = new Map(); // sourceKey -> { ok, failCount?, failedAt?, nextRetryAt?, lastError?, episodeMap, episodeMapLoose, pans, pickedFallback }
-const tmdbSmartDetailInFlight = new Map(); // sourceKey -> Promise
-const tmdbSmartDetailCacheVersion = ref(0);
-const tmdbSmartLastPickDebug = ref(null);
+	const tmdbSmartPickCache = new Map();
+	const tmdbSmartPickInFlight = new Map();
+	const tmdbSmartPickCacheVersion = ref(0);
+	const SMART_DETAIL_FAIL_COOLDOWN_BASE_MS = 30 * 1000;
+	const SMART_DETAIL_FAIL_COOLDOWN_MAX_MS = 5 * 60 * 1000;
+	const tmdbSmartDetailCache = new Map();
+	const tmdbSmartDetailInFlight = new Map();
+	const tmdbSmartDetailCacheVersion = ref(0);
+	const tmdbSmartLastPickDebug = ref(null);
 
 const resetTMDBSmartCaches = () => {
   try {
@@ -6125,18 +6104,16 @@ const smartPickBestFromList = (
   if (mode === 'prefer' && prefToken) {
     const bestAny = pickBest(base);
     const prefer = base.filter((c) => smartMatchPan(c, prefToken));
-    const bestPref = pickBest(prefer);
-    if (!bestPref) return bestAny;
-    if (!bestAny) return bestPref;
-    // Prefer keeping the current pan when the match score is tied.
-    return smartCompareCandidates(bestPref, bestAny, { explicit, orderKeys }) <= 0 ? bestPref : bestAny;
-  }
-  if (reqToken) {
-    // Backward compat: if panToken is provided without a mode, treat as strict.
-    const strict = base.filter((c) => smartMatchPan(c, reqToken));
-    const bestStrict = pickBest(strict);
-    return bestStrict || pickBest(base);
-  }
+	    const bestPref = pickBest(prefer);
+	    if (!bestPref) return bestAny;
+	    if (!bestAny) return bestPref;
+	    return smartCompareCandidates(bestPref, bestAny, { explicit, orderKeys }) <= 0 ? bestPref : bestAny;
+	  }
+	  if (reqToken) {
+	    const strict = base.filter((c) => smartMatchPan(c, reqToken));
+	    const bestStrict = pickBest(strict);
+	    return bestStrict || pickBest(base);
+	  }
   return pickBest(base);
 };
 
@@ -6265,8 +6242,8 @@ const smartSwitchTo = async ({
     if (key === '4k') return q === '4K';
     if (key === '1080p') return q === '1080P';
     if (key === '720p') return q === '720P';
-    return qr === 3; // auto: as soon as we see 4K
-  };
+	    return qr === 3;
+	  };
 
   const pickFromSource = async (src, { allowFetchDetail = false } = {}) => {
     if (!src) return null;
@@ -6304,11 +6281,11 @@ const smartSwitchTo = async ({
     const isSameSite = (s) => !!(preferSameSite && sameSiteKey && String(s.siteKey || '') === sameSiteKey);
     const seasonFitRankOf = (src) => {
       if (!tmdbHasMultiSeason || !(seasonNo > 0)) return 0;
-      const hinted = extractSeasonHintFromSource(src);
-      if (hinted === seasonNo) return 3; // exact season match
-      if (hinted > 0) return 1; // explicit but mismatched season: deprioritize
-      return 2; // unknown season: better than wrong season
-    };
+	      const hinted = extractSeasonHintFromSource(src);
+	      if (hinted === seasonNo) return 3;
+	      if (hinted > 0) return 1;
+	      return 2;
+	    };
     return list
       .slice()
       .sort((a, b) => {
@@ -6337,11 +6314,11 @@ const smartSwitchTo = async ({
   };
 
   const pickFromOrderedSources = async ({ allowFetchDetail = false, preferSameSite = true } = {}) => {
-    const candidates = await buildOrderedSources({ preferSameSite });
-    if (!candidates.length) return null;
-    let best = null;
-    let cursor = 0;
-    const inFlight = new Map(); // idx -> Promise<{idx:number, value:any|null}>
+	    const candidates = await buildOrderedSources({ preferSameSite });
+	    if (!candidates.length) return null;
+	    let best = null;
+	    let cursor = 0;
+	    const inFlight = new Map();
 
     const launch = (idx) => {
       const src = candidates[idx];
@@ -6393,13 +6370,10 @@ const smartSwitchTo = async ({
 
   let chosen = null;
 
-  // Phase 1: try fast path. Keep same-site as a tie-break.
-  chosen = await pickFromOrderedSources({ allowFetchDetail: !cacheOnly, preferSameSite: true });
+	  chosen = await pickFromOrderedSources({ allowFetchDetail: !cacheOnly, preferSameSite: true });
 
-  // Phase 2: if not found, keep searching & fetching detail by global match order.
-  // - This enables "切换网盘/画质/换源" even when current cache misses, because other sites may have candidates.
-  if (!chosen) {
-    for (let round = 0; round < 200; round += 1) {
+	  if (!chosen) {
+	    for (let round = 0; round < 200; round += 1) {
       if (seq !== smartSwitchPickState.seq) return false;
       if (sourcesSearchDone.value) break;
       const progressed = await tryAdvanceSearchOnce();
@@ -6407,8 +6381,8 @@ const smartSwitchTo = async ({
       chosen = await pickFromOrderedSources({ allowFetchDetail: true, preferSameSite: false });
       if (chosen && chosen.ep && chosen.ep.url) break;
       if (!progressed) break;
-    }
-  }
+	    }
+	  }
 
   if (!chosen || !chosen.ep || !chosen.ep.url) {
     showPlayerToast('未匹配到相关片源');
@@ -6519,14 +6493,14 @@ const playerExtraMenus = computed(() => {
   const qualityKey = smartCurrentQualityModeKey.value;
   const qualityLabel = smartCurrentQualityLabel.value;
   return [
-    {
-      key: 'pan',
-      label: panToken || '网盘',
-      ariaLabel: '网盘',
-      value: panToken || '',
-      disabled: !panTokens.length,
-      options: panTokens.map((t) => ({ value: String(t || '').trim(), label: String(t || '').trim() })).filter((o) => o.value),
-    },
+	    {
+	      key: 'pan',
+	      label: panToken || '未知',
+	      ariaLabel: '网盘',
+	      value: panToken || '',
+	      disabled: !panTokens.length,
+	      options: panTokens.map((t) => ({ value: String(t || '').trim(), label: String(t || '').trim() })).filter((o) => o.value),
+	    },
     {
       key: 'quality',
       label: qualityLabel || '未知',
@@ -6569,15 +6543,14 @@ const onPlayerExtraMenuSelect = async (payload) => {
   }
   if (key === 'quality') {
     const cur = smartCurrentQualityModeKey.value;
-    if (cur && value && cur === value) {
-      showPlayerToast('已是当前画质');
-      return;
-    }
-    smartUiQualityOverride.value = value;
-    // Quality switch does not lock pan; keep pan priority tokens for tie-break.
-    await smartSwitchTo({
-      panMode: 'prefer',
-      preferredPanToken: smartCurrentPanToken.value || '',
+	    if (cur && value && cur === value) {
+	      showPlayerToast('已是当前画质');
+	      return;
+	    }
+	    smartUiQualityOverride.value = value;
+	    await smartSwitchTo({
+	      panMode: 'prefer',
+	      preferredPanToken: smartCurrentPanToken.value || '',
       qualityMode: value || 'auto',
       switchKind: 'quality',
       excludeCurrent: true,
@@ -6714,9 +6687,8 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
         const bPrefer = bp >= want;
         if (aPrefer !== bPrefer) return aPrefer ? -1 : 1;
 
-        // Prefer sources that match query without noise-cleaning, then higher match score.
-        const an = a && a.__noNoiseMatch ? 1 : 0;
-        const bn = b && b.__noNoiseMatch ? 1 : 0;
+	        const an = a && a.__noNoiseMatch ? 1 : 0;
+	        const bn = b && b.__noNoiseMatch ? 1 : 0;
         if (an !== bn) return bn - an;
         const ascore = Number(a && a.__score) || 0;
         const bscore = Number(b && b.__score) || 0;
@@ -6741,9 +6713,8 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
       }
     }
 
-    // Prefer already-cached OK details, then not-yet-tried / retryable, and push recently-failed details to the end.
-    const now = Date.now();
-    const keyOf = (src) => smartBuildSourceKey(src);
+	    const now = Date.now();
+	    const keyOf = (src) => smartBuildSourceKey(src);
 
     const seen = new Set();
     const uniqueCandidates = [];
@@ -6976,9 +6947,8 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
           }
         })();
 
-	        // Build episode index once per site-detail so switching episodes can reuse it.
-	        (entry.pans || []).forEach((pan) => {
-	          const panLabel = pan && pan.label != null ? String(pan.label) : '';
+		        (entry.pans || []).forEach((pan) => {
+		          const panLabel = pan && pan.label != null ? String(pan.label) : '';
 	          const panTokenIdx = labelTokenIdxOf(panLabel);
 	          const episodes = pan && Array.isArray(pan.episodes) ? pan.episodes : [];
 	          episodes.forEach((ep) => {
@@ -7120,7 +7090,7 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	    const poolSize =
 	      Number.isFinite(poolNum) && poolNum > 0 ? Math.max(1, Math.min(concurrency, Math.floor(poolNum))) : Math.max(1, concurrency);
 	    let cursor = 0;
-	    const inFlight = new Map(); // idx -> Promise<{idx:number, value:any|null}>
+		    const inFlight = new Map();
 
 	    const launch = (idx) => {
 	      const src = candidates[idx];
@@ -7131,11 +7101,10 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	      inFlight.set(idx, p);
 	    };
 
-	    // Initial fill
-	    while (cursor < candidates.length && inFlight.size < poolSize) {
-	      launch(cursor);
-	      cursor += 1;
-	    }
+		    while (cursor < candidates.length && inFlight.size < poolSize) {
+		      launch(cursor);
+		      cursor += 1;
+		    }
 
 	    while (inFlight.size) {
 	      const settled = await Promise.race(Array.from(inFlight.values()));
@@ -7153,11 +7122,10 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	        }
 	      }
 
-	      // Refill one slot
-	      if (cursor < candidates.length) {
-	        launch(cursor);
-	        cursor += 1;
-	      }
+		      if (cursor < candidates.length) {
+		        launch(cursor);
+		        cursor += 1;
+		      }
 	    }
 
     if (bestOverall) {
@@ -7186,18 +7154,15 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
     return null;
   };
 
-  // Ensure we have candidates (exact-match sources) before trying.
-  if ((!aggregatedSources.value || !aggregatedSources.value.length) && !sourcesLoading.value && !sourcesSearchedOnce.value) {
-    await fetchAggregatedSourcesExactMatches();
-  }
+	  if ((!aggregatedSources.value || !aggregatedSources.value.length) && !sourcesLoading.value && !sourcesSearchedOnce.value) {
+	    await fetchAggregatedSourcesExactMatches();
+	  }
 
 		  for (let round = 0; round < 200; round += 1) {
-		    const requireSeasoned = contentKind.value === 'series';
-		    if (round === 0) {
-		      // When we have a "current" (history) site, start matching work in parallel using the remaining
-		      // thread budget, but still prioritize the history site once it returns.
-		      const hasHistoryCandidate = !!(currentSiteKey && currentSpider && currentVideoId);
-		      if (hasHistoryCandidate && concurrency > 1) {
+			    const requireSeasoned = contentKind.value === 'series';
+			    if (round === 0) {
+			      const hasHistoryCandidate = !!(currentSiteKey && currentSpider && currentVideoId);
+			      if (hasHistoryCandidate && concurrency > 1) {
 		        const poolPromise = tryPickOnce({ requireSeasoned, poolSize: Math.max(1, concurrency - 1) });
 		        const quick = await tryPickFromCurrentSiteOnly({ requireSeasoned });
 		        if (quick && quick.ep && quick.ep.url) {
@@ -7604,11 +7569,10 @@ const tryAutoStartPlayback = () => {
   if (introLoading.value) return;
   if (!resumeHistoryLoaded.value) return;
   if (!selectedEpisodes.value.length) return;
-  // Normal mode needs a resolved spider api, but TMDB-smart mode will resolve a site/episode dynamically.
-  if (!tmdbSmartListAvailable.value) {
-    void ensureResolvedSpiderApiFallback();
-    if (!resolvedSpiderApiFinal.value) return;
-  }
+	  if (!tmdbSmartListAvailable.value) {
+	    void ensureResolvedSpiderApiFallback();
+	    if (!resolvedSpiderApiFinal.value) return;
+	  }
   if (selectedEpisodeIndex.value < 0) selectedEpisodeIndex.value = 0;
   initialAutoPlayInFlight.value = true;
   void requestPlay()
@@ -7822,12 +7786,11 @@ const playerPhase = computed(() => {
   if (playerRuntimeError.value) return 'error';
   if (introLoading.value) return 'detail';
   if (introError.value && !playerUrl.value && !isSmartPanActive.value) return 'error';
-  if (!playerUrl.value) {
-    if (playLoading.value) return 'play_url';
-    // Smart playback: while sources are still searching/building, show "detail" stage instead of "idle".
-    if (isSmartPanActive.value && (!sourcesSearchDone.value || sourcesLoading.value)) return 'detail';
-    return 'idle';
-  }
+	  if (!playerUrl.value) {
+	    if (playLoading.value) return 'play_url';
+	    if (isSmartPanActive.value && (!sourcesSearchDone.value || sourcesLoading.value)) return 'detail';
+	    return 'idle';
+	  }
   if (!playerMetaReady.value) return 'play_info';
   if (playerBuffering.value) return 'buffering';
   if (!playerPlaybackStarted.value || !playerFirstFrameReady.value) return 'buffering';
@@ -7916,12 +7879,9 @@ const loadResumeFromHistory = async () => {
   const tmdbId = Number(props.tmdbId || 0);
   const tmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
 
-  // When entering from a TMDB card, we may not have a site/video id yet. In that case,
-  // try to reuse the most recent play_history record (same TMDB id/type or same contentKey)
-  // so smart playback can start from the previous source immediately.
-  if (!siteKey || !videoId) {
-    if (!(tmdbMode.value && tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie'))) {
-      resumeHistoryLoaded.value = true;
+	  if (!siteKey || !videoId) {
+	    if (!(tmdbMode.value && tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie'))) {
+	      resumeHistoryLoaded.value = true;
       return;
     }
     const key = `tmdb::${tmdbType}::${tmdbId}`;
@@ -8442,18 +8402,16 @@ const runEntryFlow = async ({ isNewContent, restoreEpisodeIndex } = {}) => {
 
     loadAggregatedSourcesFromStorage();
 
-    // TMDB cards: meta + episode list come from TMDB; do not fetch site detail to build intro/meta.
-    if (tmdbMode.value) {
-      await loadResumeFromHistory();
-      await fetchTMDBMetaIfNeeded();
+	    if (tmdbMode.value) {
+	      await loadResumeFromHistory();
+	      await fetchTMDBMetaIfNeeded();
       tryAutoStartPlayback();
       return;
     }
 
-    // Site cards: fetch site detail to get playFrom/playUrl (+ intro/meta in non-TMDB mode).
-    if (contentChanged) {
-      await fetchDetailForCurrentVideo({ updateIntro: true, updateMeta: true });
-    } else {
+	    if (contentChanged) {
+	      await fetchDetailForCurrentVideo({ updateIntro: true, updateMeta: true });
+	    } else {
       await fetchDetailForCurrentVideo({ updateIntro: false, updateMeta: false });
     }
 
@@ -9914,10 +9872,9 @@ watch(
   pointer-events: none;
   z-index: 10010;
   padding: 18px;
-  /* Keep player controls visible even when showing overlay (error/loading). */
-  background: radial-gradient(circle at 50% 45%, rgba(2, 6, 23, 0.78) 0%, rgba(2, 6, 23, 0.35) 55%, rgba(2, 6, 23, 0) 100%);
-  backdrop-filter: none;
-}
+	  background: radial-gradient(circle at 50% 45%, rgba(2, 6, 23, 0.78) 0%, rgba(2, 6, 23, 0.35) 55%, rgba(2, 6, 23, 0) 100%);
+	  backdrop-filter: none;
+	}
 
 .play-player-overlay__panel {
   /* Constrain overall layout to a fixed "red box" area */
