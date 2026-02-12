@@ -814,14 +814,20 @@
 	                <div class="text-xs text-gray-500 dark:text-gray-400">建议使用 v4 Token（Bearer）。也可仅填 v3 Key。</div>
 	              </div>
 
-	              <div class="space-y-1">
-	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Key（v3）</div>
-	                <input id="tmdbV3Key" class="tv-field" type="text" placeholder="可选：v3 API Key" autocomplete="off" />
-	              </div>
+		              <div class="space-y-1">
+		                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Key（v3）</div>
+		                <input id="tmdbV3Key" class="tv-field" type="text" placeholder="可选：v3 API Key" autocomplete="off" />
+		              </div>
 
-	              <div class="grid gap-3 sm:grid-cols-3">
-	                <div class="space-y-1">
-	                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">语言</div>
+		              <div class="space-y-1">
+		                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Base（可选）</div>
+		                <input id="tmdbApiBase" class="tv-field" type="text" placeholder="留空为默认：https://api.themoviedb.org/3（也可填：https://你的代理域名/tmdb）" autocomplete="off" />
+		                <div class="text-xs text-gray-500 dark:text-gray-400">用于配置 TMDB 加速/反代入口（按 base 拼接 search/multi、movie/:id、tv/:id）。</div>
+		              </div>
+
+		              <div class="grid gap-3 sm:grid-cols-3">
+		                <div class="space-y-1">
+		                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">语言</div>
 	                  <input id="tmdbLanguage" class="tv-field" placeholder="zh-CN" autocomplete="off" />
 	                </div>
 	                <div class="space-y-1">

@@ -115,6 +115,7 @@ export function initDashboardPage(bootstrap = {}) {
   const tmdbSaveStatus = document.getElementById('tmdbSaveStatus');
   const tmdbV4TokenInput = document.getElementById('tmdbV4Token');
   const tmdbV3KeyInput = document.getElementById('tmdbV3Key');
+  const tmdbApiBaseInput = document.getElementById('tmdbApiBase');
   const tmdbLanguageInput = document.getElementById('tmdbLanguage');
   const tmdbRegionInput = document.getElementById('tmdbRegion');
   const tmdbIncludeAdultInput = document.getElementById('tmdbIncludeAdult');
@@ -7320,6 +7321,7 @@ export function initDashboardPage(bootstrap = {}) {
     const s = data && typeof data === 'object' ? data : {};
     if (tmdbV4TokenInput) tmdbV4TokenInput.value = typeof s.v4Token === 'string' ? s.v4Token : '';
     if (tmdbV3KeyInput) tmdbV3KeyInput.value = typeof s.v3Key === 'string' ? s.v3Key : '';
+    if (tmdbApiBaseInput) tmdbApiBaseInput.value = typeof s.apiBase === 'string' ? s.apiBase : '';
     if (tmdbLanguageInput) tmdbLanguageInput.value = typeof s.language === 'string' ? s.language : 'zh-CN';
     if (tmdbRegionInput) tmdbRegionInput.value = typeof s.region === 'string' ? s.region : 'CN';
     if (tmdbIncludeAdultInput) tmdbIncludeAdultInput.checked = !!s.includeAdult;
@@ -7356,6 +7358,7 @@ export function initDashboardPage(bootstrap = {}) {
         const payload = {
           v4Token: tmdbV4TokenInput ? (tmdbV4TokenInput.value || '').trim() : '',
           v3Key: tmdbV3KeyInput ? (tmdbV3KeyInput.value || '').trim() : '',
+          apiBase: tmdbApiBaseInput ? (tmdbApiBaseInput.value || '').trim() : '',
           language: tmdbLanguageInput ? (tmdbLanguageInput.value || '').trim() : '',
           region: tmdbRegionInput ? (tmdbRegionInput.value || '').trim() : '',
           includeAdult: !!(tmdbIncludeAdultInput && tmdbIncludeAdultInput.checked),
