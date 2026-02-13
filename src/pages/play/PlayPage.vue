@@ -106,6 +106,7 @@
                               @videoinfo="onPlayerVideoInfo"
 	                              @buffering="onPlayerBuffering"
 	                              @playing="onPlayerPlaying"
+                              @timeupdate="onPlayerTimeUpdate"
 	                              @ended="onPlayerEnded"
 	                              @firstframe="onPlayerFirstFrame"
 	                              @error="onPlayerError"
@@ -7531,11 +7532,31 @@ const requestPlay = async () => {
 			            tmdbMode.value && doubanSeasonOverrideActive.value && doubanSeasonMeta.value
 			              ? JSON.stringify(doubanSeasonMeta.value)
 			              : '',
+			          tmdbSeason: (() => {
+			            const eps = selectedEpisodes.value;
+			            const map = computeEpisodeMatchByIndexForEpisodes(eps);
+			            const hit = idxAtCall >= 0 && idxAtCall < map.length ? map[idxAtCall] : null;
+			            return hit && Number.isFinite(Number(hit.season)) ? Number(hit.season) : 0;
+			          })(),
+			          tmdbEpisode: (() => {
+			            const eps = selectedEpisodes.value;
+			            const map = computeEpisodeMatchByIndexForEpisodes(eps);
+			            const hit = idxAtCall >= 0 && idxAtCall < map.length ? map[idxAtCall] : null;
+			            return hit && Number.isFinite(Number(hit.episode)) ? Number(hit.episode) : 0;
+			          })(),
 			          panLabel: (src && src.label ? String(src.label) : '').trim(),
 			          playFlag: flag,
 			          episodeIndex: idxAtCall >= 0 ? idxAtCall : 0,
 			          episodeName: tmdbMode.value ? '' : epNameAtCall,
 			        };
+			        // For multi-device resume syncing (Emby-compatible clients), store a stable item id when possible.
+			        try {
+			          const metaId = payloadForHistory.tmdbId ? Number(payloadForHistory.tmdbId) : 0;
+			          const metaType = payloadForHistory.tmdbType ? String(payloadForHistory.tmdbType) : '';
+			          const seasonNo = payloadForHistory.tmdbSeason ? Number(payloadForHistory.tmdbSeason) : 0;
+			          const episodeNo = payloadForHistory.tmdbEpisode ? Number(payloadForHistory.tmdbEpisode) : 0;
+			          payloadForHistory.playbackItemId = buildJellyfinPlaybackItemId({ tmdbType: metaType, tmdbId: metaId, seasonNo, episodeNo }) || '';
+			        } catch (_e) {}
 			        lastHistoryPayload.value = payloadForHistory;
 		        await apiPostJson('/api/playhistory', { ...payloadForHistory }, { dedupe: false });
 			        window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
@@ -7620,6 +7641,79 @@ const onPlayerBuffering = (v) => {
 const onPlayerPlaying = () => {
   playerPlaybackStarted.value = true;
   playerBuffering.value = false;
+};
+
+const playerTimeState = { at: 0, currentTime: 0, duration: 0 };
+const historyProgressState = { at: 0, inFlight: null };
+
+const toTicks = (seconds) => {
+  const s = Number(seconds);
+  if (!Number.isFinite(s) || s <= 0) return 0;
+  return Math.floor(s * 10_000_000);
+};
+
+const buildJellyfinPlaybackItemId = ({ tmdbType, tmdbId, seasonNo, episodeNo }) => {
+  const t = typeof tmdbType === 'string' ? tmdbType.trim().toLowerCase() : '';
+  const id = Number(tmdbId);
+  if (!Number.isFinite(id) || id <= 0) return '';
+  if (t === 'movie') return `tmdb_movie_${Math.floor(id)}`;
+  if (t !== 'tv') return '';
+  const s = Number(seasonNo);
+  const e = Number(episodeNo);
+  if (!Number.isFinite(s) || !Number.isFinite(e) || s <= 0 || e <= 0) return '';
+  const ss = String(Math.floor(s)).padStart(2, '0');
+  const ee = String(Math.floor(e)).padStart(3, '0');
+  return `tmdb_tv_${Math.floor(id)}_s${ss}_e${ee}`;
+};
+
+const syncHistoryProgressIfPossible = async (opts = {}) => {
+  const { force = false } = opts || {};
+  const base = lastHistoryPayload.value && typeof lastHistoryPayload.value === 'object' ? lastHistoryPayload.value : null;
+  if (!base) return;
+  if (!playerPlaybackStarted.value) return;
+  if (!playerUrl.value) return;
+
+  const now = Date.now();
+  if (!force && now - historyProgressState.at < 12_000) return;
+  if (historyProgressState.inFlight) return;
+
+  const posTicks = toTicks(playerTimeState.currentTime);
+  const durTicks = toTicks(playerTimeState.duration);
+  if (posTicks <= 0) return;
+
+  historyProgressState.at = now;
+  historyProgressState.inFlight = (async () => {
+    try {
+      await apiPostJson(
+        '/api/playhistory',
+        {
+          ...base,
+          playbackPositionTicks: posTicks,
+          playbackRuntimeTicks: durTicks,
+        },
+        { dedupe: false }
+      );
+      window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
+    } catch (_e) {
+      // ignore
+    }
+  })();
+  try {
+    await historyProgressState.inFlight;
+  } finally {
+    historyProgressState.inFlight = null;
+  }
+};
+
+const onPlayerTimeUpdate = (info) => {
+  try {
+    const cur = info && Number.isFinite(Number(info.currentTime)) ? Number(info.currentTime) : 0;
+    const dur = info && Number.isFinite(Number(info.duration)) ? Number(info.duration) : 0;
+    playerTimeState.currentTime = Math.max(0, cur);
+    playerTimeState.duration = Math.max(0, dur);
+    playerTimeState.at = Date.now();
+    void syncHistoryProgressIfPossible();
+  } catch (_e) {}
 };
 
 const autoNextInFlight = ref(false);
@@ -7734,6 +7828,9 @@ const playEpisodeFromPlayingList = async ({ delta = 1, reason = '' } = {}) => {
 
   autoNextInFlight.value = true;
   try {
+    try {
+      await syncHistoryProgressIfPossible({ force: true });
+    } catch (_e) {}
     const panKey = ctx.panKey;
     if (selectedPanKey.value !== panKey) selectPan(panKey);
 

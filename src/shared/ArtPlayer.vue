@@ -376,7 +376,19 @@
 	import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 	import Artplayer from 'artplayer';
 
-	const emit = defineEmits(['loadedmetadata', 'videoinfo', 'error', 'buffering', 'playing', 'firstframe', 'ended', 'goproxyselect', 'extramenuselect', 'extraaction']);
+	const emit = defineEmits([
+		'loadedmetadata',
+		'videoinfo',
+		'error',
+		'buffering',
+		'playing',
+		'firstframe',
+		'ended',
+		'timeupdate',
+		'goproxyselect',
+		'extramenuselect',
+		'extraaction',
+	]);
 
 	const props = defineProps({
 		url: { type: String, default: '' },
@@ -414,6 +426,7 @@ let infoExtraSyncing = false;
 
 let timeUpdateRaf = 0;
 let timeUpdatePending = 0;
+let timeUpdateEmitAt = 0;
 let desktopClickTimer = 0;
 
 const playing = ref(false);
@@ -1389,18 +1402,25 @@ const destroyNow = () => {
   aspectRatio.value = art.aspectRatio || 'default';
   scheduleBufferedSync();
 
-  art.on('video:timeupdate', () => {
-    timeUpdatePending = art.currentTime || 0;
-    if (timeUpdateRaf) return;
-	    timeUpdateRaf = window.requestAnimationFrame(() => {
-	      timeUpdateRaf = 0;
-	      const nextTime = timeUpdatePending || 0;
-	      if (buffering.value && nextTime > (currentTime.value || 0) + 0.05) setBuffering(false);
-	      currentTime.value = nextTime;
+	  art.on('video:timeupdate', () => {
+	    timeUpdatePending = art.currentTime || 0;
+	    if (timeUpdateRaf) return;
+		    timeUpdateRaf = window.requestAnimationFrame(() => {
+		      timeUpdateRaf = 0;
+		      const nextTime = timeUpdatePending || 0;
+		      if (buffering.value && nextTime > (currentTime.value || 0) + 0.05) setBuffering(false);
+		      currentTime.value = nextTime;
         if (nextTime > 0.01) emitFirstFrameOnce();
 	      scheduleBufferedSync();
-	    });
-	  });
+        try {
+          const now = Date.now();
+          if (now - timeUpdateEmitAt >= 1000) {
+            timeUpdateEmitAt = now;
+            emit('timeupdate', { currentTime: nextTime || 0, duration: duration.value || 0, playing: !!playing.value });
+          }
+        } catch (_e) {}
+		    });
+		  });
 	  art.on('video:loadedmetadata', () => {
 	    try {
 	      const d = art.duration || 0;
