@@ -5586,6 +5586,79 @@ const playRequestState = {
 
 const initialAutoPlayInFlight = ref(false);
 
+const lastTMDBPlayReportCtx = ref(null);
+
+const reportTMDBPlay = async ({ ctx, stage = 'resolve', result = 'success', error = '' } = {}) => {
+  const c = ctx && typeof ctx === 'object' ? ctx : null;
+  if (!c) return;
+  const tmdbId = Number(c.tmdbId || 0);
+  const type = String(c.type || '').trim();
+  const season = Number(c.season || 0);
+  const episode = Number(c.episode || 0);
+  if (!(tmdbId > 0) || !type) return;
+  try {
+    await apiPostJson(
+      '/api/tmdb/play/report',
+      {
+        tmdbId,
+        type,
+        season,
+        episode,
+        siteId: String(c.siteId || ''),
+        sitePanId: String(c.sitePanId || ''),
+        candidateKey: String(c.candidateKey || ''),
+        playFlag: String(c.playFlag || ''),
+        playUrl: String(c.playUrl || ''),
+        filename: String(c.filename || ''),
+        stage: String(stage || 'resolve'),
+        result: String(result || 'success'),
+        error: String(error || ''),
+      },
+      { dedupe: false, timeoutMs: 3000 }
+    );
+  } catch (_e) {}
+};
+
+const pushDoubanSeasonMetaToServerIfNeeded = () => {
+  try {
+    if (!tmdbMode.value) return;
+    const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+    const tmdbId = Number(props.tmdbId || 0);
+    if (typRaw !== 'tv' || tmdbId <= 0) return;
+    if (!doubanSeasonOverrideActive.value) return;
+    const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+    const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
+    if (seasons.length < 2) return;
+    const payload = {
+      tmdbId,
+      type: 'tv',
+      source: 'douban',
+      seasons: seasons
+        .map((s) => ({
+          season: Number.isFinite(Number(s.season)) ? Math.floor(Number(s.season)) : 0,
+          episodeCount: Number.isFinite(Number(s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
+        }))
+        .filter((s) => s.season > 0 && s.episodeCount > 0),
+    };
+    if (!payload.seasons.length) return;
+    void apiPostJson('/api/tmdb/meta/push', payload, { dedupe: false, timeoutMs: 3000 });
+  } catch (_e) {}
+};
+
+const fetchTMDBCandidatesFromServer = async ({ tmdbId, type = 'tv', season = 0, episode = 0 } = {}) => {
+  const id = Number(tmdbId || 0);
+  const typ = String(type || '').trim().toLowerCase();
+  const s = Number.isFinite(Number(season)) ? Math.floor(Number(season)) : 0;
+  const e = Number.isFinite(Number(episode)) ? Math.floor(Number(episode)) : 0;
+  if (!(id > 0) || (typ === 'tv' && (s <= 0 || e <= 0))) return null;
+  try {
+    const data = await apiGetJson(`/api/tmdb/candidates${buildQuery({ tmdbId: id, type: typ, season: s, episode: e })}`, { cacheMs: 1500, timeoutMs: 15000 });
+    return data && typeof data === 'object' ? data : null;
+  } catch (_e) {
+    return null;
+  }
+};
+
 const resolveSmartEpisodeNo = (ep) => {
   if (!ep) return 0;
   const direct = ep && Number.isFinite(Number(ep.__tmdbEpisode)) ? Math.floor(Number(ep.__tmdbEpisode)) : 0;
@@ -6074,7 +6147,7 @@ const smartPickBestFromList = (
 ) => {
   const list = Array.isArray(cands) ? cands.filter(Boolean) : [];
   if (!list.length) return null;
-  const base = list.filter((c) => {
+  let base = list.filter((c) => {
     if (!c || !c.ep || !c.ep.url) return false;
     if (excludeKey && smartCandidateKey(c) === excludeKey) return false;
     if (!smartMatchQualityMode(c, qualityMode)) return false;
@@ -6083,6 +6156,19 @@ const smartPickBestFromList = (
     return true;
   });
   if (!base.length) return null;
+
+  // Prefer configured pan list strictly:
+  // if ANY candidate matches `smartPanMatchTokens`, then only pick among them;
+  // otherwise fall back to any pan.
+  try {
+    const panOrder = compiledSmartPanMatchTokens.value;
+    const hasPanOrder = Array.isArray(panOrder) && panOrder.length > 0;
+    if (hasPanOrder) {
+      const hasPreferred = base.some((c) => c && Number.isFinite(Number(c.panTokenIdx)) && Number(c.panTokenIdx) >= 0);
+      if (hasPreferred) base = base.filter((c) => c && Number.isFinite(Number(c.panTokenIdx)) && Number(c.panTokenIdx) >= 0);
+      if (!base.length) return null;
+    }
+  } catch (_e) {}
 
   const pickBest = (xs) => {
     const arr = Array.isArray(xs) ? xs.filter(Boolean) : [];
@@ -7304,6 +7390,10 @@ const requestPlay = async () => {
   const ep = eps[idx];
 
   consumeClickPauseIfAny({ takeover: tmdbMode.value && smartPlayEnabledSetting.value });
+  lastTMDBPlayReportCtx.value = null;
+
+  let playShareUrl = '';
+  let playFilename = '';
 
   let flag =
     ep && ep.flag
@@ -7337,21 +7427,83 @@ const requestPlay = async () => {
   if (tmdbSmartListAvailable.value && selectedPanKey.value === SMART_PAN_KEY) {
     const wantEpisode = resolveSmartEpisodeNo(ep);
     const desiredSeason = ep && Number.isFinite(Number(ep.__tmdbSeason)) ? Math.floor(Number(ep.__tmdbSeason)) : 0;
-    const picked = await resolveTMDBSmartPlaybackCandidate({ episodeNo: wantEpisode, seasonNo: desiredSeason });
+    const desiredEpisodeInSeason = ep && Number.isFinite(Number(ep.__tmdbSeasonEpisode)) ? Math.floor(Number(ep.__tmdbSeasonEpisode)) : 0;
+    const metaId = Number(props.tmdbId || 0);
+    const metaType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : 'tv';
+
+    // Keep server-side season_meta warm (best-effort).
+    pushDoubanSeasonMetaToServerIfNeeded();
+
+    const seasonEp = wantEpisode > 0 ? tmdbSeasonEpisodeOfGlobal(wantEpisode) : { season: 0, episode: 0 };
+    const seasonNo = desiredSeason > 0 ? desiredSeason : (seasonEp && seasonEp.season ? Number(seasonEp.season) : 0);
+    const episodeNo =
+      desiredEpisodeInSeason > 0
+        ? desiredEpisodeInSeason
+        : (seasonEp && seasonEp.episode ? Number(seasonEp.episode) : 0);
+
+    const serverPicked = (async () => {
+      const data = await fetchTMDBCandidatesFromServer({ tmdbId: metaId, type: metaType, season: seasonNo, episode: episodeNo });
+      const list = data && Array.isArray(data.candidates) ? data.candidates : [];
+      if (!list.length) return null;
+      const first = list[0] && typeof list[0] === 'object' ? list[0] : null;
+      const sites = first && Array.isArray(first.sites) ? first.sites : [];
+      const play = first && first.play && typeof first.play === 'object' ? first.play : null;
+      if (!sites.length || !play) return null;
+      const site = sites[0] && typeof sites[0] === 'object' ? sites[0] : null;
+      if (!site) return null;
+      const spiderApi = site.spiderApi ? String(site.spiderApi).trim() : '';
+      const siteId = site.siteId ? String(site.siteId).trim() : '';
+      const sitePanId = site.sitePanId ? String(site.sitePanId).trim() : '';
+      const playFlag = play.flag ? String(play.flag).trim() : '';
+      const url = play.url ? String(play.url).trim() : '';
+      const filename = play.filename ? String(play.filename).trim() : '';
+      if (!spiderApi || !siteId || !sitePanId || !playFlag || !filename) return null;
+      const candidateKey = first && typeof first.candidateKey === 'string' ? first.candidateKey.trim() : '';
+      return { spiderApi, siteId, sitePanId, candidateKey, playFlag, url, filename };
+    })();
+
+    const picked = (await serverPicked) || (await resolveTMDBSmartPlaybackCandidate({ episodeNo: wantEpisode, seasonNo: desiredSeason }));
     if (!picked) {
       playError.value = '获取视频失败，请通过手动搜索选择其他源';
       return false;
     }
-    api = picked.spiderApi;
-    historySpiderApi = picked.spiderApi;
-    historySiteKey = picked.siteKey;
-    historySiteName = picked.siteName || historySiteName;
-    historyVideoId = picked.videoId || historyVideoId;
-    const pickedEp = picked.ep || null;
-    flag = pickedEp && pickedEp.flag ? String(pickedEp.flag) : picked.panLabel ? String(picked.panLabel) : flag;
-    id = pickedEp && pickedEp.url ? String(pickedEp.url) : '';
-    statsEpName = pickedEp && pickedEp.name != null ? String(pickedEp.name) : statsEpName;
-    statsEpUrl = pickedEp && pickedEp.url != null ? String(pickedEp.url) : statsEpUrl;
+
+    if (picked.filename) {
+      api = picked.spiderApi;
+      historySpiderApi = picked.spiderApi;
+      historySiteKey = picked.siteId;
+      historyVideoId = picked.sitePanId || historyVideoId;
+      flag = picked.playFlag;
+      id = '';
+      playShareUrl = picked.url || '';
+      playFilename = picked.filename || '';
+      statsEpUrl = playFilename || '';
+      lastTMDBPlayReportCtx.value = {
+        tmdbId: metaId,
+        type: metaType,
+        season: seasonNo,
+        episode: episodeNo,
+        siteId: picked.siteId,
+        sitePanId: picked.sitePanId,
+        candidateKey: picked.candidateKey || '',
+        playFlag: picked.playFlag,
+        playUrl: picked.url || '',
+        filename: picked.filename || '',
+        playbackReported: false,
+      };
+    } else {
+      api = picked.spiderApi;
+      historySpiderApi = picked.spiderApi;
+      historySiteKey = picked.siteKey;
+      historySiteName = picked.siteName || historySiteName;
+      historyVideoId = picked.videoId || historyVideoId;
+      const pickedEp = picked.ep || null;
+      flag = pickedEp && pickedEp.flag ? String(pickedEp.flag) : picked.panLabel ? String(picked.panLabel) : flag;
+      id = pickedEp && pickedEp.url ? String(pickedEp.url) : '';
+      statsEpName = pickedEp && pickedEp.name != null ? String(pickedEp.name) : statsEpName;
+      statsEpUrl = pickedEp && pickedEp.url != null ? String(pickedEp.url) : statsEpUrl;
+      lastTMDBPlayReportCtx.value = null;
+    }
   }
 
   const pickRawFileNameForStats = (episodeName, episodeUrl) => {
@@ -7424,7 +7576,12 @@ const requestPlay = async () => {
 	          const raw = await requestCatPlay({
 	            apiBase,
 	            username: tvUser,
-	            payload: { flag, id, siteApi, ...(siteId ? { siteId } : {}) },
+	            payload: {
+	              flag,
+	              ...(playFilename ? { filename: playFilename, ...(playShareUrl ? { url: playShareUrl } : {}) } : { id }),
+	              siteApi,
+	              ...(siteId ? { siteId } : {}),
+	            },
 	          });
 	          const rewritten = rewritePlayPayloadUrls(raw, apiBase, tvUser);
 	          const payload = normalizePlayPayload(rewritten);
@@ -7439,13 +7596,30 @@ const requestPlay = async () => {
         let disableGoProxy = false;
 
         if (!finalUrl) {
-          playResult = await fetchPlay();
+          try {
+            playResult = await fetchPlay();
+          } catch (e) {
+            try {
+              const msg = e && e.message ? String(e.message) : String(e || '');
+              const ctx = lastTMDBPlayReportCtx.value;
+              if (ctx) void reportTMDBPlay({ ctx, stage: 'resolve', result: 'failure', error: msg || 'resolve failed' });
+            } catch (_e) {}
+            throw e;
+          }
           if (!playResult.url) {
             if (seqAtCall === playRequestState.seq) playError.value = '无可用播放地址';
+            try {
+              const ctx = lastTMDBPlayReportCtx.value;
+              if (ctx) void reportTMDBPlay({ ctx, stage: 'resolve', result: 'failure', error: 'empty url' });
+            } catch (_e) {}
             return;
           }
           finalUrl = playResult.url;
           finalHeaders = playResult.rawHeaders || {};
+          try {
+            const ctx = lastTMDBPlayReportCtx.value;
+            if (ctx) void reportTMDBPlay({ ctx, stage: 'resolve', result: 'success', error: '' });
+          } catch (_e) {}
         }
 
         const goProxyEnabled = !!props.bootstrap?.settings?.goProxyEnabled;
@@ -7866,6 +8040,13 @@ const onPlayerFirstFrame = () => {
   playerFirstFrameTimer = window.setTimeout(() => {
     playerFirstFrameTimer = 0;
     playerFirstFrameReady.value = true;
+    try {
+      const ctx = lastTMDBPlayReportCtx.value;
+      if (ctx && !ctx.playbackReported) {
+        ctx.playbackReported = true;
+        void reportTMDBPlay({ ctx, stage: 'playback', result: 'success', error: '' });
+      }
+    } catch (_e) {}
   }, 120);
 };
 
@@ -7876,6 +8057,14 @@ const onPlayerError = (e) => {
   } catch (_e) {
     playerRuntimeError.value = '播放失败';
   }
+  try {
+    const ctx = lastTMDBPlayReportCtx.value;
+    if (ctx && !ctx.playbackReported) {
+      ctx.playbackReported = true;
+      const err = playerRuntimeError.value || '播放失败';
+      void reportTMDBPlay({ ctx, stage: 'playback', result: 'failure', error: err });
+    }
+  } catch (_e) {}
 };
 
 const playerPhase = computed(() => {
