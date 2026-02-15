@@ -39,8 +39,8 @@ const fetchTmdbDetailCached = async ({ id, type } = {}) => {
 const patchPosterCardWithTmdb = (wrapper, tmdb) => {
   if (!wrapper || !tmdb || tmdb.success !== true) return;
   const title = typeof tmdb.title === 'string' ? tmdb.title.trim() : '';
-  const pic = typeof tmdb.pic === 'string' ? tmdb.pic.trim() : '';
-  const typ = normalizeTmdbType(tmdb.mediaType);
+  const pic = typeof tmdb.poster === 'string' ? tmdb.poster.trim() : '';
+  const typ = normalizeTmdbType(tmdb.type);
   const year = Number.isFinite(Number(tmdb.year)) && Number(tmdb.year) > 0 ? String(Math.floor(Number(tmdb.year))) : '';
   const badge = typeof tmdb.badge === 'string' ? tmdb.badge.trim() : '';
 

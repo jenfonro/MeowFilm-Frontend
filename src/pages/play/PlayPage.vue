@@ -3268,22 +3268,22 @@ const fetchTMDBMetaIfNeeded = async () => {
 	  tmdbFetchState.inFlight = (async () => {
 	    try {
 	      const data = await apiGetJson(`/api/tmdb/detail${buildQuery({ id, type: typ })}`, { cacheMs: 10 * 60 * 1000 });
-      if (seqAtCall !== tmdbFetchState.seq) return;
-      if (!data || data.success !== true) throw new Error((data && (data.error || data.message)) || 'TMDB 请求失败');
-      const meta = {
-        tmdbId: Number.isFinite(Number(data.tmdbId)) ? Number(data.tmdbId) : id,
-        mediaType: typeof data.mediaType === 'string' ? data.mediaType.trim() : typ,
-        title: typeof data.title === 'string' ? data.title.trim() : '',
-        year: Number.isFinite(Number(data.year)) ? Math.floor(Number(data.year)) : 0,
-        pic: typeof data.pic === 'string' ? data.pic.trim() : '',
-        overview: typeof data.overview === 'string' ? data.overview.trim() : '',
-        badge: typeof data.badge === 'string' ? data.badge.trim() : '',
-        status: typeof data.status === 'string' ? data.status.trim() : '',
-        latestSeason: Number.isFinite(Number(data.latestSeason)) ? Math.floor(Number(data.latestSeason)) : 0,
-        latestEpisode: Number.isFinite(Number(data.latestEpisode)) ? Math.floor(Number(data.latestEpisode)) : 0,
-        episodeCount: Number.isFinite(Number(data.episodeCount)) ? Math.floor(Number(data.episodeCount)) : 0,
-        seasons: Array.isArray(data.seasons) ? data.seasons : [],
-      };
+	      if (seqAtCall !== tmdbFetchState.seq) return;
+	      if (!data || data.success !== true) throw new Error((data && (data.error || data.message)) || 'TMDB 请求失败');
+	      const meta = {
+	        tmdbId: Number.isFinite(Number(data.id)) ? Number(data.id) : id,
+	        mediaType: typeof data.type === 'string' ? data.type.trim() : typ,
+	        title: typeof data.title === 'string' ? data.title.trim() : '',
+	        year: Number.isFinite(Number(data.year)) ? Math.floor(Number(data.year)) : 0,
+	        pic: typeof data.poster === 'string' ? data.poster.trim() : '',
+	        overview: typeof data.overview === 'string' ? data.overview.trim() : '',
+	        badge: typeof data.badge === 'string' ? data.badge.trim() : '',
+	        status: typeof data.status === 'string' ? data.status.trim() : '',
+	        latestSeason: Number.isFinite(Number(data.latestSeason)) ? Math.floor(Number(data.latestSeason)) : 0,
+	        latestEpisode: Number.isFinite(Number(data.latestEpisode)) ? Math.floor(Number(data.latestEpisode)) : 0,
+	        episodeCount: Number.isFinite(Number(data.episodeCount)) ? Math.floor(Number(data.episodeCount)) : 0,
+	        seasons: Array.isArray(data.seasons) ? data.seasons : [],
+	      };
       tmdbMeta.value = meta;
 	    if (meta && meta.overview) introText.value = meta.overview;
 	  } catch (_e) {

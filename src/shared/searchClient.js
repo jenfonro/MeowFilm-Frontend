@@ -673,8 +673,8 @@ export function initSearchPage() {
       if (seenKeys && seenKeys.has(uniq)) return;
       if (seenKeys) seenKeys.add(uniq);
 
-      const mediaType = it && it.mediaType ? String(it.mediaType) : '';
-      const tmdbIdRaw = it && it.tmdbId != null ? Number(it.tmdbId) : 0;
+      const mediaType = it && it.type ? String(it.type) : '';
+      const tmdbIdRaw = it && it.id != null ? Number(it.id) : 0;
       const tmdbId = Number.isFinite(tmdbIdRaw) && tmdbIdRaw > 0 ? Math.floor(tmdbIdRaw) : 0;
       const badgeText = it && typeof it.badge === 'string' ? it.badge.trim() : '';
       const yearText = (() => {
@@ -686,7 +686,7 @@ export function initSearchPage() {
           ? yearText
           : badgeText;
 
-      const titleText = it && it.name ? String(it.name) : '';
+      const titleText = it && it.title ? String(it.title) : '';
       const fallbackTitleLen = titleText.replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '').length;
       const titleLen = Number.isFinite(Number(it && it.__titleLen)) ? Number(it.__titleLen) : fallbackTitleLen;
 
@@ -724,7 +724,7 @@ export function initSearchPage() {
         siteKey: '',
         spiderApi: '',
         videoId: it && it.id != null ? String(it.id) : '',
-        videoPoster: it && it.pic ? String(it.pic) : '',
+        videoPoster: it && it.poster ? String(it.poster) : '',
         videoRemark: remarkText,
       };
       const cardWrapper = createPosterCard({
@@ -733,7 +733,7 @@ export function initSearchPage() {
         io,
         detail,
         title: titleText,
-        poster: it && it.pic ? String(it.pic) : '',
+        poster: it && it.poster ? String(it.poster) : '',
         remark: remarkText,
         siteName: siteLabel,
         cornerBadgeText: '',
@@ -1282,7 +1282,7 @@ export function initSearchPage() {
         const rawItems = data && Array.isArray(data.list) ? data.list : [];
         const items = rawItems
           .map((it, idx) => {
-            const name = it && it.name ? String(it.name) : '';
+            const name = it && it.title ? String(it.title) : '';
             const originalTitle = sanitizeDisplayTitle(name) || name;
             // TMDB titles should NOT be aggressively "cleaned" for aggregation; otherwise distinct titles
             // like "xx 0 剧场版" may be merged into "xx 剧场版".
@@ -1300,7 +1300,7 @@ export function initSearchPage() {
 	              seasonCount: seasonCount > 0 ? seasonCount : 0,
 	            };
 	            if (groupKey) {
-	              const key = normalizeTmdbMediaType(out && typeof out.mediaType === 'string' ? out.mediaType : '');
+	              const key = normalizeTmdbMediaType(out && typeof out.type === 'string' ? out.type : '');
 	              if (key) {
 	                const prev = tmdbByGroupKeyByType.get(groupKey) || {};
 	                const next = { ...prev };
@@ -1481,10 +1481,8 @@ export function initSearchPage() {
 	          : group && group.title
 	            ? String(group.title)
             : '';
-      const poster = tmdbCover && tmdbCover.pic ? String(tmdbCover.pic) : cover.videoPoster || '';
-      const tmdbCoverType = normalizeTmdbMediaType(
-        tmdbCover && (tmdbCover.mediaType || tmdbCover.tmdbType || tmdbCover.type)
-      );
+      const poster = tmdbCover && tmdbCover.poster ? String(tmdbCover.poster) : cover.videoPoster || '';
+      const tmdbCoverType = normalizeTmdbMediaType(tmdbCover && tmdbCover.type);
       const tmdbCoverTypeLabel = tmdbCoverType === 'tv' ? '剧集' : tmdbCoverType === 'movie' ? '电影' : '';
       const inferAggregateTypeLabel = (t) => {
         const s = typeof t === 'string' ? t.trim() : '';
@@ -1594,8 +1592,8 @@ export function initSearchPage() {
             remark: remark || '',
             __groupKey: gk,
             __tmdbRank: tmdbCover && tmdbCover.__tmdbRank != null ? tmdbCover.__tmdbRank : 0,
-            tmdbId: tmdbCover && tmdbCover.tmdbId != null ? tmdbCover.tmdbId : 0,
-            mediaType: tmdbCover && typeof tmdbCover.mediaType === 'string' ? tmdbCover.mediaType : '',
+            tmdbId: tmdbCover && tmdbCover.id != null ? tmdbCover.id : 0,
+            mediaType: tmdbCover && typeof tmdbCover.type === 'string' ? tmdbCover.type : '',
             year: tmdbCover && tmdbCover.year != null ? tmdbCover.year : 0,
           },
         ],
