@@ -758,13 +758,13 @@
 		            媒体数据设置
 		          </div>
 
-		          <div class="admin-card space-y-4">
-		            <div class="flex items-center gap-3">
-		              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">豆瓣配置</div>
-		              <div id="metadataSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
-		            </div>
+              <form id="metadataSettingsForm" class="space-y-6">
+                <div class="admin-card space-y-4">
+                  <div class="flex items-center gap-3">
+                    <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">豆瓣配置</div>
+                    <div id="metadataSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
+                  </div>
 
-		            <form id="metadataSettingsForm" class="space-y-6">
                   <div class="space-y-4">
                     <div>
                       <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣数据代理</label>
@@ -777,7 +777,7 @@
                       </select>
                       <div id="doubanDataCustom" class="mt-2 hidden">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣代理地址</label>
-                        <input id="doubanDataCustomInput" class="tv-field" placeholder="例如：https://proxy.example.com/fetch?url=" autocomplete="off" />
+                        <input id="doubanDataCustomInput" class="tv-field" autocomplete="off" />
                         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义代理服务器地址</p>
                       </div>
                     </div>
@@ -793,36 +793,36 @@
                       </select>
                       <div id="doubanImgCustom" class="mt-2 hidden">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理地址</label>
-                        <input id="doubanImgCustomInput" class="tv-field" placeholder="例如：https://proxy.example.com/fetch?url=" autocomplete="off" />
+                        <input id="doubanImgCustomInput" class="tv-field" autocomplete="off" />
                         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义图片代理服务器地址</p>
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  <div class="pt-4 border-t border-gray-200 dark:border-white/10 space-y-4">
+                <div class="admin-card space-y-4">
+                  <div class="flex items-center gap-3">
                     <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">TMDB 设置</div>
+                  </div>
 
+                  <div class="space-y-4">
                     <div class="space-y-1">
                       <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API TOKEN</div>
-                      <input id="tmdbApiToken" class="tv-field" type="text" placeholder="可选：v3 API Key 或 v4 Token" autocomplete="off" />
-                      <div class="text-xs text-gray-500 dark:text-gray-400">填入 v3 或 v4 任意一种，系统会自动识别并使用。</div>
+                      <input id="tmdbApiToken" class="tv-field" type="text" autocomplete="off" />
+                      <div class="text-xs text-gray-500 dark:text-gray-400">填入 v3 或 v4 任意一种。</div>
                     </div>
 
-                    <details class="tv-panel p-3">
-                      <summary class="text-sm font-medium text-gray-700 dark:text-gray-200 cursor-pointer select-none">TMDB 代理（可选）</summary>
-                      <div class="mt-3 space-y-3">
-                        <div class="space-y-1">
-                          <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB 数据代理地址</div>
-                          <input id="tmdbDataProxyBase" class="tv-field" type="text" placeholder="example.com" autocomplete="off" />
-                          <div class="text-xs text-gray-500 dark:text-gray-400">可配合 GoProxy：例如 `https://你的域名/proxy/tmdb/3`（支持二级目录）。</div>
-                        </div>
-                        <div class="space-y-1">
-                          <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB 图片代理地址</div>
-                          <input id="tmdbImageProxyBase" class="tv-field" type="text" placeholder="example.com" autocomplete="off" />
-                          <div class="text-xs text-gray-500 dark:text-gray-400">可配合 GoProxy：例如 `https://你的域名/proxy/tmdb-img`（支持二级目录）。</div>
-                        </div>
-                      </div>
-                    </details>
+                    <div class="space-y-1">
+                      <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB 数据代理地址</div>
+                      <input id="tmdbDataProxyBase" class="tv-field" type="text" autocomplete="off" />
+                      <div class="text-xs text-gray-500 dark:text-gray-400">GoProxy:https://你的域名/tmdb/3</div>
+                    </div>
+
+                    <div class="space-y-1">
+                      <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB 图片代理地址</div>
+                      <input id="tmdbImageProxyBase" class="tv-field" type="text" autocomplete="off" />
+                      <div class="text-xs text-gray-500 dark:text-gray-400">GoProxy:https://你的域名/tmdb-img</div>
+                    </div>
 
                     <div class="grid gap-3 sm:grid-cols-3">
                       <div class="space-y-1">
@@ -844,12 +844,12 @@
                       </div>
                     </div>
                   </div>
+                </div>
 
-		              <div class="pt-1 flex justify-start">
-		                <button type="submit" class="btn-green">保存</button>
-		              </div>
-		            </form>
-		          </div>
+                <div class="pt-1 flex justify-start">
+                  <button type="submit" class="btn-green">保存</button>
+                </div>
+              </form>
 		        </section>
 	        <section v-if="bootstrap.user.role === 'admin'" id="adminMagic" class="admin-panel hidden space-y-6">
 	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
