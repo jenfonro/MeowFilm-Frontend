@@ -36,9 +36,9 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>
           <span class="nav-label">魔法匹配设置</span>
         </a>
-        <a data-admin="tmdb" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
+        <a data-admin="metadata" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
-          <span class="nav-label">TMDB 设置</span>
+          <span class="nav-label">媒体数据设置</span>
         </a>
         </div>
       </nav>
@@ -73,49 +73,6 @@
                   <option value="both">展示两者</option>
                 </select>
                 <div id="searchDisplayModeError" class="text-xs hidden mt-1"></div>
-              </div>
-              <div id="doubanSettings" class="space-y-4">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣数据代理</label>
-                  <select name="doubanDataProxy" id="doubanDataSelect" class="custom-select tv-field">
-                    <option value="direct" :selected="bootstrap.settings.doubanDataProxy === 'direct'">直连（浏览器直接请求豆瓣）</option>
-                    <option value="cors" :selected="bootstrap.settings.doubanDataProxy === 'cors'">Cors Proxy By Zwei</option>
-                    <option value="cdn-tx" :selected="bootstrap.settings.doubanDataProxy === 'cdn-tx'">豆瓣 CDN By CMLiussss（腾讯云）</option>
-                    <option value="cdn-ali" :selected="bootstrap.settings.doubanDataProxy === 'cdn-ali'">豆瓣 CDN By CMLiussss（阿里云）</option>
-                    <option value="custom" :selected="bootstrap.settings.doubanDataProxy === 'custom'">自定义代理</option>
-                  </select>
-                  <div id="doubanDataCustom" class="mt-2" :class="{ hidden: bootstrap.settings.doubanDataProxy !== 'custom' }">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣代理地址</label>
-                    <input
-                      name="doubanDataCustom"
-                      class="tv-field"
-                      placeholder="例如：https://proxy.example.com/fetch?url="
-                      :value="bootstrap.settings.doubanDataCustom"
-                    />
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义代理服务器地址</p>
-                  </div>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理</label>
-                  <select name="doubanImgProxy" id="doubanImgSelect" class="custom-select tv-field">
-                    <option value="direct-browser" :selected="bootstrap.settings.doubanImgProxy === 'direct-browser'">直连（浏览器直接请求豆瓣）</option>
-                    <option value="server-proxy" :selected="bootstrap.settings.doubanImgProxy === 'server-proxy'">服务器代理（由服务器代理请求豆瓣）</option>
-                    <option value="douban-cdn-ali" :selected="bootstrap.settings.doubanImgProxy === 'douban-cdn-ali'">豆瓣官方精品 CDN（阿里云）</option>
-                    <option value="cdn-tx" :selected="bootstrap.settings.doubanImgProxy === 'cdn-tx'">豆瓣 CDN By CMLiussss（腾讯云）</option>
-                    <option value="cdn-ali" :selected="bootstrap.settings.doubanImgProxy === 'cdn-ali'">豆瓣 CDN By CMLiussss（阿里云）</option>
-                    <option value="custom" :selected="bootstrap.settings.doubanImgProxy === 'custom'">自定义代理</option>
-                  </select>
-                  <div id="doubanImgCustom" class="mt-2" :class="{ hidden: bootstrap.settings.doubanImgProxy !== 'custom' }">
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理地址</label>
-                    <input
-                      name="doubanImgCustom"
-                      class="tv-field"
-                      placeholder="例如：https://proxy.example.com/fetch?url="
-                      :value="bootstrap.settings.doubanImgCustom"
-                    />
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义图片代理服务器地址</p>
-                  </div>
-                </div>
               </div>
             </div>
           </form>
@@ -795,62 +752,105 @@
 	            </form>
 	          </div>
 	        </section>
-	        <section v-if="bootstrap.user.role === 'admin'" id="adminTmdb" class="admin-panel hidden space-y-6">
-	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
-	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-600 dark:text-gray-300"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
-	            TMDB 设置
-	          </div>
+		        <section v-if="bootstrap.user.role === 'admin'" id="adminMetadata" class="admin-panel hidden space-y-6">
+		          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
+		            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-600 dark:text-gray-300"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
+		            媒体数据设置
+		          </div>
 
-	          <div class="admin-card space-y-4">
-	            <div class="flex items-center gap-3">
-	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">TMDB 配置</div>
-	              <div id="tmdbSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
-	            </div>
+		          <div class="admin-card space-y-4">
+		            <div class="flex items-center gap-3">
+		              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">豆瓣配置</div>
+		              <div id="metadataSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
+		            </div>
 
-	            <form id="tmdbSettingsForm" class="space-y-4">
-	              <div class="space-y-1">
-	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Read Access Token（v4）</div>
-	                <input id="tmdbV4Token" class="tv-field" type="text" placeholder="可选：v4 Token（推荐）" autocomplete="off" />
-	                <div class="text-xs text-gray-500 dark:text-gray-400">建议使用 v4 Token（Bearer）。也可仅填 v3 Key。</div>
-	              </div>
+		            <form id="metadataSettingsForm" class="space-y-6">
+                  <div class="space-y-4">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣数据代理</label>
+                      <select id="doubanDataSelect" class="custom-select tv-field">
+                        <option value="direct">直连（浏览器直接请求豆瓣）</option>
+                        <option value="cors">Cors Proxy By Zwei</option>
+                        <option value="cdn-tx">豆瓣 CDN By CMLiussss（腾讯云）</option>
+                        <option value="cdn-ali">豆瓣 CDN By CMLiussss（阿里云）</option>
+                        <option value="custom">自定义代理</option>
+                      </select>
+                      <div id="doubanDataCustom" class="mt-2 hidden">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣代理地址</label>
+                        <input id="doubanDataCustomInput" class="tv-field" placeholder="例如：https://proxy.example.com/fetch?url=" autocomplete="off" />
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义代理服务器地址</p>
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理</label>
+                      <select id="doubanImgSelect" class="custom-select tv-field">
+                        <option value="direct-browser">直连（浏览器直接请求豆瓣）</option>
+                        <option value="server-proxy">服务器代理（由服务器代理请求豆瓣）</option>
+                        <option value="douban-cdn-ali">豆瓣官方精品 CDN（阿里云）</option>
+                        <option value="cdn-tx">豆瓣 CDN By CMLiussss（腾讯云）</option>
+                        <option value="cdn-ali">豆瓣 CDN By CMLiussss（阿里云）</option>
+                        <option value="custom">自定义代理</option>
+                      </select>
+                      <div id="doubanImgCustom" class="mt-2 hidden">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理地址</label>
+                        <input id="doubanImgCustomInput" class="tv-field" placeholder="例如：https://proxy.example.com/fetch?url=" autocomplete="off" />
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义图片代理服务器地址</p>
+                      </div>
+                    </div>
+                  </div>
 
-		              <div class="space-y-1">
-		                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Key（v3）</div>
-		                <input id="tmdbV3Key" class="tv-field" type="text" placeholder="可选：v3 API Key" autocomplete="off" />
+                  <div class="pt-4 border-t border-gray-200 dark:border-white/10 space-y-4">
+                    <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">TMDB 设置</div>
+
+                    <div class="space-y-1">
+                      <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API TOKEN</div>
+                      <input id="tmdbApiToken" class="tv-field" type="text" placeholder="可选：v3 API Key 或 v4 Token" autocomplete="off" />
+                      <div class="text-xs text-gray-500 dark:text-gray-400">填入 v3 或 v4 任意一种，系统会自动识别并使用。</div>
+                    </div>
+
+                    <details class="tv-panel p-3">
+                      <summary class="text-sm font-medium text-gray-700 dark:text-gray-200 cursor-pointer select-none">TMDB 代理（可选）</summary>
+                      <div class="mt-3 space-y-3">
+                        <div class="space-y-1">
+                          <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB 数据代理地址</div>
+                          <input id="tmdbDataProxyBase" class="tv-field" type="text" placeholder="example.com" autocomplete="off" />
+                          <div class="text-xs text-gray-500 dark:text-gray-400">可配合 GoProxy：例如 `https://你的域名/proxy/tmdb/3`（支持二级目录）。</div>
+                        </div>
+                        <div class="space-y-1">
+                          <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB 图片代理地址</div>
+                          <input id="tmdbImageProxyBase" class="tv-field" type="text" placeholder="example.com" autocomplete="off" />
+                          <div class="text-xs text-gray-500 dark:text-gray-400">可配合 GoProxy：例如 `https://你的域名/proxy/tmdb-img`（支持二级目录）。</div>
+                        </div>
+                      </div>
+                    </details>
+
+                    <div class="grid gap-3 sm:grid-cols-3">
+                      <div class="space-y-1">
+                        <div class="text-sm font-medium text-gray-700 dark:text-gray-200">语言</div>
+                        <input id="tmdbLanguage" class="tv-field" placeholder="zh-CN" autocomplete="off" />
+                      </div>
+                      <div class="space-y-1">
+                        <div class="text-sm font-medium text-gray-700 dark:text-gray-200">地区</div>
+                        <input id="tmdbRegion" class="tv-field" placeholder="CN" autocomplete="off" />
+                      </div>
+                      <div class="space-y-1">
+                        <div class="text-sm font-medium text-gray-700 dark:text-gray-200">包含成人内容</div>
+                        <div>
+                          <label class="enable-switch" title="包含成人内容">
+                            <input id="tmdbIncludeAdult" type="checkbox" />
+                            <span class="enable-slider"></span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+		              <div class="pt-1 flex justify-start">
+		                <button type="submit" class="btn-green">保存</button>
 		              </div>
-
-		              <div class="space-y-1">
-		                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">TMDB API Base（可选）</div>
-		                <input id="tmdbApiBase" class="tv-field" type="text" placeholder="留空为默认：https://api.themoviedb.org/3（也可填：https://你的代理域名/tmdb）" autocomplete="off" />
-		                <div class="text-xs text-gray-500 dark:text-gray-400">用于配置 TMDB 加速/反代入口（按 base 拼接 search/multi、movie/:id、tv/:id）。</div>
-		              </div>
-
-		              <div class="grid gap-3 sm:grid-cols-3">
-		                <div class="space-y-1">
-		                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">语言</div>
-	                  <input id="tmdbLanguage" class="tv-field" placeholder="zh-CN" autocomplete="off" />
-	                </div>
-	                <div class="space-y-1">
-	                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">地区</div>
-	                  <input id="tmdbRegion" class="tv-field" placeholder="CN" autocomplete="off" />
-	                </div>
-	                <div class="space-y-1">
-	                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">包含成人内容</div>
-	                  <div>
-	                    <label class="enable-switch" title="包含成人内容">
-	                      <input id="tmdbIncludeAdult" type="checkbox" />
-	                      <span class="enable-slider"></span>
-	                    </label>
-	                  </div>
-	                </div>
-	              </div>
-
-	              <div class="pt-1 flex justify-start">
-	                <button type="submit" class="btn-green">保存</button>
-	              </div>
-	            </form>
-	          </div>
-	        </section>
+		            </form>
+		          </div>
+		        </section>
 	        <section v-if="bootstrap.user.role === 'admin'" id="adminMagic" class="admin-panel hidden space-y-6">
 	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
 	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-600 dark:text-gray-300"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>

@@ -111,11 +111,15 @@ export function initDashboardPage(bootstrap = {}) {
   const smartPlayEnabledInput = document.getElementById('smartPlayEnabled');
   const smartListEnabledInput = document.getElementById('smartListEnabled');
 
-  const tmdbSettingsForm = document.getElementById('tmdbSettingsForm');
-  const tmdbSaveStatus = document.getElementById('tmdbSaveStatus');
-  const tmdbV4TokenInput = document.getElementById('tmdbV4Token');
-  const tmdbV3KeyInput = document.getElementById('tmdbV3Key');
-  const tmdbApiBaseInput = document.getElementById('tmdbApiBase');
+  const metadataSettingsForm = document.getElementById('metadataSettingsForm');
+  const metadataSaveStatus = document.getElementById('metadataSaveStatus');
+
+  const doubanDataCustomInput = document.getElementById('doubanDataCustomInput');
+  const doubanImgCustomInput = document.getElementById('doubanImgCustomInput');
+
+  const tmdbApiTokenInput = document.getElementById('tmdbApiToken');
+  const tmdbDataProxyBaseInput = document.getElementById('tmdbDataProxyBase');
+  const tmdbImageProxyBaseInput = document.getElementById('tmdbImageProxyBase');
   const tmdbLanguageInput = document.getElementById('tmdbLanguage');
   const tmdbRegionInput = document.getElementById('tmdbRegion');
   const tmdbIncludeAdultInput = document.getElementById('tmdbIncludeAdult');
@@ -127,7 +131,7 @@ export function initDashboardPage(bootstrap = {}) {
     pan: false,
     interface: false,
     magic: false,
-    tmdb: false,
+    metadata: false,
   };
   const panelLoading = {
     site: false,
@@ -136,7 +140,7 @@ export function initDashboardPage(bootstrap = {}) {
     pan: false,
     interface: false,
     magic: false,
-    tmdb: false,
+    metadata: false,
   };
 
   const CLS = {
@@ -597,7 +601,7 @@ export function initDashboardPage(bootstrap = {}) {
     return list;
   };
   let initialPanelKey = null;
-  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic', 'tmdb']);
+  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic', 'metadata']);
   const normalizePanelKey = (key) => {
     const k = typeof key === 'string' ? key.trim().toLowerCase() : '';
     return allowedPanels.has(k) ? k : 'site';
@@ -2073,7 +2077,7 @@ export function initDashboardPage(bootstrap = {}) {
         return;
       }
       try {
-        const { resp, data } = await postJsonSafe('/dashboard/pan/baidu/qr/cookie', { qid: baiduQrState.qid });
+        const { resp, data } = await postJsonSafe('/dashboard/pan/baidu/cookie', { qid: baiduQrState.qid });
         if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
           const cookie = String(data.cookie || '');
           const textarea = panSettingsContent
@@ -2138,7 +2142,7 @@ export function initDashboardPage(bootstrap = {}) {
         return;
       }
       try {
-        const { resp, data } = await postJsonSafe('/dashboard/pan/quark/qr/cookie', { qid: quarkQrState.qid });
+        const { resp, data } = await postJsonSafe('/dashboard/pan/quark/cookie', { qid: quarkQrState.qid });
         if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
           const cookie = String(data.cookie || '');
           const textarea = panSettingsContent
@@ -2203,7 +2207,7 @@ export function initDashboardPage(bootstrap = {}) {
         return;
       }
       try {
-        const { resp, data } = await postJsonSafe('/dashboard/pan/uc/qr/cookie', { qid: ucQrState.qid });
+        const { resp, data } = await postJsonSafe('/dashboard/pan/uc/cookie', { qid: ucQrState.qid });
         if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
           const cookie = String(data.cookie || '');
           const textarea = panSettingsContent
@@ -2268,7 +2272,7 @@ export function initDashboardPage(bootstrap = {}) {
         return;
       }
       try {
-        const { resp, data } = await postJsonSafe('/dashboard/pan/115/qr/cookie', { qid: pan115QrState.qid });
+        const { resp, data } = await postJsonSafe('/dashboard/pan/115/cookie', { qid: pan115QrState.qid });
         if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
           const cookie = String(data.cookie || '');
           const textarea = panSettingsContent
@@ -2333,7 +2337,7 @@ export function initDashboardPage(bootstrap = {}) {
         return;
       }
       try {
-        const { resp, data } = await postJsonSafe('/dashboard/pan/bili/qr/cookie', { qid: biliQrState.qid });
+        const { resp, data } = await postJsonSafe('/dashboard/pan/bili/cookie', { qid: biliQrState.qid });
         if (resp.ok && data && data.success === true && typeof data.cookie === 'string') {
           const cookie = String(data.cookie || '');
           const textarea = panSettingsContent
@@ -3018,7 +3022,7 @@ export function initDashboardPage(bootstrap = {}) {
           setPanSettingsStatus('', '生成二维码...');
           baiduQrState.status = 'starting';
           baiduQrState.message = '';
-          const { resp, data } = await postJsonSafe('/dashboard/pan/baidu/qr/start', {});
+          const { resp, data } = await postJsonSafe('/dashboard/pan/baidu/start', {});
           if (!resp.ok || !data || data.success !== true) {
             const msg = (data && data.message) ? String(data.message) : '生成失败';
             baiduQrState.status = 'error';
@@ -3051,7 +3055,7 @@ export function initDashboardPage(bootstrap = {}) {
           setPanSettingsStatus('', '生成二维码...');
           quarkQrState.status = 'starting';
           quarkQrState.message = '';
-          const { resp, data } = await postJsonSafe('/dashboard/pan/quark/qr/start', {});
+          const { resp, data } = await postJsonSafe('/dashboard/pan/quark/start', {});
           if (!resp.ok || !data || data.success !== true) {
             const msg = (data && data.message) ? String(data.message) : '生成失败';
             quarkQrState.status = 'error';
@@ -3084,7 +3088,7 @@ export function initDashboardPage(bootstrap = {}) {
           setPanSettingsStatus('', '生成二维码...');
           ucQrState.status = 'starting';
           ucQrState.message = '';
-          const { resp, data } = await postJsonSafe('/dashboard/pan/uc/qr/start', {});
+          const { resp, data } = await postJsonSafe('/dashboard/pan/uc/start', {});
           if (!resp.ok || !data || data.success !== true) {
             const msg = (data && data.message) ? String(data.message) : '生成失败';
             ucQrState.status = 'error';
@@ -3117,7 +3121,7 @@ export function initDashboardPage(bootstrap = {}) {
           setPanSettingsStatus('', '生成二维码...');
           pan115QrState.status = 'starting';
           pan115QrState.message = '';
-          const { resp, data } = await postJsonSafe('/dashboard/pan/115/qr/start', {});
+          const { resp, data } = await postJsonSafe('/dashboard/pan/115/start', {});
           if (!resp.ok || !data || data.success !== true) {
             const msg = (data && data.message) ? String(data.message) : '生成失败';
             pan115QrState.status = 'error';
@@ -3150,7 +3154,7 @@ export function initDashboardPage(bootstrap = {}) {
           setPanSettingsStatus('', '生成二维码...');
           biliQrState.status = 'starting';
           biliQrState.message = '';
-          const { resp, data } = await postJsonSafe('/dashboard/pan/bili/qr/start', {});
+          const { resp, data } = await postJsonSafe('/dashboard/pan/bili/start', {});
           if (!resp.ok || !data || data.success !== true) {
             const msg = (data && data.message) ? String(data.message) : '生成失败';
             biliQrState.status = 'error';
@@ -6482,27 +6486,27 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const fetchSiteSettings = async () => getSuccessJson('/dashboard/site/settings');
-  const fetchTMDBSettings = async () => getSuccessJson('/dashboard/tmdb/settings');
+  const fetchMetadataSettings = async () => getSuccessJson('/dashboard/metadata/settings');
 
-  let tmdbSettingsCache = null;
-  let tmdbSettingsCachePromise = null;
-  const getTMDBSettingsCached = async ({ force = false } = {}) => {
+  let metadataSettingsCache = null;
+  let metadataSettingsCachePromise = null;
+  const getMetadataSettingsCached = async ({ force = false } = {}) => {
     if (!force) {
-      if (tmdbSettingsCache && typeof tmdbSettingsCache === 'object') return tmdbSettingsCache;
-      if (tmdbSettingsCachePromise) return tmdbSettingsCachePromise;
+      if (metadataSettingsCache && typeof metadataSettingsCache === 'object') return metadataSettingsCache;
+      if (metadataSettingsCachePromise) return metadataSettingsCachePromise;
     }
 
-    tmdbSettingsCachePromise = (async () => {
-      const data = await fetchTMDBSettings();
-      tmdbSettingsCache = data && typeof data === 'object' ? data : null;
-      tmdbSettingsCachePromise = null;
-      return tmdbSettingsCache;
+    metadataSettingsCachePromise = (async () => {
+      const data = await fetchMetadataSettings();
+      metadataSettingsCache = data && typeof data === 'object' ? data : null;
+      metadataSettingsCachePromise = null;
+      return metadataSettingsCache;
     })();
 
     try {
-      return await tmdbSettingsCachePromise;
+      return await metadataSettingsCachePromise;
     } catch (e) {
-      tmdbSettingsCachePromise = null;
+      metadataSettingsCachePromise = null;
       throw e;
     }
   };
@@ -6544,19 +6548,18 @@ export function initDashboardPage(bootstrap = {}) {
 
     let s = null;
     try {
-      s = await getTMDBSettingsCached();
+      s = await getMetadataSettingsCached();
     } catch (_e) {
       s = null;
     }
-    const v4 = s && typeof s.v4Token === 'string' ? s.v4Token.trim() : '';
-    const v3 = s && typeof s.v3Key === 'string' ? s.v3Key.trim() : '';
-    if (v4 || v3) {
+    const token = s && typeof s.tmdbApiToken === 'string' ? s.tmdbApiToken.trim() : '';
+    if (token) {
       setSearchDisplayModeError('', '');
       return true;
     }
     setSearchDisplayModeError('', '');
     syncCustomSelectValue('searchDisplayModeSelect', 'sites', { dispatch: false });
-    if (toast) notify.error('TMDB Token未设置');
+    if (toast) notify.error('TMDB API TOKEN 未设置');
     return false;
   };
 
@@ -6568,11 +6571,7 @@ export function initDashboardPage(bootstrap = {}) {
       if (!settings) return;
 
       setInputValueByName('siteName', settings.siteName || '');
-      setInputValueByName('doubanDataCustom', settings.doubanDataCustom || '');
-      setInputValueByName('doubanImgCustom', settings.doubanImgCustom || '');
       syncCustomSelectValue('searchDisplayModeSelect', settings.searchDisplayMode || 'sites');
-      syncCustomSelectValue('doubanDataSelect', settings.doubanDataProxy || 'direct');
-      syncCustomSelectValue('doubanImgSelect', settings.doubanImgProxy || 'direct-browser');
       if (searchBadgePreferEpisodeInput) {
         searchBadgePreferEpisodeInput.checked = !!settings.searchBadgePreferEpisode;
       }
@@ -7306,85 +7305,89 @@ export function initDashboardPage(bootstrap = {}) {
 	    }
 	  };
 
-  const saveTMDBSettings = async (payload) => {
-    const { resp, data } = await postJsonSafe('/dashboard/tmdb/settings', payload);
-    if (!resp.ok || !data || data.success !== true) {
-      throw new Error((data && data.message) || `HTTP ${resp.status}`);
-    }
-    return data;
-  };
+	  const saveMetadataSettings = async (payload) => {
+	    const { resp, data } = await postJsonSafe('/dashboard/metadata/settings', payload);
+	    if (!resp.ok || !data || data.success !== true) {
+	      throw new Error((data && data.message) || `HTTP ${resp.status}`);
+	    }
+	    return data;
+	  };
 
-  let tmdbSaving = false;
-  const setTMDBStatus = bindInlineStatus(tmdbSaveStatus);
+	  let metadataSaving = false;
+	  const setMetadataStatus = bindInlineStatus(metadataSaveStatus);
 
-  const renderTMDBPanel = (data) => {
-    const s = data && typeof data === 'object' ? data : {};
-    if (tmdbV4TokenInput) tmdbV4TokenInput.value = typeof s.v4Token === 'string' ? s.v4Token : '';
-    if (tmdbV3KeyInput) tmdbV3KeyInput.value = typeof s.v3Key === 'string' ? s.v3Key : '';
-    if (tmdbApiBaseInput) tmdbApiBaseInput.value = typeof s.apiBase === 'string' ? s.apiBase : '';
-    if (tmdbLanguageInput) tmdbLanguageInput.value = typeof s.language === 'string' ? s.language : 'zh-CN';
-    if (tmdbRegionInput) tmdbRegionInput.value = typeof s.region === 'string' ? s.region : 'CN';
-    if (tmdbIncludeAdultInput) tmdbIncludeAdultInput.checked = !!s.includeAdult;
-  };
+	  const renderMetadataPanel = (data) => {
+	    const s = data && typeof data === 'object' ? data : {};
 
-  const loadTMDBPanel = async () => {
-    if (panelLoaded.tmdb || panelLoading.tmdb) return;
-    if (!tmdbSettingsForm) return;
-    panelLoading.tmdb = true;
-    setTMDBStatus('', '加载中...');
-    try {
-      const data = await getTMDBSettingsCached();
-      if (!data) {
-        setTMDBStatus('error', '加载失败');
-        return;
-      }
-      renderTMDBPanel(data);
-      setTMDBStatus('', '');
-      panelLoaded.tmdb = true;
-    } finally {
-      panelLoading.tmdb = false;
-    }
-  };
+      syncCustomSelectValue('doubanDataSelect', s.doubanDataProxy || 'direct');
+      syncCustomSelectValue('doubanImgSelect', s.doubanImgProxy || 'direct-browser');
+      if (doubanDataCustomInput) doubanDataCustomInput.value = typeof s.doubanDataCustom === 'string' ? s.doubanDataCustom : '';
+      if (doubanImgCustomInput) doubanImgCustomInput.value = typeof s.doubanImgCustom === 'string' ? s.doubanImgCustom : '';
 
-  if (tmdbSettingsForm) {
-    tmdbSettingsForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      if (tmdbSaving) return;
-      tmdbSaving = true;
-      const submitBtn = tmdbSettingsForm.querySelector('button[type="submit"]');
-      setButtonLoading(submitBtn, true);
-      setTMDBStatus('', '');
-      try {
-        const payload = {
-          v4Token: tmdbV4TokenInput ? (tmdbV4TokenInput.value || '').trim() : '',
-          v3Key: tmdbV3KeyInput ? (tmdbV3KeyInput.value || '').trim() : '',
-          apiBase: tmdbApiBaseInput ? (tmdbApiBaseInput.value || '').trim() : '',
-          language: tmdbLanguageInput ? (tmdbLanguageInput.value || '').trim() : '',
-          region: tmdbRegionInput ? (tmdbRegionInput.value || '').trim() : '',
-          includeAdult: !!(tmdbIncludeAdultInput && tmdbIncludeAdultInput.checked),
-        };
-        const data = await saveTMDBSettings(payload);
-        tmdbSettingsCache = data && typeof data === 'object' ? data : tmdbSettingsCache;
-        renderTMDBPanel(data);
-        const v4 = tmdbSettingsCache && typeof tmdbSettingsCache.v4Token === 'string' ? tmdbSettingsCache.v4Token.trim() : '';
-        const v3 = tmdbSettingsCache && typeof tmdbSettingsCache.v3Key === 'string' ? tmdbSettingsCache.v3Key.trim() : '';
-        if (v4 || v3) {
-          setSearchDisplayModeError('', '');
-        } else {
+	    if (tmdbApiTokenInput) tmdbApiTokenInput.value = typeof s.tmdbApiToken === 'string' ? s.tmdbApiToken : '';
+      if (tmdbDataProxyBaseInput) tmdbDataProxyBaseInput.value = typeof s.tmdbDataProxyBase === 'string' ? s.tmdbDataProxyBase : '';
+      if (tmdbImageProxyBaseInput) tmdbImageProxyBaseInput.value = typeof s.tmdbImageProxyBase === 'string' ? s.tmdbImageProxyBase : '';
+	    if (tmdbLanguageInput) tmdbLanguageInput.value = typeof s.language === 'string' ? s.language : 'zh-CN';
+	    if (tmdbRegionInput) tmdbRegionInput.value = typeof s.region === 'string' ? s.region : 'CN';
+	    if (tmdbIncludeAdultInput) tmdbIncludeAdultInput.checked = !!s.includeAdult;
+	  };
+
+	  const loadMetadataPanel = async () => {
+	    if (panelLoaded.metadata || panelLoading.metadata) return;
+	    if (!metadataSettingsForm) return;
+	    panelLoading.metadata = true;
+	    setMetadataStatus('', '加载中...');
+	    try {
+	      const data = await getMetadataSettingsCached();
+	      if (!data) {
+	        setMetadataStatus('error', '加载失败');
+	        return;
+	      }
+	      renderMetadataPanel(data);
+	      setMetadataStatus('', '');
+	      panelLoaded.metadata = true;
+	    } finally {
+	      panelLoading.metadata = false;
+	    }
+	  };
+
+	  if (metadataSettingsForm) {
+	    metadataSettingsForm.addEventListener('submit', async (e) => {
+	      e.preventDefault();
+	      if (metadataSaving) return;
+	      metadataSaving = true;
+	      const submitBtn = metadataSettingsForm.querySelector('button[type="submit"]');
+	      setButtonLoading(submitBtn, true);
+	      setMetadataStatus('', '');
+	      try {
+	        const payload = {
+            doubanDataProxy: dataSelect ? (dataSelect.value || '').trim() : '',
+            doubanDataCustom: doubanDataCustomInput ? (doubanDataCustomInput.value || '').trim() : '',
+            doubanImgProxy: imgSelect ? (imgSelect.value || '').trim() : '',
+            doubanImgCustom: doubanImgCustomInput ? (doubanImgCustomInput.value || '').trim() : '',
+	          tmdbApiToken: tmdbApiTokenInput ? (tmdbApiTokenInput.value || '').trim() : '',
+	          tmdbDataProxyBase: tmdbDataProxyBaseInput ? (tmdbDataProxyBaseInput.value || '').trim() : '',
+	          tmdbImageProxyBase: tmdbImageProxyBaseInput ? (tmdbImageProxyBaseInput.value || '').trim() : '',
+	          language: tmdbLanguageInput ? (tmdbLanguageInput.value || '').trim() : '',
+	          region: tmdbRegionInput ? (tmdbRegionInput.value || '').trim() : '',
+	          includeAdult: !!(tmdbIncludeAdultInput && tmdbIncludeAdultInput.checked),
+	        };
+	        const data = await saveMetadataSettings(payload);
+	        metadataSettingsCache = data && typeof data === 'object' ? data : metadataSettingsCache;
+	        renderMetadataPanel(data);
           void validateSearchDisplayModeToken({ toast: false });
-        }
-        setTMDBStatus('', '');
-        notify.success('保存成功');
-      } catch (err) {
-        const msg = (err && err.message) || '保存失败';
-        setTMDBStatus('', '');
-        notify.error(msg);
-      } finally {
-        tmdbSaving = false;
-        setButtonLoading(submitBtn, false);
-      }
-    });
-  }
+	        setMetadataStatus('', '');
+	        notify.success('保存成功');
+	      } catch (err) {
+	        const msg = (err && err.message) || '保存失败';
+	        setMetadataStatus('', '');
+	        notify.error(msg);
+	      } finally {
+	        metadataSaving = false;
+	        setButtonLoading(submitBtn, false);
+	      }
+	    });
+	  }
 
   const fetchSmartSettings = async () => getSuccessJson('/dashboard/smart/settings');
 
@@ -7970,7 +7973,7 @@ export function initDashboardPage(bootstrap = {}) {
     if (key === 'pan') return loadPanPanel();
     if (key === 'interface') return loadInterfacePanel();
     if (key === 'magic') return loadMagicPanel();
-    if (key === 'tmdb') return loadTMDBPanel();
+    if (key === 'metadata') return loadMetadataPanel();
     return null;
   }
 
