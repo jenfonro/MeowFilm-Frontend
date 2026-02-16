@@ -674,6 +674,7 @@ export function initSearchPage() {
       if (seenKeys) seenKeys.add(uniq);
 
       const mediaType = it && it.type ? String(it.type) : '';
+      const mediaTypeNormalized = normalizeTmdbMediaType(mediaType);
       const tmdbIdRaw = it && it.id != null ? Number(it.id) : 0;
       const tmdbId = Number.isFinite(tmdbIdRaw) && tmdbIdRaw > 0 ? Math.floor(tmdbIdRaw) : 0;
       const badgeText = it && typeof it.badge === 'string' ? it.badge.trim() : '';
@@ -694,7 +695,7 @@ export function initSearchPage() {
       wrapper.className = 'w-full';
       wrapper.dataset.siteKey = 'tmdb';
       wrapper.dataset.videoId = id;
-      if (mediaType) wrapper.dataset.tmdbType = mediaType;
+      if (mediaTypeNormalized) wrapper.dataset.tmdbType = mediaTypeNormalized;
       if (it && typeof it.__groupKey === 'string' && it.__groupKey) wrapper.dataset.titleAggKey = it.__groupKey;
       wrapper.dataset.siteOrder = '-1';
       if (it && it.__tmdbRank != null) {
@@ -710,17 +711,17 @@ export function initSearchPage() {
       const scoreFinal = Number.isFinite(Number(it && it.__score)) ? Number(it.__score) : score;
       const scoreFinalBoosted = scoreFinal;
 
-	      const mt = normalizeTmdbMediaType(mediaType);
+	      const mt = mediaTypeNormalized;
 	      const typeLabel = mt === 'tv' ? '剧集' : mt === 'movie' ? '电影' : '';
 	      const siteLabel = typeLabel;
 	      const groupKey = it && typeof it.__groupKey === 'string' ? String(it.__groupKey) : '';
 	      const detail = {
         tmdbId,
-        tmdbType: mediaType,
+        tmdbType: mt,
         contentKey: groupKey || '',
         videoTitle: titleText,
         videoYear: it && it.year != null ? String(it.year) : '',
-        searchType: mediaType === 'movie' ? 'movie' : mediaType === 'tv' ? 'tv' : '',
+        searchType: mt,
         siteKey: '',
         spiderApi: '',
         videoId: it && it.id != null ? String(it.id) : '',

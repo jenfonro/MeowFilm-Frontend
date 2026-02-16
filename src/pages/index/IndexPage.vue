@@ -798,12 +798,7 @@ const syncMobileContextFromStorage = () => {
 			      videoPanDir: typeof d.videoPanDir === 'string' ? d.videoPanDir : '',
 			      contentKey: typeof d.contentKey === 'string' ? d.contentKey : '',
 			      tmdbId: Number.isFinite(Number(d.tmdbId)) ? Number(d.tmdbId) : 0,
-			      tmdbType: (() => {
-			        const direct = typeof d.tmdbType === 'string' ? d.tmdbType.trim().toLowerCase() : '';
-			        if (direct) return direct;
-			        const fallback = typeof d.searchType === 'string' ? d.searchType.trim().toLowerCase() : '';
-			        return fallback;
-			      })(),
+			      tmdbType: typeof d.tmdbType === 'string' ? d.tmdbType.trim().toLowerCase() : '',
 			    };
 
 		    const prevTmdbId = Number.isFinite(Number(prevParams.tmdbId)) ? Number(prevParams.tmdbId) : 0;
