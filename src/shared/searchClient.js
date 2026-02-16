@@ -1459,15 +1459,16 @@ export function initSearchPage() {
 
 	      let anyUpdating = false;
 	      let anyEnded = false;
+	      let base = { season: 0, episode: 0, ended: false, updating: false };
 	      let best = { season: 0, episode: 0 };
 	      let maxSeasonHint = 0;
 	      let maxTotalEpisode = 0;
 	      let seasonCountFromRemark = 0;
 
-	      const consider = (info, seasonHintFallback) => {
+	      const consider = (info, seasonHintFallback, { capByBase } = {}) => {
 	        const seasonHint = Number.isFinite(Number(seasonHintFallback)) ? Math.floor(Number(seasonHintFallback)) : 0;
 	        const season = info.season > 0 ? info.season : seasonHint > 0 ? seasonHint : 0;
-	        const episode = info.episode > 0 ? info.episode : 0;
+	        let episode = info.episode > 0 ? info.episode : 0;
 	        const totalEpisode = info.totalEpisode > 0 ? info.totalEpisode : 0;
 	        const seasonCount = info.seasonCount > 0 ? info.seasonCount : 0;
 
@@ -1479,13 +1480,30 @@ export function initSearchPage() {
 	        if (info.ended) anyEnded = true;
 
 	        if (episode > 0) {
+	          if (capByBase && base.episode > 0) {
+	            const cap = base.episode + 5;
+	            if (episode > cap) episode = cap;
+	          }
 	          const s = season > 0 ? season : 1;
 	          const prevS = best.season > 0 ? best.season : 1;
 	          if (s > prevS || (s === prevS && episode > best.episode)) best = { season: s, episode };
 	        }
 	      };
 
-	      if (badge) consider(parseAggregateEpisodeBadgeInfo(badge), extractSeasonHintFromText(badge) || extractSeasonHintFromText(title));
+	      if (badge) {
+	        const hint = extractSeasonHintFromText(badge) || extractSeasonHintFromText(title);
+	        const parsed = parseAggregateEpisodeBadgeInfo(badge);
+	        const season = parsed.season > 0 ? parsed.season : hint > 0 ? hint : 0;
+	        const episode = parsed.episode > 0 ? parsed.episode : 0;
+	        base = {
+	          season: season > 0 ? season : 0,
+	          episode,
+	          ended: !!parsed.ended,
+	          updating: !!parsed.updating,
+	        };
+	        best = { season: base.season > 0 ? base.season : 0, episode: base.episode > 0 ? base.episode : 0 };
+	        consider(parsed, hint, { capByBase: false });
+	      }
 
 	      list.forEach((src) => {
 	        const t = src && src.videoTitle != null ? String(src.videoTitle) : '';
@@ -1495,16 +1513,18 @@ export function initSearchPage() {
 	          extractSeasonHintFromText(r) ||
 	          extractSeasonHintFromText(title) ||
 	          0;
-	        [r, t].filter(Boolean).forEach((raw) => consider(parseAggregateEpisodeBadgeInfo(raw), seasonHint));
+	        [r, t].filter(Boolean).forEach((raw) => consider(parseAggregateEpisodeBadgeInfo(raw), seasonHint, { capByBase: true }));
 	      });
 
 	      return {
+	        baseSeason: base.season > 0 ? base.season : 0,
+	        baseEpisode: base.episode > 0 ? base.episode : 0,
 	        bestSeason: best.season > 0 ? best.season : 0,
 	        bestEpisode: best.episode > 0 ? best.episode : 0,
 	        maxSeasonHint,
 	        maxTotalEpisode,
 	        seasonCountFromRemark,
-	        ended: Boolean(anyEnded && !anyUpdating),
+	        ended: Boolean(base.ended || (anyEnded && !anyUpdating && !base.updating)),
 	      };
 	    };
 
@@ -1520,23 +1540,14 @@ export function initSearchPage() {
 	      const effectiveSeasonCount = Math.max(
 	        summary.seasonCountFromRemark > 0 ? summary.seasonCountFromRemark : 0,
 	        seasonFromSources > 1 ? seasonFromSources : 0,
-	        getEffectiveTVSeasonCountForGroupKey(gk, { fallback: getTMDBTVSeasonCountForGroupKey })
+	        getTMDBTVSeasonCountForGroupKey(gk)
 	      );
 
 	      const isMultiSeason = effectiveSeasonCount >= 2 || seasonFromSources >= 2;
 
 	      if (summary.ended) {
-	        const meta = gk ? doubanSeasonMetaByGroupKey.get(gk) || null : null;
-	        const metaSeasonCount = meta && Number.isFinite(Number(meta.seasonCount)) ? Math.floor(Number(meta.seasonCount)) : 0;
-	        const metaTotal =
-	          meta && Array.isArray(meta.seasons) && meta.seasons.length
-	            ? meta.seasons.reduce(
-	                (sum, s) => sum + (Number.isFinite(Number(s.episodeCount)) ? Math.max(0, Math.floor(Number(s.episodeCount))) : 0),
-	                0
-	              )
-	            : 0;
-	        const totalEpisode = metaTotal > 0 ? metaTotal : summary.maxTotalEpisode > 0 ? summary.maxTotalEpisode : 0;
-	        const seasonCount = metaSeasonCount > 0 ? metaSeasonCount : effectiveSeasonCount > 0 ? effectiveSeasonCount : 0;
+	        const totalEpisode = summary.maxTotalEpisode > 0 ? summary.maxTotalEpisode : 0;
+	        const seasonCount = effectiveSeasonCount > 0 ? effectiveSeasonCount : 0;
 	        if (seasonCount >= 2 && totalEpisode > 0) return `共${seasonCount}季${totalEpisode}集`;
 	        if (totalEpisode > 0) return `共${totalEpisode}集`;
 	        return '';
@@ -1846,20 +1857,19 @@ export function initSearchPage() {
           const slicedForProbe = items.slice(0, 30);
           const groupKeysActivated = new Set();
 
+          // Probe Douban season meta for multi-season titles when TMDB only has 1 season.
+          // This is used later by PlayPage to build a better episode list (not for search badge display).
           if ((searchDisplayMode === 'tmdb' || searchDisplayMode === 'both') && tmdbByGroupKeyByType.size) {
             const probes = [];
             for (let i = 0; i < slicedForProbe.length; i += 1) {
               const it = slicedForProbe[i];
               const name = it && it.name ? String(it.name) : '';
               const originalTitle = sanitizeDisplayTitle(name) || name;
-              const seasonHint =
-                extractSeasonHintFromText(originalTitle) ||
-                extractSeasonHintFromText(it && it.remark ? String(it.remark) : '');
+              const seasonHint = extractSeasonHintFromText(originalTitle) || extractSeasonHintFromText(it && it.remark ? String(it.remark) : '');
               if (!(seasonHint >= 2)) continue;
 
               const base = preCleanForRules(originalTitle) || originalTitle || name;
-              const cleanedRaw =
-                applyCleanRules(base, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) }) || base;
+              const cleanedRaw = applyCleanRules(base, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) }) || base;
               const cleanedTitle = sanitizeDisplayTitle(cleanedRaw) || cleanedRaw || base || name;
               const cleanedForMatch = normalizeDisplayTitle(cleanedTitle) || cleanedTitle || name;
               const seasonStripped = stripSeasonMarkers(cleanedForMatch);
@@ -1869,15 +1879,8 @@ export function initSearchPage() {
               if (!gkStripped || !hasTMDBTVForGroupKey(gkStripped)) continue;
 
               const tmdbSeasonCount = getTMDBTVSeasonCountForGroupKey(gkStripped);
-              dbg('douban_probe_check', {
-                site: site && site.key ? String(site.key) : '',
-                title: originalTitle,
-                seasonHint,
-                gk: gkStripped,
-                tmdbSeasonCount,
-              });
               if (tmdbSeasonCount >= seasonHint) continue;
-	              if (tmdbSeasonCount > 1) continue;
+              if (tmdbSeasonCount > 1) continue;
 
               const typed = tmdbByGroupKeyByType.get(gkStripped) || null;
               const tv = typed && typed.tv ? typed.tv : null;
@@ -1893,7 +1896,6 @@ export function initSearchPage() {
                   minSeasonHint: seasonHint,
                 })
               );
-              dbg('douban_probe_push', { gk: gkStripped, tmdbId, seasonHint });
             }
             if (probes.length) await Promise.allSettled(probes);
           }
@@ -1915,10 +1917,8 @@ export function initSearchPage() {
                 if (seasonStripped && seasonStripped !== cleanedForMatch) {
                   const gkStripped = normalizeForGroupKey(seasonStripped);
                   if (gkStripped && hasTMDBTVForGroupKey(gkStripped)) {
-                    const effectiveSeasonCount = getEffectiveTVSeasonCountForGroupKey(gkStripped, {
-                      fallback: getTMDBTVSeasonCountForGroupKey,
-                    });
-                    if (effectiveSeasonCount > 0 && seasonHint > effectiveSeasonCount) {
+                    const tmdbSeasonCount = getTMDBTVSeasonCountForGroupKey(gkStripped);
+                    if (tmdbSeasonCount > 0 && seasonHint > tmdbSeasonCount) {
                       // Do not merge site titles beyond TMDB-known seasons.
                     } else {
                       groupKeySafe = gkStripped;

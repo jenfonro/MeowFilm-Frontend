@@ -13,6 +13,17 @@ const normalizeTmdbType = (t) => {
 
 const tmdbTypeLabel = (t) => (t === 'tv' ? '剧集' : t === 'movie' ? '电影' : '');
 
+const parseTmdbFromContentKey = (contentKey) => {
+  const s = typeof contentKey === 'string' ? contentKey.trim().toLowerCase() : '';
+  if (!s.startsWith('tmdb:')) return { tmdbId: 0, tmdbType: '' };
+  const parts = s.split(':').filter(Boolean);
+  if (parts.length < 3) return { tmdbId: 0, tmdbType: '' };
+  const typ = normalizeTmdbType(parts[1]);
+  const id = Number.isFinite(Number(parts[2])) ? Math.floor(Number(parts[2])) : 0;
+  if (!typ || id <= 0) return { tmdbId: 0, tmdbType: '' };
+  return { tmdbId: id, tmdbType: typ };
+};
+
 const fetchTmdbDetailCached = async ({ id, type } = {}) => {
   const tmdbId = Number.isFinite(Number(id)) ? Math.floor(Number(id)) : 0;
   const tmdbType = normalizeTmdbType(type);
@@ -449,8 +460,15 @@ function setupHomeSpiderBrowse() {
       const videoId = it && typeof it.videoId === 'string' ? it.videoId : '';
       const videoTitle = it && typeof it.videoTitle === 'string' ? it.videoTitle : '';
       if (!siteKey || !spiderApi || !videoId || !videoTitle) return;
-      const tmdbId = it && Number.isFinite(Number(it.tmdbId)) ? Math.floor(Number(it.tmdbId)) : 0;
-      const tmdbType = normalizeTmdbType(it && typeof it.tmdbType === 'string' ? it.tmdbType : '');
+      const tmdbParsed = parseTmdbFromContentKey(contentKey);
+      const tmdbId =
+        it && Number.isFinite(Number(it.tmdbId)) && Number(it.tmdbId) > 0
+          ? Math.floor(Number(it.tmdbId))
+          : tmdbParsed.tmdbId;
+      const tmdbType = (() => {
+        const t = normalizeTmdbType(it && typeof it.tmdbType === 'string' ? it.tmdbType : '');
+        return t || tmdbParsed.tmdbType;
+      })();
       const displaySiteBadge = tmdbId > 0 && tmdbType ? tmdbTypeLabel(tmdbType) : (it && typeof it.siteName === 'string' ? it.siteName : '');
       const wrapper = createPosterCard({
         wrapperClass: 'min-w-[96px] w-24 sm:min-w-[180px] sm:w-44',

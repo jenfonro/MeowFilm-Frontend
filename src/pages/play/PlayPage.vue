@@ -8445,9 +8445,32 @@ const loadResumeFromHistory = async () => {
         const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 2000 });
         if (seqAtCall !== resumeHistoryState.seq) return;
         const items = Array.isArray(list) ? list : [];
-        const found = items.find((r) => r && r.siteKey === siteKey && r.videoId === videoId) || null;
-        resumeHistory.value = found;
+        const foundExact = items.find((r) => r && r.siteKey === siteKey && r.videoId === videoId) || null;
+        if (foundExact) {
+          resumeHistory.value = foundExact;
+        } else {
+          const tmdbId = Number(props.tmdbId || 0);
+          const tmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+          const wantedKey =
+            normalizeForAggKey(props.contentKey || '') ||
+            normalizeForAggKey(computeHistoryContentKey(props.videoTitle || ''));
+          const foundByTmdb =
+            tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie')
+              ? items.find(
+                  (r) =>
+                    r &&
+                    Number(r.tmdbId || 0) === tmdbId &&
+                    String(r.tmdbType || '').trim().toLowerCase() === tmdbType
+                ) || null
+              : null;
+          const foundByKey =
+            !foundByTmdb && wantedKey
+              ? items.find((r) => r && normalizeForAggKey(r.contentKey || '') === wantedKey) || null
+              : null;
+          resumeHistory.value = foundByTmdb || foundByKey || null;
+        }
         try {
+          const found = resumeHistory.value;
           if (tmdbMode.value && found) {
             const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
             const tmdbId = Number(props.tmdbId || 0);
