@@ -682,10 +682,25 @@ export function initSearchPage() {
         const y = it && it.year != null ? Number(it.year) : 0;
         return Number.isFinite(y) && y > 0 ? String(Math.floor(y)) : '';
       })();
-      const remarkText =
-        mediaType && mediaType.trim().toLowerCase() === 'movie'
-          ? yearText
-          : badgeText;
+      const remarkText = (() => {
+        const mt = mediaType && mediaType.trim().toLowerCase() === 'movie' ? 'movie' : mediaTypeNormalized;
+        if (mt === 'movie') return yearText;
+        const txt = badgeText;
+        if (!searchBadgePreferEpisode) return txt;
+        const mCn = String(txt || '').match(/第\s*(\d{1,3})\s*季\s*第\s*(\d{1,5})\s*(?:集|话|回|期)/i);
+        if (mCn && mCn[1] && mCn[2]) {
+          const s = Number.parseInt(String(mCn[1]), 10) || 0;
+          const e = Number.parseInt(String(mCn[2]), 10) || 0;
+          if (s > 0 && e > 0) return `更新至第${s}季第${e}集`;
+        }
+        const mSe = String(txt || '').match(/\bS\s*(\d{1,3})\s*E\s*(\d{1,5})\b/i);
+        if (mSe && mSe[1] && mSe[2]) {
+          const s = Number.parseInt(String(mSe[1]), 10) || 0;
+          const e = Number.parseInt(String(mSe[2]), 10) || 0;
+          if (s > 0 && e > 0) return `更新至第${s}季第${e}集`;
+        }
+        return txt;
+      })();
 
       const titleText = it && it.title ? String(it.title) : '';
       const fallbackTitleLen = titleText.replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '').length;
@@ -953,6 +968,7 @@ export function initSearchPage() {
     // Built-in episode extraction patterns for search result badges.
     // Keep it simple and stable; controlled by the global toggle only.
     const EPISODE_BADGE_PATTERNS = [
+      /(\d{1,5})\s*\/\s*(\d{1,5})/i,
       /(?:更新至|更至|更)\s*(\d{1,5})\s*(?:集|话|回|期)/i,
       /第\s*(\d{1,5})\s*(?:集|话|回|期)/i,
       /(\d{1,5})\s*(?:集|话|回|期)\b/i,
@@ -1281,6 +1297,7 @@ export function initSearchPage() {
           credentials: 'same-origin',
         });
         const rawItems = data && Array.isArray(data.list) ? data.list : [];
+        const tmdbSeenTitleType = new Set();
         const items = rawItems
           .map((it, idx) => {
             const name = it && it.title ? String(it.title) : '';
@@ -1311,7 +1328,18 @@ export function initSearchPage() {
 	            }
 	            return out;
 	          })
-	          .filter(Boolean);
+	          .filter(Boolean)
+	          .filter((out) => {
+	            // TMDB sometimes returns duplicates for the same title + media type.
+	            // Keep the first occurrence (lower rank) to avoid duplicate TMDB cards.
+	            const typeKey = normalizeTmdbMediaType(out && typeof out.type === 'string' ? out.type : '');
+	            const titleKey = normalizeForGroupKey(out && typeof out.__displayTitle === 'string' ? out.__displayTitle : '');
+	            if (!typeKey || !titleKey) return true;
+	            const k = `${typeKey}::${titleKey}`;
+	            if (tmdbSeenTitleType.has(k)) return false;
+	            tmdbSeenTitleType.add(k);
+	            return true;
+	          });
         dbg('tmdb_map', { size: tmdbByGroupKeyByType.size, items: items.length });
         if (!items.length) return 0;
         const appended = appendTMDBItemsToGrid({
@@ -1354,6 +1382,172 @@ export function initSearchPage() {
 
 	    const aggregateByGroup = new Map();
 	    const aggregateCardByGroup = new Map();
+
+	    const parseAggregateEpisodeBadgeInfo = (rawText) => {
+	      const raw = typeof rawText === 'string' ? rawText : '';
+	      const text = raw.trim();
+	      if (!text) return { season: 0, episode: 0, totalEpisode: 0, seasonCount: 0, ended: false, updating: false };
+
+	      const cleaned = preCleanForRules(text) || text;
+
+	      const mSeasonEpCn = cleaned.match(/第\s*(\d{1,3})\s*季\s*第\s*(\d{1,5})\s*(?:集|话|回|期)/i);
+	      if (mSeasonEpCn && mSeasonEpCn[1] && mSeasonEpCn[2]) {
+	        return {
+	          season: Math.max(0, Number.parseInt(String(mSeasonEpCn[1]), 10) || 0),
+	          episode: Math.max(0, Number.parseInt(String(mSeasonEpCn[2]), 10) || 0),
+	          totalEpisode: 0,
+	          seasonCount: 0,
+	          ended: false,
+	          updating: true,
+	        };
+	      }
+
+	      const mSeasonEp = cleaned.match(/\bS\s*(\d{1,3})\s*E\s*(\d{1,5})\b/i);
+	      if (mSeasonEp && mSeasonEp[1] && mSeasonEp[2]) {
+	        return {
+	          season: Math.max(0, Number.parseInt(String(mSeasonEp[1]), 10) || 0),
+	          episode: Math.max(0, Number.parseInt(String(mSeasonEp[2]), 10) || 0),
+	          totalEpisode: 0,
+	          seasonCount: 0,
+	          ended: false,
+	          updating: true,
+	        };
+	      }
+
+	      const mSeasonCountTotal = cleaned.match(/共\s*(\d{1,3})\s*季\s*(\d{1,5})\s*(?:集|话|回|期)/i);
+	      if (mSeasonCountTotal && mSeasonCountTotal[1] && mSeasonCountTotal[2]) {
+	        return {
+	          season: 0,
+	          episode: 0,
+	          totalEpisode: Math.max(0, Number.parseInt(String(mSeasonCountTotal[2]), 10) || 0),
+	          seasonCount: Math.max(0, Number.parseInt(String(mSeasonCountTotal[1]), 10) || 0),
+	          ended: true,
+	          updating: false,
+	        };
+	      }
+
+	      const mRange = cleaned.match(/(\d{1,5})\s*\/\s*(\d{1,5})/i);
+	      if (mRange && mRange[1] && mRange[2]) {
+	        const left = Math.max(0, Number.parseInt(String(mRange[1]), 10) || 0);
+	        const right = Math.max(0, Number.parseInt(String(mRange[2]), 10) || 0);
+	        return { season: 0, episode: left, totalEpisode: right, seasonCount: 0, ended: false, updating: left > 0 };
+	      }
+
+	      const isEndedText = /(?:已完结|完结|全集|全\s*\d{1,5}\s*(?:集|话|回|期)|\d{1,5}\s*(?:集|话|回|期)\s*全|共\s*\d{1,5}\s*(?:集|话|回|期))/i.test(cleaned);
+	      const mAll =
+	        cleaned.match(/全\s*(\d{1,5})\s*(?:集|话|回|期)/i) ||
+	        cleaned.match(/共\s*(\d{1,5})\s*(?:集|话|回|期)/i) ||
+	        cleaned.match(/(\d{1,5})\s*(?:集|话|回|期)\s*全/i);
+	      const total = mAll && mAll[1] ? Math.max(0, Number.parseInt(String(mAll[1]), 10) || 0) : 0;
+
+	      const hasUpdatingText = /(?:更新至|更至|更)\s*\d{1,5}/i.test(cleaned) || /\/\s*\d{1,5}/.test(cleaned);
+	      const ep = parseEpisodeNumber(cleaned);
+	      return {
+	        season: 0,
+	        episode: ep > 0 ? ep : 0,
+	        totalEpisode: total > 0 ? total : 0,
+	        seasonCount: 0,
+	        ended: Boolean(isEndedText && (total > 0 || !hasUpdatingText)),
+	        updating: Boolean(hasUpdatingText && ep > 0),
+	      };
+	    };
+
+	    const pickAggregateEpisodeSummary = ({ sources, tmdbBadge, groupTitle } = {}) => {
+	      const list = Array.isArray(sources) ? sources : [];
+	      const badge = typeof tmdbBadge === 'string' ? tmdbBadge.trim() : '';
+	      const title = typeof groupTitle === 'string' ? groupTitle.trim() : '';
+
+	      let anyUpdating = false;
+	      let anyEnded = false;
+	      let best = { season: 0, episode: 0 };
+	      let maxSeasonHint = 0;
+	      let maxTotalEpisode = 0;
+	      let seasonCountFromRemark = 0;
+
+	      const consider = (info, seasonHintFallback) => {
+	        const seasonHint = Number.isFinite(Number(seasonHintFallback)) ? Math.floor(Number(seasonHintFallback)) : 0;
+	        const season = info.season > 0 ? info.season : seasonHint > 0 ? seasonHint : 0;
+	        const episode = info.episode > 0 ? info.episode : 0;
+	        const totalEpisode = info.totalEpisode > 0 ? info.totalEpisode : 0;
+	        const seasonCount = info.seasonCount > 0 ? info.seasonCount : 0;
+
+	        if (seasonHint > maxSeasonHint) maxSeasonHint = seasonHint;
+	        if (season > maxSeasonHint) maxSeasonHint = season;
+	        if (totalEpisode > maxTotalEpisode) maxTotalEpisode = totalEpisode;
+	        if (seasonCount > seasonCountFromRemark) seasonCountFromRemark = seasonCount;
+	        if (info.updating) anyUpdating = true;
+	        if (info.ended) anyEnded = true;
+
+	        if (episode > 0) {
+	          const s = season > 0 ? season : 1;
+	          const prevS = best.season > 0 ? best.season : 1;
+	          if (s > prevS || (s === prevS && episode > best.episode)) best = { season: s, episode };
+	        }
+	      };
+
+	      if (badge) consider(parseAggregateEpisodeBadgeInfo(badge), extractSeasonHintFromText(badge) || extractSeasonHintFromText(title));
+
+	      list.forEach((src) => {
+	        const t = src && src.videoTitle != null ? String(src.videoTitle) : '';
+	        const r = src && src.videoRemark != null ? String(src.videoRemark) : '';
+	        const seasonHint =
+	          extractSeasonHintFromText(t) ||
+	          extractSeasonHintFromText(r) ||
+	          extractSeasonHintFromText(title) ||
+	          0;
+	        [r, t].filter(Boolean).forEach((raw) => consider(parseAggregateEpisodeBadgeInfo(raw), seasonHint));
+	      });
+
+	      return {
+	        bestSeason: best.season > 0 ? best.season : 0,
+	        bestEpisode: best.episode > 0 ? best.episode : 0,
+	        maxSeasonHint,
+	        maxTotalEpisode,
+	        seasonCountFromRemark,
+	        ended: Boolean(anyEnded && !anyUpdating),
+	      };
+	    };
+
+	    const formatAggregateTVRemark = ({ groupKey, groupTitle, tmdbBadge, sources } = {}) => {
+	      if (!searchBadgePreferEpisode) return '';
+	      const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+	      const title = typeof groupTitle === 'string' ? groupTitle.trim() : '';
+
+	      const summary = pickAggregateEpisodeSummary({ sources, tmdbBadge, groupTitle: title });
+	      const seasonFromSources = summary.bestSeason > 0 ? summary.bestSeason : summary.maxSeasonHint > 0 ? summary.maxSeasonHint : 0;
+	      const episode = summary.bestEpisode > 0 ? summary.bestEpisode : 0;
+
+	      const effectiveSeasonCount = Math.max(
+	        summary.seasonCountFromRemark > 0 ? summary.seasonCountFromRemark : 0,
+	        seasonFromSources > 1 ? seasonFromSources : 0,
+	        getEffectiveTVSeasonCountForGroupKey(gk, { fallback: getTMDBTVSeasonCountForGroupKey })
+	      );
+
+	      const isMultiSeason = effectiveSeasonCount >= 2 || seasonFromSources >= 2;
+
+	      if (summary.ended) {
+	        const meta = gk ? doubanSeasonMetaByGroupKey.get(gk) || null : null;
+	        const metaSeasonCount = meta && Number.isFinite(Number(meta.seasonCount)) ? Math.floor(Number(meta.seasonCount)) : 0;
+	        const metaTotal =
+	          meta && Array.isArray(meta.seasons) && meta.seasons.length
+	            ? meta.seasons.reduce(
+	                (sum, s) => sum + (Number.isFinite(Number(s.episodeCount)) ? Math.max(0, Math.floor(Number(s.episodeCount))) : 0),
+	                0
+	              )
+	            : 0;
+	        const totalEpisode = metaTotal > 0 ? metaTotal : summary.maxTotalEpisode > 0 ? summary.maxTotalEpisode : 0;
+	        const seasonCount = metaSeasonCount > 0 ? metaSeasonCount : effectiveSeasonCount > 0 ? effectiveSeasonCount : 0;
+	        if (seasonCount >= 2 && totalEpisode > 0) return `共${seasonCount}季${totalEpisode}集`;
+	        if (totalEpisode > 0) return `共${totalEpisode}集`;
+	        return '';
+	      }
+
+	      if (episode > 0) {
+	        if (isMultiSeason && seasonFromSources >= 2) return `更新至第${seasonFromSources}季第${episode}集`;
+	        return `更新至${episode}集`;
+	      }
+	      return '';
+	    };
 
     const removeExistingGroupCards = (groupKey) => {
       if (!groupKey) return 0;
@@ -1408,17 +1602,11 @@ export function initSearchPage() {
 
     const applyAggregateSourceBadge = (el, count) => {
       if (!el) return;
-      const n = Number.isFinite(Number(count)) ? Number(count) : 0;
-      const posterWrap = el.querySelector && el.querySelector('.douban-poster');
-      let badge = el.querySelector && el.querySelector('.tv-aggregate-source-count');
-      if (!badge && posterWrap) {
-        badge = document.createElement('div');
-        badge.className = 'douban-rate tv-aggregate-source-count';
-        posterWrap.appendChild(badge);
-      }
-      if (!badge) return;
-      badge.textContent = formatSourceCountText(n);
-      badge.title = `${Math.max(0, Math.floor(n))}个源`;
+      // Aggregation count badge is intentionally hidden (no longer useful in the UI).
+      try {
+        const existing = el.querySelector && el.querySelector('.tv-aggregate-source-count');
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+      } catch (_e) {}
     };
 
     const applyAggregateRemarkBadge = (el, remarkText) => {
@@ -1492,13 +1680,18 @@ export function initSearchPage() {
         return '剧集';
       };
       const aggregateTypeLabel = tmdbCoverTypeLabel || inferAggregateTypeLabel(title || cover.videoTitle || '');
-      const siteMaxEp = extractMaxEpisodeFromSources(sources);
       let remark = tmdbCover && tmdbCover.badge ? String(tmdbCover.badge) : cover.videoRemark || '';
       if (tmdbCoverType === 'movie') {
         const y = tmdbCover && tmdbCover.year != null ? Number(tmdbCover.year) : 0;
         remark = Number.isFinite(y) && y > 0 ? String(Math.floor(y)) : '';
-      } else if (searchBadgePreferEpisode && siteMaxEp > 0) {
-        if (!tmdbCover || !tmdbCover.badge) remark = `更新至${siteMaxEp}集`;
+      } else {
+        const aggRemark = formatAggregateTVRemark({
+          groupKey: gk,
+          groupTitle: title || cover.videoTitle || '',
+          tmdbBadge: tmdbCover && tmdbCover.badge ? String(tmdbCover.badge) : '',
+          sources,
+        });
+        if (aggRemark) remark = aggRemark;
       }
       const storageKey = normalizeAggStorageKey(gk) || normalizeAggStorageKey(title);
       if (!storageKey) return;
