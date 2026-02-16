@@ -1322,6 +1322,10 @@ export function initDashboardPage(bootstrap = {}) {
       if (panBuiltinInput && settingsResp && settingsResp.settings) {
         panBuiltinInput.checked = !!settingsResp.settings.panBuiltinResolverEnabled;
       }
+      const panMockInput = document.getElementById('catPawOpenPanMockEnabled');
+      if (panMockInput && settingsResp && settingsResp.settings) {
+        panMockInput.checked = !!settingsResp.settings.pan_mock;
+      }
       if (catPawOpenConfigListEditor && settingsResp && Array.isArray(settingsResp.onlineConfigs)) {
         catPawOpenConfigListEditor.setItems(
           settingsResp.onlineConfigs.map((it) => ({
@@ -1356,6 +1360,8 @@ export function initDashboardPage(bootstrap = {}) {
     const goProxyApi = goProxyApiInput && typeof goProxyApiInput.value === 'string' ? goProxyApiInput.value : '';
     const panBuiltinInput = document.getElementById('catPawOpenPanBuiltinResolverEnabled');
     const panBuiltinResolverEnabled = !!(panBuiltinInput && panBuiltinInput.checked);
+    const panMockInput = document.getElementById('catPawOpenPanMockEnabled');
+    const panMockEnabled = !!(panMockInput && panMockInput.checked);
     const onlineConfigs = catPawOpenConfigListEditor ? catPawOpenConfigListEditor.getItems().map((it) => ({ name: it.name, url: it.url })) : [];
     const parts = [];
     try {
@@ -1363,12 +1369,13 @@ export function initDashboardPage(bootstrap = {}) {
         apiBase: normalizedBase,
         path: 'admin/settings',
         method: 'PUT',
-        body: { proxy: String(proxy || ''), panBuiltinResolverEnabled, goProxyApi: String(goProxyApi || ''), onlineConfigs },
+        body: { proxy: String(proxy || ''), pan_mock: panMockEnabled, panBuiltinResolverEnabled, goProxyApi: String(goProxyApi || ''), onlineConfigs },
       });
       if (proxyInput && resp && resp.settings && typeof resp.settings.proxy === 'string') {
         proxyInput.value = resp.settings.proxy || '';
       }
       if (panBuiltinInput && resp && resp.settings) panBuiltinInput.checked = !!resp.settings.panBuiltinResolverEnabled;
+      if (panMockInput && resp && resp.settings) panMockInput.checked = !!resp.settings.pan_mock;
       if (catPawOpenConfigListEditor && resp && Array.isArray(resp.onlineConfigs)) {
         catPawOpenConfigListEditor.setChecksFromResults(resp.onlineConfigs);
       }

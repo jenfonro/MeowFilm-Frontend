@@ -595,6 +595,16 @@
 					                  </label>
 					                </div>
 					              </div>
+					              <div class="space-y-1 pt-1">
+					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">加速详情获取</div>
+					                <div>
+					                  <label class="enable-switch" title="加速详情获取（pan_mock）">
+					                    <input id="catPawOpenPanMockEnabled" name="catPawOpenPanMockEnabled" type="checkbox" />
+					                    <span class="enable-slider"></span>
+					                  </label>
+					                </div>
+					                <p class="text-xs text-gray-500 dark:text-gray-400">开启后会在 detail 返回中注入 pan_mock，并由 MeowFilm 直接并发请求网盘接口解析（仅影响智能播放链路）。</p>
+					              </div>
 					              <div class="space-y-2">
 					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">GoProxy API（挂载在 CatPawOpen 同机）</div>
 					                <input
