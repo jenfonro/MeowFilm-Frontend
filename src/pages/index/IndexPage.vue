@@ -785,21 +785,26 @@ const syncMobileContextFromStorage = () => {
 		    const prevContentKey = typeof prevParams.contentKey === 'string' ? prevParams.contentKey.trim() : '';
 		    const nextContentKey = typeof d.contentKey === 'string' ? d.contentKey.trim() : '';
 
-		    playParams.value = {
-		      videoTitle: typeof d.videoTitle === 'string' ? d.videoTitle : '',
-		      videoYear: typeof d.videoYear === 'string' ? d.videoYear : '',
-		      searchType: typeof d.searchType === 'string' ? d.searchType : '',
-		      siteKey: typeof d.siteKey === 'string' ? d.siteKey : '',
-		      spiderApi: typeof d.spiderApi === 'string' ? d.spiderApi : '',
-		      videoId: typeof d.videoId === 'string' ? d.videoId : '',
-		      videoIntro: typeof d.videoIntro === 'string' ? d.videoIntro : '',
-		      videoPoster: typeof d.videoPoster === 'string' ? d.videoPoster : '',
-		      videoRemark: typeof d.videoRemark === 'string' ? d.videoRemark : '',
-		      videoPanDir: typeof d.videoPanDir === 'string' ? d.videoPanDir : '',
-		      contentKey: typeof d.contentKey === 'string' ? d.contentKey : '',
-		      tmdbId: Number.isFinite(Number(d.tmdbId)) ? Number(d.tmdbId) : 0,
-		      tmdbType: typeof d.tmdbType === 'string' ? d.tmdbType.trim().toLowerCase() : '',
-		    };
+			    playParams.value = {
+			      videoTitle: typeof d.videoTitle === 'string' ? d.videoTitle : '',
+			      videoYear: typeof d.videoYear === 'string' ? d.videoYear : '',
+			      searchType: typeof d.searchType === 'string' ? d.searchType : '',
+			      siteKey: typeof d.siteKey === 'string' ? d.siteKey : '',
+			      spiderApi: typeof d.spiderApi === 'string' ? d.spiderApi : '',
+			      videoId: typeof d.videoId === 'string' ? d.videoId : '',
+			      videoIntro: typeof d.videoIntro === 'string' ? d.videoIntro : '',
+			      videoPoster: typeof d.videoPoster === 'string' ? d.videoPoster : '',
+			      videoRemark: typeof d.videoRemark === 'string' ? d.videoRemark : '',
+			      videoPanDir: typeof d.videoPanDir === 'string' ? d.videoPanDir : '',
+			      contentKey: typeof d.contentKey === 'string' ? d.contentKey : '',
+			      tmdbId: Number.isFinite(Number(d.tmdbId)) ? Number(d.tmdbId) : 0,
+			      tmdbType: (() => {
+			        const direct = typeof d.tmdbType === 'string' ? d.tmdbType.trim().toLowerCase() : '';
+			        if (direct) return direct;
+			        const fallback = typeof d.searchType === 'string' ? d.searchType.trim().toLowerCase() : '';
+			        return fallback;
+			      })(),
+			    };
 
 		    const prevTmdbId = Number.isFinite(Number(prevParams.tmdbId)) ? Number(prevParams.tmdbId) : 0;
 		    const prevTmdbType = typeof prevParams.tmdbType === 'string' ? prevParams.tmdbType.trim().toLowerCase() : '';
