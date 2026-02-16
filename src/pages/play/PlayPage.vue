@@ -1598,6 +1598,11 @@ const detail = ref({
   playUrl: '',
 });
 
+// pan_mock is returned by CatPawOpen detail; in TMDB smart flows we might not populate `detail`,
+// so keep a lightweight hint/cache for pan_mock state and Tianyi access codes.
+const panMockEnabledHint = ref(false);
+const panMock189AccessByShareIdHint = ref({});
+
 		const tmdbMeta = ref(null);
 		const doubanSeasonMeta = ref(null);
 		const tmdbMovieSmartEpisodes = ref([]);
@@ -3056,7 +3061,17 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
 	  };
 
 	  const suffix = pickSuffix();
-	  if (!suffix) return [];
+	  if (!suffix) {
+	    // Fallback for ids that embed filename as the last "*" segment (e.g. Tianyi: "<fileId>*<shareId>*<name>").
+	    if (raw.includes('*')) {
+	      const starParts = raw
+	        .split('*')
+	        .map((s) => stripMeta(String(s || '')))
+	        .filter(Boolean);
+	      if (starParts.length) return [starParts[starParts.length - 1]];
+	    }
+	    return [];
+	  }
 
 	  const parts = String(suffix || '')
 	    .split('#')
@@ -3064,6 +3079,221 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
 	    .filter(Boolean);
 
   return parts;
+};
+
+const panMockProviderFromFlag = (flag) => {
+  const s = typeof flag === 'string' ? flag.trim() : '';
+  if (!s) return '';
+  const lower = s.toLowerCase();
+  if (s.includes('天意') || s.includes('天翼') || lower.includes('tianyi') || lower.includes('189')) return '189';
+  if (s.includes('逸动') || s.includes('和彩云') || lower.includes('yidong') || lower.includes('139')) return '139';
+  if (s.includes('夸父') || s.includes('夸克') || lower.includes('quark')) return 'quark';
+  if (s.includes('优夕') || lower.includes('uc')) return 'uc';
+  if (s.includes('百度') || lower.includes('baidu')) return 'baidu';
+  return '';
+};
+
+const parseMockPasscodeFromUrl = (episodeUrl) => {
+  const names = extractRawNamesFromEpisodeUrl(episodeUrl);
+  const raw = Array.isArray(names) && names.length ? String(names[0] || '').trim() : '';
+  if (!raw) return '';
+  let t = raw;
+  if (t.toLowerCase().endsWith('.mp4')) t = t.slice(0, -4);
+  t = String(t || '').trim();
+  if (!t || t.toLowerCase() === 'nopass') return '';
+  return t;
+};
+
+const extractTianyiShareCodeAndAccessCode = (flag, urlRaw) => {
+  const label = typeof flag === 'string' ? flag.trim() : '';
+  const urlStr = typeof urlRaw === 'string' ? urlRaw.trim() : '';
+  if (!label || !urlStr) return { shareCode: '', accessCode: '' };
+  const firstSeg = (urlStr.split('#')[0] || '').trim();
+  const idx = firstSeg.indexOf('$');
+  const epUrl = idx >= 0 ? firstSeg.slice(idx + 1).trim() : firstSeg;
+  const pass = parseMockPasscodeFromUrl(epUrl);
+  // Prefer parsing shareCode from "<shareCode>-<accessCode>.mp4".
+  if (pass && pass.includes('-')) {
+    const [a, b] = pass.split('-', 2);
+    return { shareCode: String(a || '').trim(), accessCode: String(b || '').trim() };
+  }
+  // Fallback: shareCode might already be embedded in the label like "天意-XXXX".
+  const m = /天意-([A-Za-z0-9]{6,64})/.exec(label);
+  const shareCode = m && m[1] ? String(m[1]).trim() : '';
+  return { shareCode, accessCode: pass };
+};
+
+const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = {}) => {
+  const panMockEnabled = !!(raw && typeof raw === 'object' && raw.pan_mock);
+  if (panMockEnabled) panMockEnabledHint.value = true;
+  const fromStr = typeof playFrom === 'string' ? playFrom.trim() : '';
+  const urlStr = typeof playUrl === 'string' ? playUrl.trim() : '';
+  if (!panMockEnabled || !fromStr || !urlStr) {
+    return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {} };
+  }
+
+  try {
+    const splitTop = (s) => (s ? String(s || '').split('$$$') : []);
+    const fromParts = splitTop(fromStr);
+    const urlParts = splitTop(urlStr);
+    const len = Math.max(fromParts.length, urlParts.length);
+
+    const listReqsRaw = [];
+    for (let i = 0; i < len; i += 1) {
+      const baseLabel = (fromParts[i] || '').trim() || `源${i + 1}`;
+      const baseUrl = (urlParts[i] || '').trim();
+      if (!baseLabel || !baseUrl) continue;
+      const fromSubs = baseLabel.includes('|||') ? baseLabel.split('|||').map((x) => String(x || '').trim()) : [baseLabel];
+      const urlSubs = baseLabel.includes('|||') && baseUrl.includes('|||') ? baseUrl.split('|||').map((x) => String(x || '').trim()) : [baseUrl];
+      const subLen = Math.max(fromSubs.length, urlSubs.length);
+      for (let j = 0; j < subLen; j += 1) {
+        const label = (fromSubs[j] || '').trim() || baseLabel;
+        const u = (urlSubs[j] || '').trim();
+        if (!label || !u) continue;
+        const provider = panMockProviderFromFlag(label);
+        if (!provider) continue;
+        if (provider === '189') {
+          const { shareCode, accessCode } = extractTianyiShareCodeAndAccessCode(label, u);
+          if (!shareCode) continue;
+          listReqsRaw.push({ provider: '189', label, flag: `天意-${shareCode}`, accessCode: accessCode || '' });
+          continue;
+        }
+        const firstSeg = (u.split('#')[0] || '').trim();
+        const idx = firstSeg.indexOf('$');
+        const epUrl = idx >= 0 ? firstSeg.slice(idx + 1).trim() : firstSeg;
+        const pass = parseMockPasscodeFromUrl(epUrl);
+        listReqsRaw.push({ provider, label, flag: label, passcode: pass || '' });
+      }
+    }
+
+    if (!listReqsRaw.length) return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {} };
+
+    const listReqs = new Map();
+    listReqsRaw.forEach((it) => {
+      const p = it && it.provider ? String(it.provider).trim() : '';
+      const l = it && it.label ? String(it.label).trim() : '';
+      if (!p || !l) return;
+      const key = `${p}::${l}`;
+      if (!listReqs.has(key)) listReqs.set(key, it);
+    });
+
+    const resolvedVodByKey = new Map(); // `${provider}::${label}` -> vod_play_url
+    const tianyiAccessByShareId = new Map();
+    const onPartial = typeof onUpdate === 'function' ? onUpdate : null;
+
+    const computeOut = () => {
+      const outFrom = [];
+      const outUrl = [];
+      for (let i = 0; i < len; i += 1) {
+        const baseLabel = (fromParts[i] || '').trim() || `源${i + 1}`;
+        const baseUrl = (urlParts[i] || '').trim();
+        if (!baseLabel || !baseUrl) continue;
+        const hasSubs = baseLabel.includes('|||') && baseUrl.includes('|||');
+        const fromSubs = baseLabel.includes('|||') ? baseLabel.split('|||').map((x) => String(x || '').trim()) : [baseLabel];
+        const urlSubs = hasSubs ? baseUrl.split('|||').map((x) => String(x || '').trim()) : [baseUrl];
+        const subLen = Math.max(fromSubs.length, urlSubs.length);
+        const nextFromSubs = [];
+        const nextUrlSubs = [];
+        for (let j = 0; j < subLen; j += 1) {
+          const label = (fromSubs[j] || '').trim() || baseLabel;
+          const u = (urlSubs[j] || '').trim();
+          if (!label || !u) continue;
+          const provider = panMockProviderFromFlag(label);
+          if (!provider) {
+            nextFromSubs.push(label);
+            nextUrlSubs.push(u);
+            continue;
+          }
+          const hit = resolvedVodByKey.get(`${provider}::${label}`) || '';
+          if (hit) {
+            nextFromSubs.push(label);
+            nextUrlSubs.push(hit);
+          } else {
+            nextFromSubs.push(label);
+            nextUrlSubs.push(u);
+          }
+        }
+        outFrom.push(nextFromSubs.join('|||'));
+        outUrl.push(nextUrlSubs.join('|||'));
+      }
+      return {
+        panMockEnabled,
+        playFrom: outFrom.join('$$$') || fromStr,
+        playUrl: outUrl.join('$$$') || urlStr,
+        panMock189AccessByShareId: Object.fromEntries(Array.from(tianyiAccessByShareId.entries())),
+      };
+    };
+
+    const emitPartial = () => {
+      if (!onPartial) return;
+      try {
+        onPartial(computeOut());
+      } catch (_e) {}
+    };
+
+    const callList = async (req) => {
+      const provider = req && req.provider ? String(req.provider).trim() : '';
+      const label = req && req.label ? String(req.label).trim() : '';
+      if (!provider || !label) return;
+
+      const call = async (path, body) => {
+        const resp = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {}),
+          credentials: 'include',
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data || data.ok === false) return null;
+        return data && typeof data === 'object' ? data : null;
+      };
+
+      const flag = req && req.flag ? String(req.flag).trim() : '';
+      const passcode = req && req.passcode ? String(req.passcode).trim() : '';
+      const accessCode = req && req.accessCode ? String(req.accessCode).trim() : '';
+
+      let data = null;
+      if (provider === 'quark') data = await call('/api/pan/quark/list', { flag: flag || label, passcode });
+      else if (provider === 'uc') data = await call('/api/pan/uc/list', { flag: flag || label, passcode });
+      else if (provider === 'baidu') data = await call('/api/pan/baidu/list', { flag: flag || label, pwd: passcode });
+      else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label });
+      else if (provider === '189') data = await call('/api/pan/189/list', { flag: flag || label, accessCode });
+      if (!data) return;
+
+      const vod = typeof data.vod_play_url === 'string' ? String(data.vod_play_url || '').trim() : '';
+      if (!vod) return;
+      resolvedVodByKey.set(`${provider}::${label}`, vod);
+
+      if (provider === '189' && accessCode) {
+        try {
+          vod.split('#').forEach((segRaw) => {
+            const seg = String(segRaw || '').trim();
+            if (!seg) return;
+            const dollarIdx = seg.indexOf('$');
+            if (dollarIdx < 0) return;
+            const id = seg.slice(dollarIdx + 1).trim();
+            const parts = id.split('*');
+            const shareId = parts.length >= 2 ? String(parts[1] || '').trim() : '';
+            if (!shareId) return;
+            if (!tianyiAccessByShareId.has(shareId)) tianyiAccessByShareId.set(shareId, accessCode);
+          });
+        } catch (_e) {}
+      }
+
+      emitPartial();
+    };
+
+    const tasks = Array.from(listReqs.values()).map((req) => callList(req));
+    await Promise.allSettled(tasks);
+    const finalOut = computeOut();
+    if (finalOut && finalOut.panMock189AccessByShareId && typeof finalOut.panMock189AccessByShareId === 'object') {
+      const prev = panMock189AccessByShareIdHint.value && typeof panMock189AccessByShareIdHint.value === 'object' ? panMock189AccessByShareIdHint.value : {};
+      panMock189AccessByShareIdHint.value = { ...prev, ...finalOut.panMock189AccessByShareId };
+    }
+    return finalOut;
+  } catch (_e) {
+    return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {} };
+  }
 };
 
 const magicEpisodeRules = computed(() => {
@@ -6003,19 +6233,20 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
 
   const task = (async () => {
     try {
-      const raw = await requestCatSpider({
-        apiBase,
-        username: tvUser,
-        action: 'detail',
-        spiderApi,
-        payload: { id: videoId },
-      });
-      const d = extractDetailFromResponse(raw);
-      const pans = parsePlaySources(d.playFrom, d.playUrl);
-      const entry = {
-        ok: true,
-        failCount: 0,
-        siteKey,
+	      const raw = await requestCatSpider({
+	        apiBase,
+	        username: tvUser,
+	        action: 'detail',
+	        spiderApi,
+	        payload: { id: videoId },
+	      });
+	      const d = extractDetailFromResponse(raw);
+	      const resolved = await resolvePanMockPlaySources({ raw, playFrom: d.playFrom, playUrl: d.playUrl });
+	      const pans = parsePlaySources(resolved.playFrom, resolved.playUrl);
+	      const entry = {
+	        ok: true,
+	        failCount: 0,
+	        siteKey,
         spiderApi,
         siteName: src && src.siteName ? String(src.siteName) : siteKey,
         videoId,
@@ -7179,18 +7410,19 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 
 		    const task = (async () => {
 		      try {
-		        const raw = await requestCatSpider({
-		          apiBase,
-		          username: tvUser,
-		          action: 'detail',
-		          spiderApi,
-		          payload: { id: videoId },
-		        });
-		        const d = extractDetailFromResponse(raw);
-		        const pans = parsePlaySources(d.playFrom, d.playUrl);
-		        const entry = {
-		          ok: true,
-	          failCount: 0,
+			        const raw = await requestCatSpider({
+			          apiBase,
+			          username: tvUser,
+			          action: 'detail',
+			          spiderApi,
+			          payload: { id: videoId },
+			        });
+			        const d = extractDetailFromResponse(raw);
+			        const resolved = await resolvePanMockPlaySources({ raw, playFrom: d.playFrom, playUrl: d.playUrl });
+			        const pans = parsePlaySources(resolved.playFrom, resolved.playUrl);
+			        const entry = {
+			          ok: true,
+		          failCount: 0,
 	          siteKey,
 	          spiderApi,
 	          siteName: src && src.siteName ? String(src.siteName) : siteKey,
@@ -7768,6 +8000,60 @@ const requestPlay = async () => {
 	            const m = /^\/([a-f0-9]{10})\/spider\//.exec(siteApi);
 	            return m && m[1] ? String(m[1]) : '';
 	          })();
+
+		          const provider = panMockProviderFromFlag(flag);
+		          if (provider) {
+		            const call = async (path, body) => {
+		              const headers = { 'Content-Type': 'application/json' };
+		              const u = typeof tvUser === 'string' ? tvUser.trim() : '';
+		              if (u) headers['X-TV-User'] = u;
+		              const resp = await fetch(path, {
+		                method: 'POST',
+		                headers,
+		                body: JSON.stringify(body || {}),
+		                credentials: 'include',
+		              });
+		              const data = await resp.json().catch(() => ({}));
+		              if (!resp.ok || !data || data.ok === false) {
+		                const msg = data && data.message ? String(data.message) : `HTTP ${resp.status}`;
+		                throw new Error(msg);
+		              }
+		              return data;
+		            };
+
+		            if (provider === '189') {
+		              const idRaw = String(id || '').trim();
+		              const parts = idRaw.split('*');
+		              const shareId = parts.length >= 2 ? String(parts[1] || '').trim() : '';
+		              const accessMapA = detail.value && typeof detail.value.panMock189AccessByShareId === 'object' ? detail.value.panMock189AccessByShareId : {};
+		              const accessMapB = panMock189AccessByShareIdHint.value && typeof panMock189AccessByShareIdHint.value === 'object' ? panMock189AccessByShareIdHint.value : {};
+		              const accessCode =
+		                shareId && typeof accessMapA[shareId] === 'string'
+		                  ? String(accessMapA[shareId] || '').trim()
+		                  : shareId && typeof accessMapB[shareId] === 'string'
+		                    ? String(accessMapB[shareId] || '').trim()
+		                    : '';
+		              const out = await call('/api/pan/189/play', { id: idRaw, accessCode });
+		              return { raw: out, payload: { ...out, header: out.headers || out.header || {} }, url: out.url || '', rawHeaders: out.headers || out.header || {} };
+		            }
+		            if (provider === 'quark') {
+		              const out = await call('/api/pan/quark/play', { flag: String(flag || '').trim(), id: String(id || '').trim() });
+		              return { raw: out, payload: { ...out, header: out.headers || out.header || {} }, url: out.url || '', rawHeaders: out.headers || out.header || {} };
+		            }
+		            if (provider === 'uc') {
+		              const out = await call('/api/pan/uc/play', { flag: String(flag || '').trim(), id: String(id || '').trim() });
+		              return { raw: out, payload: { ...out, header: out.headers || out.header || {} }, url: out.url || '', rawHeaders: out.headers || out.header || {} };
+		            }
+		            if (provider === '139') {
+		              const out = await call('/api/pan/139/play', { flag: String(flag || '').trim(), id: String(id || '').trim() });
+		              return { raw: out, payload: { ...out, header: out.headers || out.header || {} }, url: out.url || '', rawHeaders: out.headers || out.header || {} };
+		            }
+		            if (provider === 'baidu') {
+		              const out = await call('/api/pan/baidu/play', { flag: String(flag || '').trim(), id: String(id || '').trim() });
+		              return { raw: out, payload: { ...out, header: out.headers || out.header || {} }, url: out.url || '', rawHeaders: out.headers || out.header || {} };
+		            }
+		          }
+
 	          const raw = await requestCatPlay({
 	            apiBase,
 	            username: tvUser,
@@ -8991,32 +9277,60 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 		        payload: { id },
 		      });
 		      if (seqAtCall !== detailFetchState.seq) return;
-		      const d = extractDetailFromResponse(raw);
-	      const prev = detail.value && typeof detail.value === 'object' ? detail.value : {};
-	      const shouldUpdateMeta = !!updateMeta;
-	      const shouldFillMeta = !prev.title || !prev.poster || !prev.year;
-      const next = {
-        ...prev,
-        playFrom: d.playFrom,
-        playUrl: d.playUrl,
-      };
-      if (shouldUpdateMeta || shouldFillMeta) {
-        if (d.title) next.title = d.title;
-        if (d.poster) next.poster = d.poster;
-        if (d.year) next.year = d.year;
-        if (d.type) next.type = d.type;
-        if (d.remark) next.remark = d.remark;
-        if (d.content) next.content = d.content;
-      }
-      detail.value = next;
-      if (updateIntro || !introText.value) {
-        const nextIntro = (d.content || extractIntroFromDetail(raw) || introText.value || '').trim();
-        if (nextIntro) introText.value = nextIntro;
-      }
-		    } catch (e) {
-		      const status = e && typeof e.status === 'number' ? e.status : 0;
-		      const msg = (e && e.message) || '请求失败';
-		      if (shouldShowDetailLoading && seqAtCall === detailFetchState.seq) {
+			      const d = extractDetailFromResponse(raw);
+			      const panMockEnabled = !!(raw && typeof raw === 'object' && raw.pan_mock);
+				      const next = (() => {
+			        const prev = detail.value && typeof detail.value === 'object' ? detail.value : {};
+			        const shouldUpdateMeta = !!updateMeta;
+			        const shouldFillMeta = !prev.title || !prev.poster || !prev.year;
+		        const base = {
+		          ...prev,
+		          playFrom: d.playFrom,
+		          playUrl: d.playUrl,
+		          ...(panMockEnabled ? { panMockEnabled: true } : {}),
+		        };
+		        if (shouldUpdateMeta || shouldFillMeta) {
+		          if (d.title) base.title = d.title;
+		          if (d.poster) base.poster = d.poster;
+		          if (d.year) base.year = d.year;
+		          if (d.type) base.type = d.type;
+		          if (d.remark) base.remark = d.remark;
+		          if (d.content) base.content = d.content;
+		        }
+			        return base;
+				      })();
+
+	      detail.value = next;
+	      if (updateIntro || !introText.value) {
+	        const nextIntro = (d.content || extractIntroFromDetail(raw) || introText.value || '').trim();
+	        if (nextIntro) introText.value = nextIntro;
+	      }
+
+	      if (panMockEnabled && d.playFrom && d.playUrl) {
+	        const seqForResolve = seqAtCall;
+	        void resolvePanMockPlaySources({
+	          raw,
+	          playFrom: d.playFrom,
+	          playUrl: d.playUrl,
+	          onUpdate: (resolved) => {
+	            if (!resolved || typeof resolved !== 'object') return;
+	            if (seqForResolve !== detailFetchState.seq) return;
+	            const cur = detail.value && typeof detail.value === 'object' ? detail.value : {};
+	            const merged = { ...cur };
+	            if (typeof resolved.playFrom === 'string' && resolved.playFrom.trim()) merged.playFrom = resolved.playFrom;
+	            if (typeof resolved.playUrl === 'string' && resolved.playUrl.trim()) merged.playUrl = resolved.playUrl;
+	            if (resolved.panMock189AccessByShareId && typeof resolved.panMock189AccessByShareId === 'object') {
+	              const prevMap = cur && typeof cur.panMock189AccessByShareId === 'object' ? cur.panMock189AccessByShareId : {};
+	              merged.panMock189AccessByShareId = { ...prevMap, ...resolved.panMock189AccessByShareId };
+	            }
+	            detail.value = merged;
+	          },
+	        });
+	      }
+			    } catch (e) {
+			      const status = e && typeof e.status === 'number' ? e.status : 0;
+			      const msg = (e && e.message) || '请求失败';
+			      if (shouldShowDetailLoading && seqAtCall === detailFetchState.seq) {
 		        introError.value = status ? `HTTP ${status}：${msg}` : msg;
 		      }
 		    } finally {
