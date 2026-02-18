@@ -3112,15 +3112,33 @@ const extractTianyiShareCodeAndAccessCode = (flag, urlRaw) => {
   const idx = firstSeg.indexOf('$');
   const epUrl = idx >= 0 ? firstSeg.slice(idx + 1).trim() : firstSeg;
   const pass = parseMockPasscodeFromUrl(epUrl);
-  // Prefer parsing shareCode from "<shareCode>-<accessCode>.mp4".
-  if (pass && pass.includes('-')) {
-    const [a, b] = pass.split('-', 2);
-    return { shareCode: String(a || '').trim(), accessCode: String(b || '').trim() };
+  // Some Tianyi interceptors encode shareCode/accessCode in the filename and keep a "-nopass" placeholder suffix:
+  // - "<shareCode>_<accessCode>-nopass.mp4"
+  // - "<shareCode>-<accessCode>.mp4"
+  // Treat "-nopass" as a placeholder instead of a real accessCode.
+  const normalizeTianyiPass = (raw) => {
+    let t = typeof raw === 'string' ? raw.trim() : '';
+    if (!t) return '';
+    const lower = t.toLowerCase();
+    if (lower.endsWith('-nopass')) t = t.slice(0, -7);
+    else if (lower.endsWith('_nopass')) t = t.slice(0, -7);
+    return t.trim();
+  };
+  const normPass = normalizeTianyiPass(pass);
+  if (normPass) {
+    if (normPass.includes('_')) {
+      const [a, b] = normPass.split('_', 2);
+      return { shareCode: String(a || '').trim(), accessCode: String(b || '').trim() };
+    }
+    if (normPass.includes('-')) {
+      const [a, b] = normPass.split('-', 2);
+      return { shareCode: String(a || '').trim(), accessCode: String(b || '').trim() };
+    }
   }
   // Fallback: shareCode might already be embedded in the label like "天意-XXXX".
   const m = /天意-([A-Za-z0-9]{6,64})/.exec(label);
   const shareCode = m && m[1] ? String(m[1]).trim() : '';
-  return { shareCode, accessCode: pass };
+  return { shareCode, accessCode: normPass || pass };
 };
 
 const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = {}) => {
@@ -3256,7 +3274,7 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
       if (provider === 'quark') data = await call('/api/pan/quark/list', { flag: flag || label, passcode });
       else if (provider === 'uc') data = await call('/api/pan/uc/list', { flag: flag || label, passcode });
       else if (provider === 'baidu') data = await call('/api/pan/baidu/list', { flag: flag || label, pwd: passcode });
-      else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label });
+      else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label, passcode: passcode || '' });
       else if (provider === '189') data = await call('/api/pan/189/list', { flag: flag || label, accessCode });
       if (!data) return;
 
@@ -8045,7 +8063,8 @@ const requestPlay = async () => {
 		              return { raw: out, payload: { ...out, header: out.headers || out.header || {} }, url: out.url || '', rawHeaders: out.headers || out.header || {} };
 		            }
 		            if (provider === '139') {
-		              const out = await call('/api/pan/139/play', { flag: String(flag || '').trim(), id: String(id || '').trim() });
+		              const idRaw = String(id || '').trim();
+		              const out = await call('/api/pan/139/play', { flag: String(flag || '').trim(), id: idRaw });
 		              return { raw: out, payload: { ...out, header: out.headers || out.header || {} }, url: out.url || '', rawHeaders: out.headers || out.header || {} };
 		            }
 		            if (provider === 'baidu') {
