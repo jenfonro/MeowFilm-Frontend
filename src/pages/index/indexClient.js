@@ -2,6 +2,7 @@ import { requestCatSpider } from '../../shared/catpawopen';
 import { initSearchPage } from '../../shared/searchClient';
 import { appendTvCardHoverOverlays, createPosterCard } from '../../shared/posterCard';
 import { apiDeleteJson, apiGetJson, apiInvalidateCache, buildQuery } from '../../shared/apiClient';
+import { formatTMDBTVRemark } from '../../shared/tmdbBadge';
 
 const TMDB_DETAIL_CACHE_MS = 10 * 60 * 1000;
 const tmdbDetailInFlight = new Map();
@@ -54,6 +55,9 @@ const patchPosterCardWithTmdb = (wrapper, tmdb) => {
   const typ = normalizeTmdbType(tmdb.type);
   const year = Number.isFinite(Number(tmdb.year)) && Number(tmdb.year) > 0 ? String(Math.floor(Number(tmdb.year))) : '';
   const badge = typeof tmdb.badge === 'string' ? tmdb.badge.trim() : '';
+  const status = typeof tmdb.status === 'string' ? tmdb.status.trim() : '';
+  const seasonCount = Number.isFinite(Number(tmdb.seasonCount)) ? Math.floor(Number(tmdb.seasonCount)) : 0;
+  const episodeCount = Number.isFinite(Number(tmdb.episodeCount)) ? Math.floor(Number(tmdb.episodeCount)) : 0;
 
   const titleEl = wrapper.querySelector('.douban-card-title');
   if (titleEl && title) titleEl.textContent = title;
@@ -61,7 +65,7 @@ const patchPosterCardWithTmdb = (wrapper, tmdb) => {
   const siteBadge = wrapper.querySelector('.tv-site-badge');
   if (siteBadge) siteBadge.textContent = tmdbTypeLabel(typ) || siteBadge.textContent;
 
-  const desiredRemark = typ === 'movie' ? (year || badge) : (badge || '');
+  const desiredRemark = typ === 'movie' ? (year || badge) : (formatTMDBTVRemark({ badge, status, seasonCount, episodeCount }) || '');
   const posterWrap = wrapper.querySelector('.douban-poster');
   if (posterWrap) {
     let remarkEl = posterWrap.querySelector('.tv-card-badge');
