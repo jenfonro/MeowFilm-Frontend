@@ -546,12 +546,6 @@ const homeViewState = ref('home'); // 'home' | 'search' | 'douban:*'
 const activeSiteKeyState = ref('');
 const homeSites = ref(
   (() => {
-    const role = props.bootstrap && props.bootstrap.user && props.bootstrap.user.role ? String(props.bootstrap.user.role) : '';
-    const userBase =
-      props.bootstrap && props.bootstrap.settings && typeof props.bootstrap.settings.userCatPawOpenApiBase === 'string'
-        ? props.bootstrap.settings.userCatPawOpenApiBase.trim()
-        : '';
-    if (role === 'user' && !userBase) return [];
     return props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.homeSites)
       ? props.bootstrap.settings.homeSites
       : [];

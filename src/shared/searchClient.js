@@ -1,6 +1,5 @@
 import { requestCatSpider } from './catpawopen';
 import { createPosterCard } from './posterCard';
-import { formatTMDBTVRemark } from './tmdbBadge';
 
 export function initSearchPage() {
   const historyEndpoint = '/api/searchhistory';
@@ -709,13 +708,7 @@ export function initSearchPage() {
 	      const remarkText = (() => {
 	        const mt = mediaType && mediaType.trim().toLowerCase() === 'movie' ? 'movie' : mediaTypeNormalized;
 	        if (mt === 'movie') return yearText;
-	        const txt = badgeText;
-	        return formatTMDBTVRemark({
-	          badge: txt,
-	          status: it && typeof it.status === 'string' ? it.status : '',
-	          seasonCount: it && Number.isFinite(Number(it.seasonCount)) ? Math.floor(Number(it.seasonCount)) : 0,
-	          episodeCount: it && Number.isFinite(Number(it.episodeCount)) ? Math.floor(Number(it.episodeCount)) : 0,
-	        });
+	        return '';
 	      })();
 
       const titleText = it && it.title ? String(it.title) : '';
@@ -806,6 +799,8 @@ export function initSearchPage() {
 
   let currentRunId = 0;
   const runSearch = async (keyword) => {
+    refreshSearchConfigFromDom();
+
     const runId = (currentRunId += 1);
     const q = (keyword || '').trim();
     if (!q) return;
@@ -1158,7 +1153,7 @@ export function initSearchPage() {
       const wrapperTitleLen = Number(wrapperEl.dataset.titleLen || 0);
       const wrapperSeq = Number(wrapperEl.dataset.seq || 0);
       const wrapperSiteKey = wrapperEl && wrapperEl.dataset ? String(wrapperEl.dataset.siteKey || '') : '';
-      const wrapperKindPriority = !rawListMode && wrapperSiteKey === 'tmdb' ? 0 : 1;
+      const wrapperKindPriority = wrapperSiteKey === 'tmdb' ? 0 : 1;
       const wrapperSiteOrder = Number(wrapperEl && wrapperEl.dataset ? wrapperEl.dataset.siteOrder : 0);
       const wrapperTmdbRank = Number(wrapperEl && wrapperEl.dataset ? wrapperEl.dataset.tmdbRank : 0);
 
@@ -1206,7 +1201,7 @@ export function initSearchPage() {
         const elTitleLen = Number(el && el.dataset ? el.dataset.titleLen : 0);
         const elSeq = Number(el && el.dataset ? el.dataset.seq : 0);
         const elSiteKey = el && el.dataset ? String(el.dataset.siteKey || '') : '';
-        const elKindPriority = !rawListMode && elSiteKey === 'tmdb' ? 0 : 1;
+        const elKindPriority = elSiteKey === 'tmdb' ? 0 : 1;
         const elSiteOrder = Number(el && el.dataset ? el.dataset.siteOrder : 0);
         const elTmdbRank = Number(el && el.dataset ? el.dataset.tmdbRank : 0);
         const elHidden = isHiddenByCurrentMode(el, aggKeys);
@@ -1265,33 +1260,6 @@ export function initSearchPage() {
 
 		    const seenKeys = new Set();
 		    const tmdbByGroupKeyByType = new Map();
-
-        const formatTMDBRemarkText = ({ mediaType, badgeText, yearText, status, seasonCount, episodeCount } = {}) => {
-          const mt = normalizeTmdbMediaType(mediaType);
-          if (mt === 'movie') return typeof yearText === 'string' ? yearText : '';
-          const txt = typeof badgeText === 'string' ? badgeText.trim() : '';
-          const fallback = Number.isFinite(Number(episodeCount)) && Number(episodeCount) > 0 ? `共${Math.floor(Number(episodeCount))}集` : '';
-          const badge = txt || fallback;
-          if (!badge) return '';
-          return formatTMDBTVRemark({ badge, status, seasonCount, episodeCount });
-        };
-
-        const setCardRemarkBadge = (wrapperEl, remarkText) => {
-          if (!wrapperEl) return;
-          const txt = typeof remarkText === 'string' ? remarkText.trim() : '';
-          const posterWrap = wrapperEl.querySelector && wrapperEl.querySelector('.douban-poster');
-          if (!posterWrap) return;
-          let tag = wrapperEl.querySelector && wrapperEl.querySelector('.tv-card-badge');
-          if (!tag && txt) {
-            tag = document.createElement('div');
-            tag.className = 'tv-card-badge';
-            posterWrap.appendChild(tag);
-          }
-          if (!tag) return;
-          tag.textContent = txt;
-          const hasCount = !!(wrapperEl.querySelector && wrapperEl.querySelector('.tv-aggregate-source-count'));
-          tag.classList.toggle('tv-card-badge--left', hasCount);
-        };
 
         const hydrateTMDBDetailsForItems = (items) => {
           const list = Array.isArray(items) ? items : [];
@@ -1360,25 +1328,9 @@ export function initSearchPage() {
                   }
                 } catch (_e) {}
                 if (!wrapper) return;
-
-	                const y = Number.isFinite(Number(data.year)) ? String(Math.floor(Number(data.year))) : '';
-	                const remark = formatTMDBRemarkText({
-	                  mediaType: task.type,
-	                  badgeText,
-	                  yearText: y,
-	                  status,
-	                  seasonCount,
-	                  episodeCount,
-	                });
-
-                // If this TMDB card has already been upgraded to an aggregate card, prefer triggering a refresh.
-                // Otherwise update the badge immediately so TMDB episode info shows without waiting for site searches.
                 if (wrapper.dataset && wrapper.dataset.aggregate === '1') {
                   if (typeof refreshAggregatesForCurrentRun === 'function') refreshAggregatesForCurrentRun();
-                  else if (remark) setCardRemarkBadge(wrapper, remark);
-                  return;
                 }
-                if (remark) setCardRemarkBadge(wrapper, remark);
               };
 
 	              if (task.cached && task.cached.badge) {
@@ -1639,34 +1591,26 @@ export function initSearchPage() {
         return /^20\d{2,3}$/.test(String(v));
       };
 
-	    const pickAggregateEpisodeSummary = ({ sources, tmdbBadge, groupTitle } = {}) => {
+	    const pickAggregateEpisodeSummary = ({ sources, groupTitle } = {}) => {
 	      const list = Array.isArray(sources) ? sources : [];
-	      const badge = typeof tmdbBadge === 'string' ? tmdbBadge.trim() : '';
 	      const title = typeof groupTitle === 'string' ? groupTitle.trim() : '';
 
 	      let anyUpdating = false;
 	      let anyEnded = false;
-	      let base = { season: 0, episode: 0, totalEpisode: 0, ended: false, updating: false };
 	      let best = { season: 0, episode: 0 };
 	      let maxSeasonHint = 0;
 	      let maxTotalEpisode = 0;
 	      let seasonCountFromRemark = 0;
 
-	      const consider = (info, seasonHintFallback, { capByBase } = {}) => {
+	      const consider = (info, seasonHintFallback) => {
 	        const seasonHint = Number.isFinite(Number(seasonHintFallback)) ? Math.floor(Number(seasonHintFallback)) : 0;
 	        const season = info.season > 0 ? info.season : seasonHint > 0 ? seasonHint : 0;
 	        let episode = info.episode > 0 ? info.episode : 0;
 	        let totalEpisode = info.totalEpisode > 0 ? info.totalEpisode : 0;
 	        const seasonCount = info.seasonCount > 0 ? info.seasonCount : 0;
 
-          const baseRefEpisode = Math.max(base.episode > 0 ? base.episode : 0, base.totalEpisode > 0 ? base.totalEpisode : 0);
           if (isInvalidEpisodeLikeYear(episode)) episode = 0;
           if (isInvalidEpisodeLikeYear(totalEpisode)) totalEpisode = 0;
-          if (capByBase && baseRefEpisode > 0) {
-            // Treat outliers as invalid instead of capping them (avoid showing wrong episode counts).
-            if (episode > baseRefEpisode + 5) episode = 0;
-            if (totalEpisode > baseRefEpisode + 5) totalEpisode = 0;
-          }
 
 	        if (seasonHint > maxSeasonHint) maxSeasonHint = seasonHint;
 	        if (season > maxSeasonHint) maxSeasonHint = season;
@@ -1683,23 +1627,6 @@ export function initSearchPage() {
 	        }
 	      };
 
-	      if (badge) {
-	        const hint = extractSeasonHintFromText(badge) || extractSeasonHintFromText(title);
-	        const parsed = parseAggregateEpisodeBadgeInfo(badge);
-	        const season = parsed.season > 0 ? parsed.season : hint > 0 ? hint : 0;
-	        const episode = parsed.episode > 0 ? parsed.episode : 0;
-          const totalEpisode = parsed.totalEpisode > 0 ? parsed.totalEpisode : 0;
-	        base = {
-	          season: season > 0 ? season : 0,
-	          episode,
-            totalEpisode,
-	          ended: !!parsed.ended,
-	          updating: !!parsed.updating,
-	        };
-	        best = { season: base.season > 0 ? base.season : 0, episode: base.episode > 0 ? base.episode : 0 };
-	        consider(parsed, hint, { capByBase: false });
-	      }
-
 	      list.forEach((src) => {
 	        const t = src && src.videoTitle != null ? String(src.videoTitle) : '';
 	        const r = src && src.videoRemark != null ? String(src.videoRemark) : '';
@@ -1708,59 +1635,45 @@ export function initSearchPage() {
 	          extractSeasonHintFromText(r) ||
 	          extractSeasonHintFromText(title) ||
 	          0;
-	        [r, t].filter(Boolean).forEach((raw) => consider(parseAggregateEpisodeBadgeInfo(raw), seasonHint, { capByBase: true }));
+	        [r, t].filter(Boolean).forEach((raw) => consider(parseAggregateEpisodeBadgeInfo(raw), seasonHint));
 	      });
 
 	      return {
-	        baseSeason: base.season > 0 ? base.season : 0,
-	        baseEpisode: base.episode > 0 ? base.episode : 0,
 	        bestSeason: best.season > 0 ? best.season : 0,
 	        bestEpisode: best.episode > 0 ? best.episode : 0,
 	        maxSeasonHint,
 	        maxTotalEpisode,
 	        seasonCountFromRemark,
-	        ended: Boolean(base.ended || (anyEnded && !anyUpdating && !base.updating)),
+	        ended: Boolean(anyEnded && !anyUpdating),
 	      };
 	    };
 
-		    const formatAggregateTVRemark = ({ groupKey, groupTitle, tmdbBadge, tmdbStatus, tmdbEpisodeCount, sources } = {}) => {
-		      const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+		    const formatAggregateTVRemark = ({ groupTitle, sources } = {}) => {
 		      const title = typeof groupTitle === 'string' ? groupTitle.trim() : '';
 
-		      const summary = pickAggregateEpisodeSummary({ sources, tmdbBadge, groupTitle: title });
+		      const summary = pickAggregateEpisodeSummary({ sources, groupTitle: title });
 		      const seasonFromSources = summary.bestSeason > 0 ? summary.bestSeason : summary.maxSeasonHint > 0 ? summary.maxSeasonHint : 0;
 		      const episode = summary.bestEpisode > 0 ? summary.bestEpisode : 0;
 
-	      const effectiveSeasonCount = Math.max(
-	        summary.seasonCountFromRemark > 0 ? summary.seasonCountFromRemark : 0,
-	        seasonFromSources > 1 ? seasonFromSources : 0,
-	        getTMDBTVSeasonCountForGroupKey(gk)
-	      );
+	      const effectiveSeasonCount = Math.max(summary.seasonCountFromRemark > 0 ? summary.seasonCountFromRemark : 0, seasonFromSources > 1 ? seasonFromSources : 0);
 
 		      const isMultiSeason = effectiveSeasonCount >= 2 || seasonFromSources >= 2;
 
-		      const endedByStatus = String(tmdbStatus || '').trim().toLowerCase() === 'ended';
-		      if (summary.ended || endedByStatus) {
-		        const totalEpisode =
-		          Number.isFinite(Number(tmdbEpisodeCount)) && Number(tmdbEpisodeCount) > 0
-		            ? Math.floor(Number(tmdbEpisodeCount))
-		            : summary.maxTotalEpisode > 0
-		              ? summary.maxTotalEpisode
-		              : 0;
+		      if (summary.ended) {
+		        const totalEpisode = summary.maxTotalEpisode > 0 ? summary.maxTotalEpisode : 0;
 		        const seasonCount = effectiveSeasonCount > 0 ? effectiveSeasonCount : 0;
-		        const baseBadge = typeof tmdbBadge === 'string' && tmdbBadge.trim() ? tmdbBadge.trim() : (totalEpisode > 0 ? `共${totalEpisode}集` : '');
-		        const endedRemark = baseBadge
-		          ? formatTMDBTVRemark({ badge: baseBadge, status: tmdbStatus, seasonCount, episodeCount: totalEpisode })
-		          : '';
-		        if (endedRemark) return endedRemark;
 		        if (seasonCount >= 2 && totalEpisode > 0) return `共${seasonCount}季${totalEpisode}集`;
 		        if (totalEpisode > 0) return `共${totalEpisode}集`;
+            if (seasonCount >= 2) return `共${seasonCount}季`;
+            if (episode > 0) return `共${episode}集`;
 		        return '';
 		      }
 
 	      if (episode > 0) {
-	        if (isMultiSeason && seasonFromSources >= 2) return `更新至第${seasonFromSources}季第${episode}集`;
-	        return `更新至第${episode}集`;
+	        const upd = isMultiSeason && seasonFromSources >= 2 ? `更新至第${seasonFromSources}季第${episode}集` : `更新至第${episode}集`;
+            const totalPart = summary.maxTotalEpisode > 0 ? `共${summary.maxTotalEpisode}集` : '';
+            if (totalPart) return `${upd}，${totalPart}`;
+            return upd;
 	      }
 	      return '';
 	    };
@@ -1896,19 +1809,12 @@ export function initSearchPage() {
         return '剧集';
       };
       const aggregateTypeLabel = tmdbCoverTypeLabel || inferAggregateTypeLabel(title || cover.videoTitle || '');
-      let remark = tmdbCover && tmdbCover.badge ? String(tmdbCover.badge) : cover.videoRemark || '';
+      let remark = cover.videoRemark || '';
       if (tmdbCoverType === 'movie') {
         const y = tmdbCover && tmdbCover.year != null ? Number(tmdbCover.year) : 0;
         remark = Number.isFinite(y) && y > 0 ? String(Math.floor(y)) : '';
       } else {
-	        const aggRemark = formatAggregateTVRemark({
-	          groupKey: gk,
-	          groupTitle: title || cover.videoTitle || '',
-	          tmdbBadge: tmdbCover && tmdbCover.badge ? String(tmdbCover.badge) : '',
-	          tmdbStatus: tmdbCover && typeof tmdbCover.status === 'string' ? String(tmdbCover.status) : '',
-	          tmdbEpisodeCount: tmdbCover && Number.isFinite(Number(tmdbCover.episodeCount)) ? Math.floor(Number(tmdbCover.episodeCount)) : 0,
-	          sources,
-	        });
+	        const aggRemark = formatAggregateTVRemark({ groupTitle: title || cover.videoTitle || '', sources });
         if (aggRemark) remark = aggRemark;
       }
       const storageKey = normalizeAggStorageKey(gk) || normalizeAggStorageKey(title);

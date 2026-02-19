@@ -24,13 +24,9 @@
               <div class="font-semibold text-gray-800">{{ bootstrap.user.username }}</div>
             </div>
             <span class="user-menu__badge">{{
-              bootstrap.user.role === 'admin' ? '管理员' : bootstrap.user.role === 'shared' ? '共享' : '用户'
+              bootstrap.user.role === 'admin' ? '管理员' : '用户'
             }}</span>
           </div>
-          <button id="userSettingsBtn" class="user-menu__item" type="button">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 3.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 8 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"></path></svg>
-            <span>设置</span>
-          </button>
           <a
             id="managePanelLink"
             class="user-menu__item"
@@ -156,9 +152,8 @@
 		                :data-douban-data-custom="bootstrap.settings.doubanDataCustom"
 		                :data-douban-img-proxy="bootstrap.settings.doubanImgProxy"
 		                :data-douban-img-custom="bootstrap.settings.doubanImgCustom"
-		                :data-cat-api-base="bootstrap.user.role === 'user' ? (bootstrap.settings.userCatPawOpenApiBase || '') : (bootstrap.settings.userCatPawOpenApiBase || bootstrap.settings.catPawOpenApiBase || '')"
+		                :data-cat-api-base="bootstrap.settings.catPawOpenApiBase || ''"
 		                :data-user-role="bootstrap.user.role"
-		                :data-user-cat-api-base="bootstrap.settings.userCatPawOpenApiBase || ''"
 		                :data-tv-user="bootstrap.user.username"
 		                :data-search-thread-count="bootstrap.settings.searchThreadCount"
 		                :data-search-site-order="JSON.stringify(bootstrap.settings.searchSiteOrder || [])"
@@ -405,12 +400,6 @@
               <span :class="mobileActiveTab === 'history' ? 'text-green-600' : 'text-gray-600'">历史</span>
             </button>
           </li>
-          <li class="flex-shrink-0" style="width:20vw;min-width:20vw">
-            <button type="button" class="flex flex-col items-center justify-center w-full h-14 gap-1 text-xs" @click="openUserSettings">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings h-6 w-6 text-gray-500"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-              <span class="text-gray-600">设置</span>
-            </button>
-          </li>
 	        </ul>
 	      </nav>
 	    </div>
@@ -498,19 +487,17 @@
     </div>
   </div>
 
-    <UserSettingsModal :bootstrap="bootstrap" />
-  </div>
-</template>
+	  </div>
+	</template>
 
 <script setup>
 	import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-	import AppSidebar from '../../shared/AppSidebar.vue';
-	import { initMainInteractions } from '../../shared/mainInteractions';
-	import { initIndexPage } from './indexClient.js';
-	import UserSettingsModal from '../../shared/UserSettingsModal.vue';
-	import PlayPage from '../play/PlayPage.vue';
-	import LoginPage from '../login/LoginPage.vue';
-	import { apiGetJson, buildQuery } from '../../shared/apiClient';
+		import AppSidebar from '../../shared/AppSidebar.vue';
+		import { initMainInteractions } from '../../shared/mainInteractions';
+		import { initIndexPage } from './indexClient.js';
+		import PlayPage from '../play/PlayPage.vue';
+		import LoginPage from '../login/LoginPage.vue';
+		import { apiGetJson, buildQuery } from '../../shared/apiClient';
 
 const props = defineProps({ bootstrap: { type: Object, required: true } });
 const bootstrap = props.bootstrap;
@@ -667,21 +654,14 @@ function toggleMobileMenu() {
   mobileMenuOpen.value = !mobileMenuOpen.value;
 }
 
-function toggleMobileUserMenu() {
-  mobileMenuOpen.value = false;
-  mobileUserMenuOpen.value = !mobileUserMenuOpen.value;
-}
+	function toggleMobileUserMenu() {
+	  mobileMenuOpen.value = false;
+	  mobileUserMenuOpen.value = !mobileUserMenuOpen.value;
+	}
 
-function openUserSettings() {
-  mobileUserMenuOpen.value = false;
-  try {
-    window.dispatchEvent(new CustomEvent('tv:open-user-settings'));
-  } catch (_e) {}
-}
-
-const mobileHeaderTitle = computed(() => {
-  const kind = mobileContext.value && mobileContext.value.kind ? String(mobileContext.value.kind) : 'home';
-  if (kind === 'site') {
+	const mobileHeaderTitle = computed(() => {
+	  const kind = mobileContext.value && mobileContext.value.kind ? String(mobileContext.value.kind) : 'home';
+	  if (kind === 'site') {
     const n = mobileContext.value && typeof mobileContext.value.siteName === 'string' ? mobileContext.value.siteName : '';
     const t = n.trim();
     if (t) return t;

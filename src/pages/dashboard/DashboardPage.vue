@@ -18,7 +18,7 @@
         </a>
         <a data-admin="user" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-          <span class="nav-label">用户设置</span>
+          <span class="nav-label">用户管理</span>
         </a>
         <a data-admin="pan" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-cloud h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h.79a4.5 4.5 0 1 1 1 9Z"></path></svg>
@@ -166,7 +166,7 @@
         <section v-if="bootstrap.user.role === 'admin'" id="adminUser" class="admin-panel hidden space-y-4">
           <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-users h-5 w-5 text-gray-600 dark:text-gray-300"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-	            用户设置
+	            用户管理
 	          </div>
           <div class="stat-card">
             <div id="userCount" class="stat-main" v-text="bootstrap.userCount"></div>
@@ -191,18 +191,6 @@
 
                     <span class="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">密码：</span>
                     <input id="addUserPassword" name="password" type="password" class="tv-field tv-field-success" placeholder="密码" autocomplete="new-password">
-
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">角色：</span>
-                    <select id="addUserRole" name="role" class="tv-field">
-                      <option value="user" selected>用户</option>
-                      <option value="shared">共享</option>
-                    </select>
-
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">Cat接口：</span>
-                    <input id="addUserCatApiBase" name="catApiBase" class="tv-field" placeholder="CatPawOpen 接口地址（可留空）" autocomplete="off">
-
-                    <span class="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">Cat代理：</span>
-                    <input id="addUserCatProxy" name="catProxy" class="tv-field" placeholder="CatPawOpen 全局代理地址（可留空）" autocomplete="off">
                   </div>
                   <div class="flex justify-start">
                     <button id="confirmAddUser" class="btn-add" type="submit">添加</button>
@@ -215,8 +203,6 @@
                     <tr>
                       <th class="px-3 py-2 whitespace-nowrap">用户名</th>
                       <th class="px-3 py-2 whitespace-nowrap">角色</th>
-                      <th class="px-3 py-2 whitespace-nowrap">Cat接口</th>
-                      <th class="px-3 py-2 whitespace-nowrap">Cat代理</th>
                       <th class="px-3 py-2 whitespace-nowrap">状态</th>
                       <th class="px-3 py-2 whitespace-nowrap">操作</th>
                     </tr>
@@ -225,22 +211,11 @@
                     <tr v-for="u in (bootstrap.users || [])" :key="u.username"
                         :data-username="u.username"
                         :data-role="u.role"
-                        :data-status="u.status"
-                        :data-cat-api-base="u.cat_api_base || ''"
-                        :data-cat-proxy="u.cat_proxy || ''">
+                        :data-status="u.status">
                       <td class="px-3 py-2 font-semibold whitespace-nowrap">{{ u.username }}</td>
                       <td class="px-3 py-2 whitespace-nowrap" data-col="role">
                         <span v-if="u.role === 'admin'" class="tag-yellow">管理员</span>
-                        <span v-else-if="u.role === 'shared'" class="tag-green">共享</span>
                         <span v-else class="tag-gray">用户</span>
-                      </td>
-                      <td class="px-3 py-2 whitespace-nowrap" data-col="catApiBase">
-                        <span v-if="(u.cat_api_base || '').trim()" class="tag-green">已设置</span>
-                        <span v-else class="tag-red">未设置</span>
-                      </td>
-                      <td class="px-3 py-2 whitespace-nowrap" data-col="catProxy">
-                        <span v-if="(u.cat_proxy || '').trim()" class="tag-yellow">已设置</span>
-                        <span v-else class="tag-green">未设置</span>
                       </td>
                       <td class="px-3 py-2 whitespace-nowrap" data-col="status">
                         <span v-if="u.status === 'active'" class="tag-green">正常</span>

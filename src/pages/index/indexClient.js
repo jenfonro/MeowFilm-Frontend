@@ -251,6 +251,55 @@ function setupHomeSpiderBrowse() {
 
   if (!siteList || !siteSections || !doubanSections || !doubanBrowse || !cfgEl) return;
 
+  const setCfgAttr = (k, v) => {
+    try {
+      const key = typeof k === 'string' ? k.trim() : '';
+      if (!key) return;
+      if (v == null) {
+        cfgEl.removeAttribute(key);
+        return;
+      }
+      cfgEl.setAttribute(key, String(v));
+    } catch (_e) {}
+  };
+
+  let searchSettingsLoaded = false;
+  let searchSettingsInFlight = null;
+  let searchSettingsLastError = '';
+  const ensureSearchSettingsLoaded = async () => {
+    if (searchSettingsLoaded) return;
+    if (searchSettingsInFlight) return await searchSettingsInFlight;
+    searchSettingsInFlight = (async () => {
+      try {
+        searchSettingsLastError = '';
+        const data = await apiGetJson(`/api/bootstrap${buildQuery({ page: 'search' })}`, { cacheMs: 2000 });
+        if (!data || data.authenticated !== true) throw new Error('未登录');
+        const s = data.settings && typeof data.settings === 'object' ? data.settings : {};
+        const prevCatBase = (cfgEl.getAttribute('data-cat-api-base') || '').trim();
+        const nextCatBase = (s.catPawOpenApiBase || '').trim();
+        const finalCatBase = (nextCatBase || prevCatBase).trim();
+        if (finalCatBase) setCfgAttr('data-cat-api-base', finalCatBase);
+        setCfgAttr('data-search-thread-count', s.searchThreadCount != null ? String(s.searchThreadCount) : '');
+        setCfgAttr('data-search-site-order', JSON.stringify(Array.isArray(s.searchSiteOrder) ? s.searchSiteOrder : []));
+        setCfgAttr('data-search-cover-site', (s.searchCoverSite || '').trim());
+        setCfgAttr(
+          'data-magic-search-clean-rules',
+          JSON.stringify(Array.isArray(s.magicAggregateRegexRules) ? s.magicAggregateRegexRules : [])
+        );
+        setCfgAttr('data-search-display-mode', (s.searchDisplayMode || 'sites').trim());
+        setCfgAttr('data-search-badge-prefer-episode', s.searchBadgePreferEpisode ? '1' : '0');
+        if (!finalCatBase) throw new Error('CatPawOpen 接口地址未设置（bootstrap/search 未返回）');
+        searchSettingsLoaded = true;
+      } catch (e) {
+        searchSettingsLastError = e && e.message ? String(e.message) : '加载失败';
+        throw e;
+      } finally {
+        searchSettingsInFlight = null;
+      }
+    })();
+    return await searchSettingsInFlight;
+  };
+
   const setSegActive = (key) => {
     const k = typeof key === 'string' ? key.trim() : '';
     if (segHomeBtn) segHomeBtn.classList.toggle('active', k === 'home');
@@ -389,13 +438,10 @@ function setupHomeSpiderBrowse() {
   let favoritesItems = [];
   let favoritesDirty = true;
 
-  let panLoginSettingsLoaded = false;
-  let panLoginSettingsStore = {};
-
   const fetchHomeBundle = async ({
     includePlayHistory = true,
     includeFavorites = true,
-    includePanLoginSettings = true,
+    includePanLoginSettings = false,
     playHistoryLimit = 20,
     favoritesLimit = 50,
   } = {}) => {
@@ -646,6 +692,7 @@ function setupHomeSpiderBrowse() {
     continueAllowed = !!favoritesPrevView.continueAllowed;
     applyContinueVisibility();
     if (continueAllowed) renderContinue();
+    if (continueAllowed && continueDirty) void refreshContinue();
   };
 
   let searchInitDone = false;
@@ -653,6 +700,7 @@ function setupHomeSpiderBrowse() {
     if (searchInitDone) return;
     searchInitDone = true;
     initSearchPage();
+    void ensureSearchSettingsLoaded().catch(() => {});
   };
 
   const showHomeMain = () => {
@@ -677,6 +725,7 @@ function setupHomeSpiderBrowse() {
     continueAllowed = true;
     applyContinueVisibility();
     if (continueAllowed) renderContinue();
+    if (continueDirty) void refreshContinue();
   };
 
   const showDoubanType = (type) => {
@@ -1539,7 +1588,6 @@ function setupHomeSpiderBrowse() {
   const tvUser = (cfgEl.getAttribute('data-tv-user') || '').trim();
   const getCatApiBase = () => (cfgEl.getAttribute('data-cat-api-base') || '').trim();
   const userRole = (cfgEl.getAttribute('data-user-role') || '').trim();
-  const userCatApiBase = (cfgEl.getAttribute('data-user-cat-api-base') || '').trim();
 
   const normalizeCatApiBase = (raw) => {
     const s = String(raw || '').trim();
@@ -1577,62 +1625,15 @@ function setupHomeSpiderBrowse() {
     return data;
   };
 
-	  const maybeSyncSharedCookiesToUserCatPawOpen = async () => {
-	    if (userRole !== 'shared') return;
-	    const normalized = normalizeCatApiBase(userCatApiBase);
-	    if (!normalized) return;
-
-	    try {
-        if (!panLoginSettingsLoaded) {
-          try {
-            const data = await fetchHomeBundle({
-              includePlayHistory: false,
-              includeFavorites: false,
-              includePanLoginSettings: true,
-            });
-            const store = data && typeof data.panLoginSettings === 'object' ? data.panLoginSettings : {};
-            panLoginSettingsStore = store && typeof store === 'object' ? store : {};
-          } catch (_e) {
-            panLoginSettingsStore = {};
-          } finally {
-            panLoginSettingsLoaded = true;
-          }
-        }
-        const store = panLoginSettingsStore && typeof panLoginSettingsStore === 'object' ? panLoginSettingsStore : {};
-	      const keys = Object.keys(store || {});
-      for (let i = 0; i < keys.length; i += 1) {
-        const panKey = typeof keys[i] === 'string' ? keys[i].trim() : '';
-        if (!panKey) continue;
-        const v = store[panKey];
-        if (!v || typeof v !== 'object') continue;
-        try {
-          if (typeof v.cookie === 'string') {
-            await requestCatWebsiteJson(normalized, `website/${encodeURIComponent(panKey)}/cookie`, {
-              method: 'PUT',
-              body: JSON.stringify({ cookie: v.cookie }),
-            });
-          } else if (typeof v.username === 'string' || typeof v.password === 'string') {
-            await requestCatWebsiteJson(normalized, `website/${encodeURIComponent(panKey)}/account`, {
-              method: 'PUT',
-              body: JSON.stringify({
-                username: typeof v.username === 'string' ? v.username : '',
-                password: typeof v.password === 'string' ? v.password : '',
-              }),
-            });
-          }
-        } catch (_e) {}
-      }
-    } catch (_e) {}
-  };
-
-  const requestSpider = (action, spiderApi, payload) =>
-    requestCatSpider({
+  const requestSpider = async (action, spiderApi, payload) => {
+    return await requestCatSpider({
       apiBase: getCatApiBase(),
       username: tvUser,
       action,
       spiderApi,
       payload,
     });
+  };
 
   const formatHttpError = (err) => {
     const status = err && typeof err.status === 'number' ? err.status : 0;
@@ -1965,6 +1966,7 @@ function setupHomeSpiderBrowse() {
     continueAllowed = true;
     applyContinueVisibility();
     if (continueAllowed) renderContinue();
+    if (continueDirty) void refreshContinue();
     loadHome(api, key);
 
     let siteName = '';
@@ -2061,38 +2063,20 @@ function setupHomeSpiderBrowse() {
     showHomeFromStorage();
   }
 
+  const canFetchContinue = () => {
+    if (!continueAllowed) return false;
+    if (!homeMain) return false;
+    return !homeMain.classList.contains('hidden');
+  };
+
   try {
     window.addEventListener('tv:play-history-updated', () => {
       continueDirty = true;
-      void refreshContinue();
+      if (canFetchContinue()) void refreshContinue();
     });
   } catch (_e) {}
-  void (async () => {
-    try {
-      const data = await fetchHomeBundle({
-        includePlayHistory: true,
-        includeFavorites: true,
-        includePanLoginSettings: userRole === 'shared',
-        playHistoryLimit: 20,
-        favoritesLimit: 50,
-      });
-      continueItems = Array.isArray(data && data.playHistory) ? data.playHistory : [];
-      continueDirty = false;
-      favoritesItems = Array.isArray(data && data.favorites) ? data.favorites : [];
-      favoritesDirty = false;
-      if (data && typeof data.panLoginSettings === 'object') {
-        panLoginSettingsStore = data.panLoginSettings;
-        panLoginSettingsLoaded = true;
-      }
-      void maybeSyncSharedCookiesToUserCatPawOpen();
-    } catch (_e) {
-      continueDirty = true;
-    } finally {
-      applyContinueVisibility();
-      if (continueAllowed) renderContinue();
-    }
-    if (continueDirty) void refreshContinue();
-  })();
+  applyContinueVisibility();
+  if (continueDirty && canFetchContinue()) void refreshContinue();
 }
 
 export function initIndexPage() {
@@ -2104,6 +2088,18 @@ export function initIndexPage() {
   } catch (_e) {}
   const cfgEl = document.getElementById('homeDoubanConfig');
         if (!cfgEl) return;
+
+        const setCfgAttr = (k, v) => {
+          try {
+            const key = typeof k === 'string' ? k.trim() : '';
+            if (!key) return;
+            if (v == null) {
+              cfgEl.removeAttribute(key);
+              return;
+            }
+            cfgEl.setAttribute(key, String(v));
+          } catch (_e) {}
+        };
 
         const runtimeConfig = {
           doubanDataProxy: (cfgEl.getAttribute('data-douban-data-proxy') || 'direct').trim(),
@@ -2950,36 +2946,20 @@ export function initIndexPage() {
           });
         } catch (_e) {}
 
-		        const shouldSkipDoubanRows = () => {
-		          try {
-		            const keyFromStorage = lsGet(LAST_SITE_KEY);
-		            if (!keyFromStorage || keyFromStorage === 'home') return false;
-
-            const siteList = document.getElementById('homeSiteNavList');
-            if (!siteList) return false;
-            const key = keyFromStorage;
-            const esc = typeof CSS !== 'undefined' && CSS && typeof CSS.escape === 'function' ? CSS.escape(key) : key;
-            const exists = siteList.querySelector(`a[data-site-key="${esc}"]`);
-            return !!exists;
-          } catch (_e) {
-            return false;
+        try {
+          const lastSiteKey = lsGet(LAST_SITE_KEY);
+          if (lastSiteKey && lastSiteKey !== 'home') {
+            const siteSections = document.getElementById('homeSiteSections');
+            const doubanSections = document.getElementById('homeDoubanSections');
+            const doubanBrowse = document.getElementById('homeDoubanBrowse');
+            if (siteSections) siteSections.classList.remove('hidden');
+            if (doubanSections) doubanSections.classList.add('hidden');
+            if (doubanBrowse) doubanBrowse.classList.add('hidden');
+          } else {
+            const view = lsGet(HOME_VIEW_KEY);
+            if (!view || view === 'home') ensureHomeRowsLoaded();
           }
-        };
-
-        const shouldSkip = shouldSkipDoubanRows();
-        if (shouldSkip) {
-          const siteSections = document.getElementById('homeSiteSections');
-          const doubanSections = document.getElementById('homeDoubanSections');
-          const doubanBrowse = document.getElementById('homeDoubanBrowse');
-          if (siteSections) siteSections.classList.remove('hidden');
-          if (doubanSections) doubanSections.classList.add('hidden');
-          if (doubanBrowse) doubanBrowse.classList.add('hidden');
-		        } else {
-		          try {
-		            const view = lsGet(HOME_VIEW_KEY);
-		            if (!view || view === 'home') ensureHomeRowsLoaded();
-		          } catch (_e) {
-		            ensureHomeRowsLoaded();
-		          }
-		        }
+        } catch (_e) {
+          ensureHomeRowsLoaded();
+        }
 }

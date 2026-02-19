@@ -668,6 +668,7 @@ import { initPlayPage } from './playClient.js';
 	import ArtPlayer from '../../shared/ArtPlayer.vue';
 import { grantCatLowPrioritySearchTickets, normalizeCatPawOpenApiBase, pauseCatLowPriority, requestCatPlay, requestCatSpider } from '../../shared/catpawopen';
 import { apiGetJson, apiPostJson, buildQuery } from '../../shared/apiClient';
+import { fetchBootstrap } from '../../shared/bootstrap';
 import { processPosterUrl } from '../../shared/posterCard';
 
 const props = defineProps({
@@ -688,6 +689,33 @@ const props = defineProps({
 });
 
 const artPlayerRef = ref(null);
+
+const playBootstrapSettings = ref(null);
+const effectiveBootstrapSettings = computed(() => {
+  const base = props && props.bootstrap && typeof props.bootstrap.settings === 'object' && props.bootstrap.settings ? props.bootstrap.settings : {};
+  const extra = playBootstrapSettings.value && typeof playBootstrapSettings.value === 'object' ? playBootstrapSettings.value : {};
+  return Object.assign({}, base, extra);
+});
+
+const ensurePlaySettingsLoaded = async () => {
+  // Index bootstrap is intentionally light; fetch the play-specific settings only when needed.
+  if (playBootstrapSettings.value) return;
+  const base = props && props.bootstrap && typeof props.bootstrap.settings === 'object' && props.bootstrap.settings ? props.bootstrap.settings : {};
+  const needs =
+    !Array.isArray(base.goProxyServers) ||
+    !Array.isArray(base.magicEpisodeRules) ||
+    !Array.isArray(base.magicEpisodeCleanRegexRules) ||
+    !Array.isArray(base.magicMovieRules) ||
+    !Array.isArray(base.smartSourcePriorityTokens) ||
+    !Array.isArray(base.smartPanMatchTokens);
+  if (!needs) return;
+  try {
+    const b = await fetchBootstrap('play');
+    if (b && b.authenticated && b.settings && typeof b.settings === 'object') {
+      playBootstrapSettings.value = b.settings;
+    }
+  } catch (_e) {}
+};
 
 const debugEnabled = computed(() => {
   try {
@@ -729,6 +757,10 @@ const showPlayerToast = (msg) => {
     }, 2600);
   } catch (_e) {}
 };
+
+onMounted(() => {
+  void ensurePlaySettingsLoaded();
+});
 
 const THIRD_PARTY_PLAYERS = [
   { icon: 'iina', name: 'IINA', scheme: 'iina://weblink?url=$edurl', platforms: ['MacOS'] },
@@ -1075,10 +1107,9 @@ const fetchUserSitesCached = async (ttlMs = 15 * 1000) => {
 };
 
 const resolveCatApiBaseForPlay = () => {
-  const role = props.bootstrap && props.bootstrap.user && props.bootstrap.user.role ? String(props.bootstrap.user.role) : '';
-  const userBase = props.bootstrap?.settings?.userCatPawOpenApiBase || '';
-  const serverBase = props.bootstrap?.settings?.catPawOpenApiBase || '';
-  return (role === 'user' ? userBase : (userBase || serverBase)).trim();
+  const s = effectiveBootstrapSettings.value || {};
+  const serverBase = s.catPawOpenApiBase || '';
+  return String(serverBase || '').trim();
 };
 
 const isConfigCenterSite = (s) => {
@@ -1150,17 +1181,12 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
   };
 
   const siteOrderMap = (() => {
-    const homeSites =
-      props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.homeSites)
-        ? props.bootstrap.settings.homeSites
-        : [];
+    const s = effectiveBootstrapSettings.value || {};
+    const homeSites = Array.isArray(s.homeSites) ? s.homeSites : [];
     const homeOrder = homeSites
       .map((s) => (s && typeof s.key === 'string' ? s.key.trim() : ''))
       .filter((k) => k);
-    const fallbackOrder =
-      props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.searchSiteOrder)
-        ? props.bootstrap.settings.searchSiteOrder
-        : [];
+    const fallbackOrder = Array.isArray(s.searchSiteOrder) ? s.searchSiteOrder : [];
     const order = homeOrder.length ? homeOrder : fallbackOrder;
     const orderMap = new Map();
     order.forEach((k, idx) => {
@@ -1279,7 +1305,7 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
     const tvUser = props.bootstrap?.user?.username || '';
     if (!apiBase) throw new Error('CatPawOpen 接口地址未设置');
 
-    const concurrencyRaw = props.bootstrap?.settings?.searchThreadCount;
+    const concurrencyRaw = effectiveBootstrapSettings.value.searchThreadCount;
     const concurrencyNum = Number(concurrencyRaw);
     const concurrency =
       Number.isFinite(concurrencyNum) && concurrencyNum > 0 ? Math.min(50, Math.floor(concurrencyNum)) : 5;
@@ -1654,9 +1680,7 @@ const resolvedSpiderApi = computed(() => {
   if (direct) return direct;
   const key = (props.siteKey || '').trim();
   if (!key) return '';
-  const sites = props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.homeSites)
-    ? props.bootstrap.settings.homeSites
-    : [];
+  const sites = Array.isArray(effectiveBootstrapSettings.value.homeSites) ? effectiveBootstrapSettings.value.homeSites : [];
   const found = sites.find((s) => s && s.key === key);
   const fromHome = found && found.api ? String(found.api) : '';
   return fromHome;
@@ -1707,10 +1731,7 @@ watch(
 const resolvedSiteName = computed(() => {
   const key = (props.siteKey || '').trim();
   if (!key) return '';
-  const sites =
-    props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.homeSites)
-      ? props.bootstrap.settings.homeSites
-      : [];
+  const sites = Array.isArray(effectiveBootstrapSettings.value.homeSites) ? effectiveBootstrapSettings.value.homeSites : [];
   const found = sites.find((s) => s && s.key === key);
   const name = found && found.name ? String(found.name) : '';
   return name.trim();
@@ -1720,17 +1741,11 @@ const orderedSiteSources = computed(() => {
   const currentSiteKey = (props.siteKey || '').trim();
   const currentVideoId = (props.videoId || '').trim();
   const currentSourceTitle = (props.videoTitle || '').trim();
-  const homeSites =
-    props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.homeSites)
-      ? props.bootstrap.settings.homeSites
-      : [];
+  const homeSites = Array.isArray(effectiveBootstrapSettings.value.homeSites) ? effectiveBootstrapSettings.value.homeSites : [];
   const homeOrder = homeSites
     .map((s) => (s && typeof s.key === 'string' ? s.key.trim() : ''))
     .filter((k) => k);
-  const fallbackOrder =
-    props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.searchSiteOrder)
-      ? props.bootstrap.settings.searchSiteOrder
-      : [];
+  const fallbackOrder = Array.isArray(effectiveBootstrapSettings.value.searchSiteOrder) ? effectiveBootstrapSettings.value.searchSiteOrder : [];
   const order = homeOrder.length ? homeOrder : fallbackOrder;
   const orderMap = new Map();
   order.forEach((k, idx) => {
@@ -1959,10 +1974,7 @@ const sourcesTabItems = computed(() => {
         return stripped || label;
       };
 
-	      const homeSites =
-	        props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.homeSites)
-	          ? props.bootstrap.settings.homeSites
-	          : [];
+	      const homeSites = Array.isArray(effectiveBootstrapSettings.value.homeSites) ? effectiveBootstrapSettings.value.homeSites : [];
 	      const siteNameOf = (siteKey, fallbackName = '') => {
 	        const k = typeof siteKey === 'string' ? siteKey.trim() : String(siteKey || '').trim();
 	        if (!k) return (fallbackName || '').trim();
@@ -1974,9 +1986,7 @@ const sourcesTabItems = computed(() => {
 	        .map((s) => (s && typeof s.key === 'string' ? s.key.trim() : ''))
 	        .filter((k) => k);
       const fallbackOrder =
-        props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.searchSiteOrder)
-          ? props.bootstrap.settings.searchSiteOrder
-          : [];
+        Array.isArray(effectiveBootstrapSettings.value.searchSiteOrder) ? effectiveBootstrapSettings.value.searchSiteOrder : [];
       const order = homeOrder.length ? homeOrder : fallbackOrder;
       const orderMap = new Map();
       order.forEach((k, idx2) => {
@@ -2286,11 +2296,9 @@ watch(
 const pickHistoryPoster = () => {
   if (tmdbMode.value && displayPoster.value) return displayPoster.value;
   const currentSiteKey = (props.siteKey || '').trim();
-  const preferred = props.bootstrap?.settings?.searchCoverSite ? String(props.bootstrap.settings.searchCoverSite).trim() : '';
+  const preferred = effectiveBootstrapSettings.value.searchCoverSite ? String(effectiveBootstrapSettings.value.searchCoverSite).trim() : '';
   const order =
-    props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.searchSiteOrder)
-      ? props.bootstrap.settings.searchSiteOrder
-      : [];
+    Array.isArray(effectiveBootstrapSettings.value.searchSiteOrder) ? effectiveBootstrapSettings.value.searchSiteOrder : [];
   const orderMap = new Map();
   order.forEach((k, idx) => {
     const kk = typeof k === 'string' ? k.trim() : '';
@@ -2349,7 +2357,7 @@ const tryLockHistoryPoster = async (opts = {}) => {
   const { force = false, allowFallback = false } = opts || {};
   if (historyCoverLocked.value) return;
 
-  const preferred = props.bootstrap?.settings?.searchCoverSite ? String(props.bootstrap.settings.searchCoverSite).trim() : '';
+  const preferred = effectiveBootstrapSettings.value.searchCoverSite ? String(effectiveBootstrapSettings.value.searchCoverSite).trim() : '';
   if (!force && preferred) {
     const hit = (aggregatedSources.value || []).find((s) => s && s.siteKey === preferred && s.videoPoster);
     if (!hit) return;
@@ -3315,8 +3323,8 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
 };
 
 const magicEpisodeRules = computed(() => {
-  const list = props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.magicEpisodeRules)
-    ? props.bootstrap.settings.magicEpisodeRules
+  const list = effectiveBootstrapSettings.value && Array.isArray(effectiveBootstrapSettings.value.magicEpisodeRules)
+    ? effectiveBootstrapSettings.value.magicEpisodeRules
     : [];
   return list
     .map((x) => (typeof x === 'string' ? x.trim() : ''))
@@ -3324,7 +3332,7 @@ const magicEpisodeRules = computed(() => {
 });
 
 const magicMovieRules = computed(() => {
-  const listRaw = props.bootstrap?.settings?.magicMovieRules;
+  const listRaw = effectiveBootstrapSettings.value ? effectiveBootstrapSettings.value.magicMovieRules : null;
   const list = Array.isArray(listRaw) ? listRaw : [];
   return list
     .map((x) => (typeof x === 'string' ? x.trim() : ''))
@@ -3332,7 +3340,7 @@ const magicMovieRules = computed(() => {
 });
 
 const magicEpisodeCleanRegexRules = computed(() => {
-  const listRaw = props.bootstrap?.settings?.magicEpisodeCleanRegexRules;
+  const listRaw = effectiveBootstrapSettings.value ? effectiveBootstrapSettings.value.magicEpisodeCleanRegexRules : null;
   if (Array.isArray(listRaw)) {
     return listRaw.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
   }
@@ -3340,7 +3348,7 @@ const magicEpisodeCleanRegexRules = computed(() => {
 });
 
 const magicAggregateRegexRules = computed(() => {
-  const listRaw = props.bootstrap?.settings?.magicAggregateRegexRules;
+  const listRaw = effectiveBootstrapSettings.value ? effectiveBootstrapSettings.value.magicAggregateRegexRules : null;
   const list = Array.isArray(listRaw) ? listRaw : [];
   return list
     .map((x) => (typeof x === 'string' ? x.trim() : ''))
@@ -3476,17 +3484,17 @@ const compiledMagicMovieRules = computed(() => {
 const hasMagicEpisodeRules = computed(() => compiledMagicEpisodeRules.value.length > 0);
 
 const smartPlayEnabledSetting = computed(() => {
-  const raw = props.bootstrap?.settings?.smartPlayEnabled;
+  const raw = effectiveBootstrapSettings.value.smartPlayEnabled;
   return raw !== false;
 });
 
 const smartListEnabledSetting = computed(() => {
-  const raw = props.bootstrap?.settings?.smartListEnabled;
+  const raw = effectiveBootstrapSettings.value.smartListEnabled;
   return raw !== false;
 });
 
 const smartSourceExtractPrioritySetting = computed(() => {
-  const raw = props.bootstrap?.settings?.smartSourceExtractPriority;
+  const raw = effectiveBootstrapSettings.value.smartSourceExtractPriority;
   const text = typeof raw === 'string' ? raw.trim() : String(raw || '').trim();
 
 	  const mode = (() => {
@@ -3501,13 +3509,13 @@ const smartSourceExtractPrioritySetting = computed(() => {
 	});
 
 const smartSourcePriorityTokensSetting = computed(() => {
-  const list = props.bootstrap?.settings?.smartSourcePriorityTokens;
+  const list = effectiveBootstrapSettings.value.smartSourcePriorityTokens;
   if (!Array.isArray(list)) return [];
   return list.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
 });
 
 const smartPanMatchTokensSetting = computed(() => {
-  const list = props.bootstrap?.settings?.smartPanMatchTokens;
+  const list = effectiveBootstrapSettings.value.smartPanMatchTokens;
   if (!Array.isArray(list)) return [];
   return list.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
 });
@@ -3589,7 +3597,7 @@ const playDebugText = computed(() => {
   const seasons = tm && Array.isArray(tm.seasons) ? tm.seasons : [];
   const tmdbSeasonCount = (Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : []).filter((s) => s && Number(s.season) > 0).length;
   const tabs = Array.isArray(seasonTabs.value) ? seasonTabs.value : [];
-  const settings = p.bootstrap && p.bootstrap.settings && typeof p.bootstrap.settings === 'object' ? p.bootstrap.settings : {};
+  const settings = effectiveBootstrapSettings.value || {};
   const rules = Array.isArray(settings.magicEpisodeRules) ? settings.magicEpisodeRules : [];
   const cleanRules = Array.isArray(settings.magicEpisodeCleanRegexRules) ? settings.magicEpisodeCleanRegexRules : [];
   const pickDbg = tmdbSmartLastPickDebug.value && typeof tmdbSmartLastPickDebug.value === 'object' ? tmdbSmartLastPickDebug.value : null;
@@ -5484,7 +5492,7 @@ const speedTestGoProxyBase = async (base, bytes = 2 * 1024 * 1024, timeoutMs = 8
 };
 
 const pickGoProxyBaseForPlayback = async (pan = '') => {
-  const servers = normalizeGoProxyServers(props.bootstrap?.settings?.goProxyServers);
+  const servers = normalizeGoProxyServers(effectiveBootstrapSettings.value.goProxyServers);
   if (!servers.length) return '';
   const p = typeof pan === 'string' ? pan.trim().toLowerCase() : '';
   const eligible = (p === 'baidu' || p === 'quark')
@@ -5501,7 +5509,7 @@ const pickGoProxyBaseForPlayback = async (pan = '') => {
     return manual;
   }
 
-  const autoSelect = !!props.bootstrap?.settings?.goProxyAutoSelect;
+  const autoSelect = !!effectiveBootstrapSettings.value.goProxyAutoSelect;
   if (!autoSelect) return eligible[0].base;
 
   if (goProxyPickState.selectedBase && goProxyPickState.selectedPan === p) return goProxyPickState.selectedBase;
@@ -5795,7 +5803,7 @@ const maybeUseGoProxyForPlayback = async (playUrl, playHeaders, preferredPan = '
 };
 
 const goProxyUiEligible = computed(() => {
-  const enabled = !!props.bootstrap?.settings?.goProxyEnabled;
+  const enabled = !!effectiveBootstrapSettings.value.goProxyEnabled;
   if (!enabled) return false;
   const candidate = lastGoProxyCandidate.value;
   if (!candidate || !candidate.enabled) return false;
@@ -5803,16 +5811,16 @@ const goProxyUiEligible = computed(() => {
 });
 
 const goProxyUiOptions = computed(() => {
-  const enabled = !!props.bootstrap?.settings?.goProxyEnabled;
+  const enabled = !!effectiveBootstrapSettings.value.goProxyEnabled;
   if (!enabled || !goProxyUiEligible.value) return [];
-  const servers = normalizeGoProxyServers(props.bootstrap?.settings?.goProxyServers);
+  const servers = normalizeGoProxyServers(effectiveBootstrapSettings.value.goProxyServers);
   return servers.map((s) => ({ base: s.base, label: s.label }));
 });
 
 const goProxyUiLabel = computed(() => {
-  const enabled = !!props.bootstrap?.settings?.goProxyEnabled;
+  const enabled = !!effectiveBootstrapSettings.value.goProxyEnabled;
   if (!enabled || !goProxyUiEligible.value) return '';
-  const servers = normalizeGoProxyServers(props.bootstrap?.settings?.goProxyServers);
+  const servers = normalizeGoProxyServers(effectiveBootstrapSettings.value.goProxyServers);
   if (!servers.length) return '';
 
   const inUse = normalizeHttpBase(goProxyInUseBase.value);
@@ -6007,7 +6015,7 @@ const smartBuildSourceKey = (src) => {
 };
 
 const smartPickConcurrency = computed(() => {
-  const raw = props.bootstrap?.settings?.searchThreadCount;
+  const raw = effectiveBootstrapSettings.value.searchThreadCount;
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return 5;
   return Math.max(1, Math.min(20, Math.floor(n)));
@@ -6418,17 +6426,11 @@ const smartGetCandidatesFromEntry = (entry, { episodeNo, seasonNo, seasonEpisode
 };
 
 const smartBuildSiteOrderMap = () => {
-  const homeSites =
-    props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.homeSites)
-      ? props.bootstrap.settings.homeSites
-      : [];
+  const homeSites = Array.isArray(effectiveBootstrapSettings.value.homeSites) ? effectiveBootstrapSettings.value.homeSites : [];
   const homeOrder = homeSites
     .map((s) => (s && typeof s.key === 'string' ? s.key.trim() : ''))
     .filter((k) => k);
-  const fallbackOrder =
-    props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.searchSiteOrder)
-      ? props.bootstrap.settings.searchSiteOrder
-      : [];
+  const fallbackOrder = Array.isArray(effectiveBootstrapSettings.value.searchSiteOrder) ? effectiveBootstrapSettings.value.searchSiteOrder : [];
   const order = homeOrder.length ? homeOrder : fallbackOrder;
   const orderMap = new Map();
   order.forEach((k, idx) => {
@@ -7121,9 +7123,7 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	  const run = (async () => {
 
 	  const order =
-    props.bootstrap && props.bootstrap.settings && Array.isArray(props.bootstrap.settings.searchSiteOrder)
-      ? props.bootstrap.settings.searchSiteOrder
-      : [];
+    Array.isArray(effectiveBootstrapSettings.value.searchSiteOrder) ? effectiveBootstrapSettings.value.searchSiteOrder : [];
   const orderMap = new Map();
   order.forEach((k, idx) => {
     const kk = typeof k === 'string' ? k.trim() : '';
@@ -7280,7 +7280,7 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
     return okCached.concat(retryable, cooldownFailed);
   };
 
-  const concurrencyRaw = props.bootstrap?.settings?.searchThreadCount;
+  const concurrencyRaw = effectiveBootstrapSettings.value.searchThreadCount;
   const concurrencyNum = Number(concurrencyRaw);
   const concurrency =
     Number.isFinite(concurrencyNum) && concurrencyNum > 0 ? Math.min(50, Math.floor(concurrencyNum)) : 5;
@@ -8006,10 +8006,7 @@ const requestPlay = async () => {
       playerFirstFrameTimer = 0;
     }
     try {
-		    const role = props.bootstrap && props.bootstrap.user && props.bootstrap.user.role ? String(props.bootstrap.user.role) : '';
-		    const userBase = props.bootstrap?.settings?.userCatPawOpenApiBase || '';
-		    const serverBase = props.bootstrap?.settings?.catPawOpenApiBase || '';
-		    const apiBase = (role === 'user' ? userBase : (userBase || serverBase)).trim();
+		    const apiBase = resolveCatApiBaseForPlay();
 		    const tvUser = props.bootstrap?.user?.username || '';
 
 	        const fetchPlay = async () => {
@@ -8122,7 +8119,7 @@ const requestPlay = async () => {
           } catch (_e) {}
         }
 
-        const goProxyEnabled = !!props.bootstrap?.settings?.goProxyEnabled;
+        const goProxyEnabled = !!effectiveBootstrapSettings.value.goProxyEnabled;
 
 	      // HLS/m3u8: if possible, use CatPawOpen m3u8 proxy mode to avoid CORS/IP-bound issues.
 	      // - index.m3u8: CatPawOpen fetches playlist with headers and returns absolute URIs (segments are upstream)

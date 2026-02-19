@@ -1936,7 +1936,7 @@ export function initDashboardPage(bootstrap = {}) {
     { key: 'baidu', name: '百度', type: 'cookie' },
     { key: 'quark', name: '夸克', type: 'cookie' },
     { key: 'quark_tv', name: '夸克TV', type: 'quark_tv' },
-    { key: 'tianyi', name: '天翼', type: 'account' },
+    { key: '189', name: '天翼', type: 'account' },
     { key: '139', name: '移动', type: 'authorization' },
     { key: 'uc', name: 'UC', type: 'cookie' },
     { key: 'uc_tv', name: 'UC_TV', type: 'uc_tv' },
@@ -2416,10 +2416,11 @@ export function initDashboardPage(bootstrap = {}) {
     return savePanSettings(key, 'cookie', { cookie: cookie != null ? String(cookie) : '' });
   };
 
-  const savePanAccount = async (key, username, password) => {
+  const savePanAccount = async (key, username, password, cookie) => {
     return savePanSettings(key, 'account', {
       username: username != null ? String(username) : '',
       password: password != null ? String(password) : '',
+      cookie: cookie != null ? String(cookie) : '',
     });
   };
 
@@ -2427,11 +2428,13 @@ export function initDashboardPage(bootstrap = {}) {
     return savePanSettings(key, 'authorization', { authorization: authorization != null ? String(authorization) : '' });
   };
 
-  const savePanTv = async (key, tvType, refreshToken, deviceId) => {
+  const savePanTv = async (key, tvType, refreshToken, deviceId, accessToken, accessTokenExpAt) => {
     const t = tvType === 'uc_tv' ? 'uc_tv' : 'quark_tv';
     return savePanSettings(key, t, {
       refresh_token: refreshToken != null ? String(refreshToken) : '',
       device_id: deviceId != null ? String(deviceId) : '',
+      access_token: accessToken != null ? String(accessToken) : '',
+      access_token_exp_at: accessTokenExpAt != null ? String(accessTokenExpAt) : '',
     });
   };
 
@@ -2675,6 +2678,32 @@ export function initDashboardPage(bootstrap = {}) {
 	      devRow.appendChild(devLabel);
 	      devRow.appendChild(devInput);
 
+	      const atRow = createEl('div');
+	      const atLabel = createEl('label', {
+	        className: 'block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1',
+	        text: 'Access Token（可空）',
+	      });
+	      const atInput = createEl('input', { className: 'tv-field' });
+	      atInput.type = 'text';
+	      atInput.autocomplete = 'off';
+	      atInput.value = (v.access_token || '').toString();
+	      atInput.setAttribute('data-pan-tv-access-token', def.key);
+	      atRow.appendChild(atLabel);
+	      atRow.appendChild(atInput);
+
+	      const expRow = createEl('div');
+	      const expLabel = createEl('label', {
+	        className: 'block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1',
+	        text: 'access_token_exp_at（可空）',
+	      });
+	      const expInput = createEl('input', { className: 'tv-field' });
+	      expInput.type = 'text';
+	      expInput.autocomplete = 'off';
+	      expInput.value = (v.access_token_exp_at || '').toString();
+	      expInput.setAttribute('data-pan-tv-access-token-exp-at', def.key);
+	      expRow.appendChild(expLabel);
+	      expRow.appendChild(expInput);
+
 	      const saveBtn = createEl('button', { className: 'btn-green', text: '保存' });
 	      saveBtn.type = 'button';
 	      saveBtn.setAttribute('data-pan-action', 'save-tv');
@@ -2682,6 +2711,8 @@ export function initDashboardPage(bootstrap = {}) {
 
 	      form.appendChild(rtRow);
 	      form.appendChild(devRow);
+	      form.appendChild(atRow);
+	      form.appendChild(expRow);
 	      form.appendChild(saveBtn);
 	      panSettingsContent.appendChild(form);
 	      return;
@@ -2876,6 +2907,22 @@ export function initDashboardPage(bootstrap = {}) {
 
 	    form.appendChild(userRow);
 	    form.appendChild(passRow);
+	    if (def.key === '189') {
+	      const cookieRow = createEl('div');
+	      const cookieLabel = createEl('label', {
+	        className: 'block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1',
+	        text: 'Cookie（可空）',
+	      });
+	      const cookieTextarea = createEl('textarea', { className: 'tv-field' });
+	      cookieTextarea.rows = 4;
+	      setStyles(cookieTextarea, { width: '100%' });
+	      cookieTextarea.placeholder = '';
+	      cookieTextarea.value = (v.cookie || '').toString();
+	      cookieTextarea.setAttribute('data-pan-account-cookie', def.key);
+	      cookieRow.appendChild(cookieLabel);
+	      cookieRow.appendChild(cookieTextarea);
+	      form.appendChild(cookieRow);
+	    }
 	    form.appendChild(saveBtn);
 	    panSettingsContent.appendChild(form);
 	  };
@@ -2996,12 +3043,16 @@ export function initDashboardPage(bootstrap = {}) {
       if (action === 'save-tv') {
         const rtEl = panSettingsContent.querySelector(`input[data-pan-tv-refresh-token="${key}"]`);
         const devEl = panSettingsContent.querySelector(`input[data-pan-tv-device-id="${key}"]`);
+        const atEl = panSettingsContent.querySelector(`input[data-pan-tv-access-token="${key}"]`);
+        const expEl = panSettingsContent.querySelector(`input[data-pan-tv-access-token-exp-at="${key}"]`);
         const refreshToken = rtEl ? rtEl.value : '';
         const deviceId = devEl ? devEl.value : '';
+        const accessToken = atEl ? atEl.value : '';
+        const accessTokenExpAt = expEl ? expEl.value : '';
         await savePanLoginSettingToServer({
           key,
           actionEl,
-          save: () => savePanTv(key, def.type, refreshToken, deviceId),
+          save: () => savePanTv(key, def.type, refreshToken, deviceId, accessToken, accessTokenExpAt),
         });
         return;
       }
@@ -3185,12 +3236,14 @@ export function initDashboardPage(bootstrap = {}) {
       if (action === 'save-account') {
         const usernameEl = panSettingsContent.querySelector(`input[data-pan-account-username="${key}"]`);
         const passwordEl = panSettingsContent.querySelector(`input[data-pan-account-password="${key}"]`);
+        const cookieEl = panSettingsContent.querySelector(`textarea[data-pan-account-cookie="${key}"]`);
         const username = usernameEl ? usernameEl.value : '';
         const password = passwordEl ? passwordEl.value : '';
+        const cookie = cookieEl ? cookieEl.value : '';
         await savePanLoginSettingToServer({
           key,
           actionEl,
-          save: () => savePanAccount(key, username, password),
+          save: () => savePanAccount(key, username, password, cookie),
         });
         return;
       }
@@ -6326,9 +6379,6 @@ export function initDashboardPage(bootstrap = {}) {
   const addUserStatus = document.getElementById('addUserStatus');
   const addUserName = document.getElementById('addUserName');
   const addUserPassword = document.getElementById('addUserPassword');
-  const addUserRole = document.getElementById('addUserRole');
-  const addUserCatApiBase = document.getElementById('addUserCatApiBase');
-  const addUserCatProxy = document.getElementById('addUserCatProxy');
   const confirmAddUser = document.getElementById('confirmAddUser');
   const userCountEl = document.getElementById('userCount');
   const userTableBody = document.getElementById('userTableBody');
@@ -6348,7 +6398,6 @@ export function initDashboardPage(bootstrap = {}) {
 
   const roleLabel = (role) => {
     if (role === 'admin') return { className: 'tag-yellow', text: '管理员' };
-    if (role === 'shared') return { className: 'tag-green', text: '共享' };
     return { className: 'tag-gray', text: '用户' };
   };
 
@@ -6369,21 +6418,11 @@ export function initDashboardPage(bootstrap = {}) {
     const username = row.getAttribute('data-username') || '';
     const role = row.getAttribute('data-role') || 'user';
     const status = row.getAttribute('data-status') || 'active';
-    const catApiBase = row.getAttribute('data-cat-api-base') || '';
-    const catProxy = row.getAttribute('data-cat-proxy') || '';
 
     const nameCell = row.querySelector('td[data-col="username"]') || row.querySelector('td');
     if (nameCell) nameCell.textContent = username;
 
     renderRole(row.querySelector('td[data-col="role"]'), role);
-    renderConfigured(row.querySelector('td[data-col="catApiBase"]'), catApiBase, {
-      whenSet: { className: 'tag-green', text: '已设置' },
-      whenEmpty: { className: 'tag-red', text: '未设置' },
-    });
-    renderConfigured(row.querySelector('td[data-col="catProxy"]'), catProxy, {
-      whenSet: { className: 'tag-yellow', text: '已设置' },
-      whenEmpty: { className: 'tag-green', text: '未设置' },
-    });
     renderStatus(row.querySelector('td[data-col="status"]'), status);
   };
 
@@ -6404,8 +6443,6 @@ export function initDashboardPage(bootstrap = {}) {
     tr.setAttribute('data-username', user.username || '');
     tr.setAttribute('data-role', user.role || 'user');
     tr.setAttribute('data-status', user.status || 'active');
-    tr.setAttribute('data-cat-api-base', user.cat_api_base || user.catApiBase || '');
-    tr.setAttribute('data-cat-proxy', user.cat_proxy || user.catProxy || '');
 
     const tdUser = document.createElement('td');
     tdUser.className = 'px-3 py-2 font-semibold whitespace-nowrap';
@@ -6421,22 +6458,6 @@ export function initDashboardPage(bootstrap = {}) {
     tdStatus.className = 'px-3 py-2 whitespace-nowrap';
     tdStatus.setAttribute('data-col', 'status');
     renderStatus(tdStatus, user.status || 'active');
-
-    const tdCatApi = document.createElement('td');
-    tdCatApi.className = 'px-3 py-2 whitespace-nowrap';
-    tdCatApi.setAttribute('data-col', 'catApiBase');
-    renderConfigured(tdCatApi, tr.getAttribute('data-cat-api-base') || '', {
-      whenSet: { className: 'tag-green', text: '已设置' },
-      whenEmpty: { className: 'tag-red', text: '未设置' },
-    });
-
-    const tdCatProxy = document.createElement('td');
-    tdCatProxy.className = 'px-3 py-2 whitespace-nowrap';
-    tdCatProxy.setAttribute('data-col', 'catProxy');
-    renderConfigured(tdCatProxy, tr.getAttribute('data-cat-proxy') || '', {
-      whenSet: { className: 'tag-yellow', text: '已设置' },
-      whenEmpty: { className: 'tag-green', text: '未设置' },
-    });
 
     const tdActions = document.createElement('td');
     tdActions.className = 'px-3 py-2 whitespace-nowrap';
@@ -6460,8 +6481,6 @@ export function initDashboardPage(bootstrap = {}) {
 
     tr.appendChild(tdUser);
     tr.appendChild(tdRole);
-    tr.appendChild(tdCatApi);
-    tr.appendChild(tdCatProxy);
     tr.appendChild(tdStatus);
     tr.appendChild(tdActions);
     userTableBody.appendChild(tr);
@@ -7993,9 +8012,6 @@ export function initDashboardPage(bootstrap = {}) {
     addUserForm &&
     addUserName &&
     addUserPassword &&
-    addUserRole &&
-    addUserCatApiBase &&
-    addUserCatProxy &&
     confirmAddUser
   ) {
     addUserBtn.type = 'button';
@@ -8025,8 +8041,6 @@ export function initDashboardPage(bootstrap = {}) {
 
     setFormVisible(false);
 
-    setupCustomSelectElement(addUserRole);
-
     addUserBtn.addEventListener('click', (e) => {
       e.preventDefault();
       setFormVisible(addUserForm.hidden);
@@ -8044,10 +8058,6 @@ export function initDashboardPage(bootstrap = {}) {
       const fields = formToFields(addUserForm);
       const username = (fields.username || '').trim();
       const password = (fields.password || '').trim();
-      const roleRaw = (fields.role || '').trim();
-      const role = roleRaw === 'shared' ? 'shared' : 'user';
-      const catApiBase = (fields.catApiBase || '').trim();
-      const catProxy = (fields.catProxy || '').trim();
       if (!username || !password) return;
 
       confirmAddUser.disabled = true;
@@ -8058,21 +8068,15 @@ export function initDashboardPage(bootstrap = {}) {
         const { resp, data } = await postForm('/dashboard/user/add', {
           username,
           password,
-          role,
-          catApiBase,
-          catProxy,
         });
         if (resp.ok && data.success) {
           setAddUserStatus('success', '添加成功');
           appendUserRow({
             username,
-            role,
+            role: 'user',
             status: 'active',
-            cat_api_base: catApiBase,
-            cat_proxy: catProxy,
           });
           addUserForm.reset();
-          syncCustomSelectValue('addUserRole', 'user');
           if (userCountEl) {
             const num = parseInt(userCountEl.textContent || '0', 10);
             userCountEl.textContent = (num + 1).toString();
@@ -8124,7 +8128,7 @@ export function initDashboardPage(bootstrap = {}) {
         editTr.setAttribute('data-for', username);
 
         const editTd = document.createElement('td');
-        editTd.colSpan = 6;
+        editTd.colSpan = 4;
         editTd.className = 'px-3 py-3';
 
         const box = document.createElement('div');
@@ -8161,43 +8165,10 @@ export function initDashboardPage(bootstrap = {}) {
 	        newPassInput.className = 'tv-field';
 
         const originalRole = (row.getAttribute('data-role') || '').trim() || 'user';
-        let roleSelect = null;
-	        if (role !== 'admin') {
-	          roleSelect = document.createElement('select');
-	          roleSelect.className = 'tv-field';
-	          const optUser = document.createElement('option');
-	          optUser.value = 'user';
-	          optUser.textContent = '用户';
-          const optShared = document.createElement('option');
-          optShared.value = 'shared';
-          optShared.textContent = '共享';
-          roleSelect.appendChild(optUser);
-          roleSelect.appendChild(optShared);
-          roleSelect.value = originalRole === 'shared' ? 'shared' : 'user';
-        }
+        // roles are fixed: admin/user
 
-	        const catApiInput = document.createElement('input');
-	        catApiInput.type = 'text';
-	        catApiInput.placeholder = 'CatPawOpen 接口地址（可留空）';
-	        catApiInput.className = 'tv-field';
-        const originalCatApi = (row.getAttribute('data-cat-api-base') || '').trim();
-        catApiInput.value = originalCatApi;
-
-	        const catProxyInput = document.createElement('input');
-	        catProxyInput.type = 'text';
-	        catProxyInput.placeholder = 'CatPawOpen 全局代理地址（可留空）';
-	        catProxyInput.className = 'tv-field';
-        const originalCatProxy = (row.getAttribute('data-cat-proxy') || '').trim();
-        catProxyInput.value = originalCatProxy;
-
-        appendLabeledField('新用户名：', newUserInput);
-        appendLabeledField('新密码：', newPassInput);
-        if (roleSelect) {
-          appendLabeledField('角色：', roleSelect);
-          setupCustomSelectElement(roleSelect);
-        }
-        appendLabeledField('Cat接口：', catApiInput);
-        appendLabeledField('Cat代理：', catProxyInput);
+	        appendLabeledField('新用户名：', newUserInput);
+	        appendLabeledField('新密码：', newPassInput);
 
         const actions = document.createElement('div');
         actions.className = 'action-group mt-3';
@@ -8224,35 +8195,18 @@ export function initDashboardPage(bootstrap = {}) {
 	          button.style.cursor = ok ? 'pointer' : 'not-allowed';
 	        };
 
-        const syncOk = () => {
-          const hasUser = (newUserInput.value || '').trim().length > 0;
-          const hasPass = (newPassInput.value || '').trim().length > 0;
-          const roleChanged = !!roleSelect && (roleSelect.value || 'user') !== (originalRole === 'shared' ? 'shared' : 'user');
-          const apiChanged = ((catApiInput.value || '').trim()) !== originalCatApi;
-          const proxyChanged = ((catProxyInput.value || '').trim()) !== originalCatProxy;
-	          const enabled = hasUser || hasPass || roleChanged || apiChanged || proxyChanged;
-	          setButtonEnabled(okBtn, enabled);
-	        };
+	        const syncOk = () => {
+	          const hasUser = (newUserInput.value || '').trim().length > 0;
+	          const hasPass = (newPassInput.value || '').trim().length > 0;
+		          const enabled = hasUser || hasPass;
+		          setButtonEnabled(okBtn, enabled);
+		        };
 
         newUserInput.addEventListener('input', () => {
           setEditStatus('', '');
           syncOk();
         });
         newPassInput.addEventListener('input', () => {
-          setEditStatus('', '');
-          syncOk();
-        });
-        if (roleSelect) {
-          roleSelect.addEventListener('change', () => {
-            setEditStatus('', '');
-            syncOk();
-          });
-        }
-        catApiInput.addEventListener('input', () => {
-          setEditStatus('', '');
-          syncOk();
-        });
-        catProxyInput.addEventListener('input', () => {
           setEditStatus('', '');
           syncOk();
         });
@@ -8268,34 +8222,14 @@ export function initDashboardPage(bootstrap = {}) {
 	          try {
 	            const fields = { username };
 	            const newU = (newUserInput.value || '').trim();
-	            const newP = (newPassInput.value || '').trim();
-	            if (newU) fields.newUsername = newU;
-	            if (newP) fields.newPassword = newP;
-	            if (roleSelect) {
-	              const nextRole = (roleSelect.value || '').trim();
-	              const normNext = nextRole === 'shared' ? 'shared' : 'user';
-	              const normOrig = originalRole === 'shared' ? 'shared' : 'user';
-	              if (normNext !== normOrig) fields.role = normNext;
-	            }
-	            const nextApi = (catApiInput.value || '').trim();
-	            const nextProxy = (catProxyInput.value || '').trim();
-	            if (nextApi !== originalCatApi) fields.catApiBase = nextApi;
-	            if (nextProxy !== originalCatProxy) fields.catProxy = nextProxy;
+		            const newP = (newPassInput.value || '').trim();
+		            if (newU) fields.newUsername = newU;
+		            if (newP) fields.newPassword = newP;
 	            const { resp, data } = await postForm('/dashboard/user/update', fields);
-		            if (resp.ok && data.success) {
-		              const finalUsername = data.username || username;
-		              row.setAttribute('data-username', finalUsername);
-		              if (roleSelect) {
-		                const nextRole = (data.role || roleSelect.value || 'user').trim();
-		                const roleValue = nextRole === 'shared' ? 'shared' : 'user';
-		                row.setAttribute('data-role', roleValue);
-		              }
-		              if (Object.prototype.hasOwnProperty.call(data, 'catApiBase'))
-		                row.setAttribute('data-cat-api-base', data.catApiBase || '');
-		              else row.setAttribute('data-cat-api-base', nextApi);
-		              if (Object.prototype.hasOwnProperty.call(data, 'catProxy'))
-		                row.setAttribute('data-cat-proxy', data.catProxy || '');
-		              else row.setAttribute('data-cat-proxy', nextProxy);
+			            if (resp.ok && data.success) {
+			              const finalUsername = data.username || username;
+			              row.setAttribute('data-username', finalUsername);
+			              row.setAttribute('data-role', originalRole === 'admin' ? 'admin' : 'user');
 		              refreshUserRowCells(row);
 		              setEditStatus('success', '保存成功');
 		              editTr.remove();

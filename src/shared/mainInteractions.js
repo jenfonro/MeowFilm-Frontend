@@ -59,7 +59,6 @@ export function initMainInteractions() {
   const userBtn = document.getElementById('userMenuBtn');
   const userMenu = document.getElementById('userMenu');
   if (userBtn && userMenu) {
-    const settingsBtn = document.getElementById('userSettingsBtn');
     const closeMenu = (evt) => {
       if (!userMenu.contains(evt.target) && !userBtn.contains(evt.target)) {
         userMenu.classList.add('hidden');
@@ -73,15 +72,5 @@ export function initMainInteractions() {
         setTimeout(() => document.addEventListener('click', closeMenu), 0);
       }
     });
-
-    if (settingsBtn) {
-      settingsBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        userMenu.classList.add('hidden');
-        document.removeEventListener('click', closeMenu);
-        window.dispatchEvent(new CustomEvent('tv:open-user-settings'));
-      });
-    }
   }
 }
