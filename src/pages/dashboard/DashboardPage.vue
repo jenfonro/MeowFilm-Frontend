@@ -36,6 +36,10 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>
           <span class="nav-label">魔法匹配设置</span>
         </a>
+        <a data-admin="smart" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path><path d="M4 17v2"></path><path d="M5 18H3"></path></svg>
+          <span class="nav-label">智能播放设置</span>
+        </a>
         <a data-admin="metadata" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
           <span class="nav-label">媒体数据设置</span>
@@ -76,48 +80,6 @@
               </div>
             </div>
           </form>
-
-          <div class="admin-card space-y-4">
-            <div class="flex items-center gap-3">
-              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">偏好设置</div>
-              <button id="smartPanDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
-              <button id="smartPanDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
-              <button id="smartPanDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
-            </div>
-
-            <div class="space-y-3">
-              <div class="space-y-1">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先片源规则</div>
-                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  仅影响同等画质/特征下的优先提取，不再依赖画质/帧率偏好设置
-                </div>
-                <select id="smartSourceExtractPriority" class="custom-select tv-field">
-                  <option value="无">无</option>
-                  <option value="网盘">网盘</option>
-                  <option value="关键字">关键字</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">关键字匹配规则</div>
-            </div>
-            <div>
-              <input id="smartSourcePriorityTokensInput" class="tv-field" placeholder="DDP,H.265" />
-            </div>
-
-            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
-              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">网盘匹配规则</div>
-            </div>
-            <div>
-              <input id="smartPanMatchTokensInput" class="tv-field" placeholder="百度,夸克,天翼,UC,115" />
-            </div>
-
-            <div id="smartPanSettingsStatus" class="text-xs hidden"></div>
-	            <div class="text-xs text-gray-500 dark:text-gray-400">
-	              说明：规则用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。
-	            </div>
-	          </div>
 
 	          <div class="admin-card space-y-4">
 	            <div class="flex items-center gap-3">
@@ -713,6 +675,120 @@
 		                <button type="submit" class="btn-green">保存</button>
 	              </div>
 	            </form>
+	          </div>
+	        </section>
+	        <section v-if="bootstrap.user.role === 'admin'" id="adminSmart" class="admin-panel hidden space-y-6">
+	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
+	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sparkles h-5 w-5 text-gray-600 dark:text-gray-300"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.937A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"></path><path d="M20 3v4"></path><path d="M22 5h-4"></path><path d="M4 17v2"></path><path d="M5 18H3"></path></svg>
+	            智能播放设置
+	          </div>
+
+	          <div class="admin-card space-y-4">
+	            <div class="flex items-center gap-3">
+	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">偏好设置</div>
+	              <button id="smartPanDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
+	              <button id="smartPanDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
+	              <button id="smartPanDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
+	            </div>
+
+	            <div class="space-y-3">
+	              <div class="space-y-1">
+	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先片源规则</div>
+	                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+	                  仅影响同等画质/特征下的优先提取，不再依赖画质/帧率偏好设置
+	                </div>
+	                <select id="smartSourceExtractPriority" class="custom-select tv-field">
+	                  <option value="无">无</option>
+	                  <option value="网盘">网盘</option>
+	                  <option value="关键字">关键字</option>
+	                </select>
+	              </div>
+	            </div>
+
+	            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
+	              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">关键字匹配规则</div>
+	            </div>
+	            <div>
+	              <input id="smartSourcePriorityTokensInput" class="tv-field" placeholder="DDP,H.265" />
+	            </div>
+
+	            <div class="pt-2 border-t border-gray-200 dark:border-white/10">
+	              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">网盘匹配规则</div>
+	            </div>
+	            <div>
+	              <input id="smartPanMatchTokensInput" class="tv-field" placeholder="百度,夸克,天翼,UC,115" />
+	            </div>
+	          </div>
+
+	          <div class="admin-card space-y-4">
+	            <div class="flex items-center gap-3">
+	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">站点净化设置</div>
+	              <button id="smartSiteCleanDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
+	              <button id="smartSiteCleanDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>
+	              <button id="smartSiteCleanDefaultsRestoreCancel" type="button" class="btn-ghost-blue hidden">取消</button>
+	            </div>
+	            <div class="text-xs text-gray-500 dark:text-gray-400">
+	            智能播放不会在匹配到的站点进行匹配片源
+	            </div>
+				<div class="pt-2 border-t border-gray-200 dark:border-white/10">
+	              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">关键字匹配规则</div>
+	            </div>
+	            <div>
+	              <input id="smartSiteCleanKeywordsInput" class="tv-field" placeholder="直播,体育,短剧,听书,舞曲,哔哩" />
+	            </div>
+	          </div>
+
+	          <div class="admin-card space-y-4">
+	            <div class="flex items-center gap-3">
+	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">匹配禁用管理</div>
+	            </div>
+	            <div class="text-xs text-gray-500 dark:text-gray-400">
+	              在搜索页原始列表中右击站点卡片可添加禁用项（仅影响智能播放匹配）
+	            </div>
+	            <div class="tv-panel overflow-hidden">
+	              <div class="flex items-center border-b border-gray-100 dark:border-gray-800 divide-x divide-gray-100 dark:divide-gray-800">
+	                <div class="w-64 shrink-0 px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200">禁用数据</div>
+	                <div class="flex-1 min-w-0">
+	                  <div class="grid" style="grid-template-columns:72px 180px 1fr 1fr 88px;">
+	                    <div class="px-3 py-3 text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">预览</div>
+	                    <div class="px-3 py-3 text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">站源</div>
+	                    <div class="px-3 py-3 text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">路由/API</div>
+	                    <div class="px-3 py-3 text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">详情ID</div>
+	                    <div class="px-3 py-3 text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">操作</div>
+	                  </div>
+	                </div>
+	              </div>
+
+	              <div class="flex divide-x divide-gray-100 dark:divide-gray-800">
+	                <div class="w-64 shrink-0 max-h-80 overflow-auto">
+	                  <ul id="smartMatchBlockKeywordList" class="p-3 space-y-2">
+	                    <li class="px-4 py-3 text-gray-500 dark:text-gray-400 text-sm">无数据</li>
+	                  </ul>
+	                </div>
+	                <div class="flex-1 min-w-0 max-h-80 overflow-auto tv-cpo-config-table">
+	                  <table class="table-fixed w-full text-sm text-left text-gray-700 dark:text-gray-100">
+	                    <colgroup>
+	                      <col style="width:72px;" />
+	                      <col style="width:180px;" />
+	                      <col />
+	                      <col />
+	                      <col style="width:88px;" />
+	                    </colgroup>
+	                    <tbody class="divide-y divide-gray-100 dark:divide-gray-800" id="smartMatchBlockItemTableBody">
+	                      <tr>
+	                        <td class="px-3 py-2 text-gray-500 dark:text-gray-400" colspan="5">请选择关键字</td>
+	                      </tr>
+	                    </tbody>
+	                  </table>
+	                </div>
+	              </div>
+	            </div>
+	          </div>
+
+	          <div class="pt-1 flex justify-start">
+	            <div class="flex flex-col gap-2">
+	              <button id="smartPanSettingsSave" type="button" class="btn-green">保存</button>
+	            </div>
 	          </div>
 	        </section>
 		        <section v-if="bootstrap.user.role === 'admin'" id="adminMetadata" class="admin-panel hidden space-y-6">

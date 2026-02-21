@@ -100,11 +100,17 @@ export function initDashboardPage(bootstrap = {}) {
   const smartSourcePriorityTokensInput = document.getElementById('smartSourcePriorityTokensInput');
   const smartPanMatchTokensInput = document.getElementById('smartPanMatchTokensInput');
   const smartSourceExtractPrioritySelect = document.getElementById('smartSourceExtractPriority');
+  const smartSiteCleanKeywordsInput = document.getElementById('smartSiteCleanKeywordsInput');
   const smartPanSettingsSave = document.getElementById('smartPanSettingsSave');
-  const smartPanSettingsStatus = document.getElementById('smartPanSettingsStatus');
   const smartPanDefaultsRestore = document.getElementById('smartPanDefaultsRestore');
   const smartPanDefaultsRestoreConfirm = document.getElementById('smartPanDefaultsRestoreConfirm');
   const smartPanDefaultsRestoreCancel = document.getElementById('smartPanDefaultsRestoreCancel');
+  const smartSiteCleanDefaultsRestore = document.getElementById('smartSiteCleanDefaultsRestore');
+  const smartSiteCleanDefaultsRestoreConfirm = document.getElementById('smartSiteCleanDefaultsRestoreConfirm');
+  const smartSiteCleanDefaultsRestoreCancel = document.getElementById('smartSiteCleanDefaultsRestoreCancel');
+  const smartMatchBlockKeywordList = document.getElementById('smartMatchBlockKeywordList');
+  const smartMatchBlockItemTableBody = document.getElementById('smartMatchBlockItemTableBody');
+  const smartMatchBlockSelectedKeywordEl = document.getElementById('smartMatchBlockSelectedKeyword');
 
   const metadataSettingsForm = document.getElementById('metadataSettingsForm');
   const metadataSaveStatus = document.getElementById('metadataSaveStatus');
@@ -627,7 +633,7 @@ export function initDashboardPage(bootstrap = {}) {
     return list;
   };
   let initialPanelKey = null;
-  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic', 'metadata']);
+  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic', 'smart', 'metadata']);
   const normalizePanelKey = (key) => {
     const k = typeof key === 'string' ? key.trim().toLowerCase() : '';
     return allowedPanels.has(k) ? k : 'site';
@@ -6680,8 +6686,6 @@ export function initDashboardPage(bootstrap = {}) {
       await validateSearchDisplayModeToken({ toast: false });
 
       panelLoaded.site = true;
-      // Smart settings now live under "全局设置".
-      await loadSmartPanel();
     } finally {
       panelLoading.site = false;
     }
@@ -6701,7 +6705,9 @@ export function initDashboardPage(bootstrap = {}) {
   let smartSourceExtractPriority = '无';
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
+  let smartSiteCleanKeywords = '';
   let smartPanDefaultsConfirming = false;
+  let smartSiteCleanDefaultsConfirming = false;
   let smartSaving = false;
 
   const parseDelimitedTokens = (
@@ -6741,6 +6747,15 @@ export function initDashboardPage(bootstrap = {}) {
       defaultList: [],
     });
 
+  const syncSmartDraftFromInputs = () => {
+    smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(
+      smartSourceExtractPrioritySelect ? smartSourceExtractPrioritySelect.value : smartSourceExtractPriority
+    );
+    smartSourcePriorityTokens = normalizeCommaTokenLine(smartSourcePriorityTokensInput ? smartSourcePriorityTokensInput.value : '');
+    smartPanMatchTokens = normalizeCommaTokenLine(smartPanMatchTokensInput ? smartPanMatchTokensInput.value : '');
+    smartSiteCleanKeywords = normalizeCommaTokenLine(smartSiteCleanKeywordsInput ? smartSiteCleanKeywordsInput.value : '').join(',');
+  };
+
   const renderSmartPanSettings = () => {
     if (smartSourcePriorityTokensInput) {
       smartSourcePriorityTokensInput.value = Array.isArray(smartSourcePriorityTokens) ? smartSourcePriorityTokens.join(',') : '';
@@ -6749,6 +6764,10 @@ export function initDashboardPage(bootstrap = {}) {
     if (smartPanMatchTokensInput) {
       smartPanMatchTokensInput.value = Array.isArray(smartPanMatchTokens) ? smartPanMatchTokens.join(',') : '';
       smartPanMatchTokensInput.disabled = smartSaving;
+    }
+    if (smartSiteCleanKeywordsInput) {
+      smartSiteCleanKeywordsInput.value = smartSiteCleanKeywords || '';
+      smartSiteCleanKeywordsInput.disabled = smartSaving;
     }
     if (smartSourceExtractPrioritySelect) {
       syncCustomSelectValue('smartSourceExtractPriority', normalizeSmartSourceExtractPriorityMode(smartSourceExtractPriority), { dispatch: false });
@@ -6761,6 +6780,12 @@ export function initDashboardPage(bootstrap = {}) {
     if (smartPanDefaultsRestore) smartPanDefaultsRestore.classList.toggle('hidden', smartPanDefaultsConfirming);
     if (smartPanDefaultsRestoreConfirm) smartPanDefaultsRestoreConfirm.classList.toggle('hidden', !smartPanDefaultsConfirming);
     if (smartPanDefaultsRestoreCancel) smartPanDefaultsRestoreCancel.classList.toggle('hidden', !smartPanDefaultsConfirming);
+    if (smartSiteCleanDefaultsRestore) smartSiteCleanDefaultsRestore.disabled = smartSaving;
+    if (smartSiteCleanDefaultsRestoreConfirm) smartSiteCleanDefaultsRestoreConfirm.disabled = smartSaving;
+    if (smartSiteCleanDefaultsRestoreCancel) smartSiteCleanDefaultsRestoreCancel.disabled = smartSaving;
+    if (smartSiteCleanDefaultsRestore) smartSiteCleanDefaultsRestore.classList.toggle('hidden', smartSiteCleanDefaultsConfirming);
+    if (smartSiteCleanDefaultsRestoreConfirm) smartSiteCleanDefaultsRestoreConfirm.classList.toggle('hidden', !smartSiteCleanDefaultsConfirming);
+    if (smartSiteCleanDefaultsRestoreCancel) smartSiteCleanDefaultsRestoreCancel.classList.toggle('hidden', !smartSiteCleanDefaultsConfirming);
   };
 
   // Normalize common escapes from pasted regex strings (e.g. `\\d` -> `\d`).
@@ -7498,41 +7523,306 @@ export function initDashboardPage(bootstrap = {}) {
     return data;
   };
 
-  const setSmartPrefStatus = bindInlineStatus(smartPanSettingsStatus);
+  const fetchSmartMatchBlockKeywords = async () => getSuccessJson('/dashboard/smart/matchblock/keywords');
+  const fetchSmartMatchBlockItems = async (keyword) =>
+    getSuccessJson(`/dashboard/smart/matchblock/items?keyword=${encodeURIComponent(keyword || '')}`);
+
+  const deleteSmartMatchBlockItem = async ({ keyword, siteKey, videoId }) => {
+    const { resp, data } = await postJsonSafe('/dashboard/smart/matchblock/delete', { keyword, siteKey, videoId });
+    if (!resp.ok || !data || data.success !== true) {
+      throw new Error((data && data.message) || `HTTP ${resp.status}`);
+    }
+    return data;
+  };
+
+  const deleteSmartMatchBlockKeyword = async ({ keyword }) => {
+    const { resp, data } = await postJsonSafe('/dashboard/smart/matchblock/keyword/delete', { keyword });
+    if (!resp.ok || !data || data.success !== true) {
+      throw new Error((data && data.message) || `HTTP ${resp.status}`);
+    }
+    return data;
+  };
 
   const persistSmartPreferences = async ({ silent = false } = {}) => {
     if (smartSaving) return;
     smartSaving = true;
-    if (!silent) setSmartPrefStatus('', '');
     try {
-      smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(
-        smartSourceExtractPrioritySelect ? smartSourceExtractPrioritySelect.value : smartSourceExtractPriority
-      );
-      smartSourcePriorityTokens = normalizeCommaTokenLine(smartSourcePriorityTokensInput ? smartSourcePriorityTokensInput.value : '');
-      smartPanMatchTokens = normalizeCommaTokenLine(smartPanMatchTokensInput ? smartPanMatchTokensInput.value : '');
+      syncSmartDraftFromInputs();
 
       const data = await saveSmartSettings({
         smartSourceExtractPriority,
+        siteCleanKeywords: smartSiteCleanKeywords,
         smartSourcePriorityTokens,
         smartPanMatchTokens,
       });
 
       smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(data.smartSourceExtractPriority);
+      smartSiteCleanKeywords = typeof data.siteCleanKeywords === 'string' ? data.siteCleanKeywords : smartSiteCleanKeywords;
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : smartSourcePriorityTokens;
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : smartPanMatchTokens;
 
       renderSmartPanSettings();
-      if (!silent) setSmartPrefStatus('', '');
     } catch (err) {
       const msg = (err && err.message) || '保存失败';
-      if (!silent) setSmartPrefStatus('error', msg);
       throw new Error(msg);
     } finally {
       smartSaving = false;
       renderSmartPanSettings();
-      renderSmartBasics();
     }
   };
+
+  let smartMatchBlockKeywordsCache = [];
+  let smartMatchBlockSelectedKeyword = '';
+  let smartMatchBlockItemsCache = [];
+  let smartMatchBlockKeywordsLoading = false;
+  let smartMatchBlockItemsLoading = false;
+
+  try {
+    window.addEventListener('tv:smart-matchblock-updated', async (e) => {
+      if (!smartSettingsLoaded) return;
+      const kw = e && e.detail && typeof e.detail.keyword === 'string' ? e.detail.keyword.trim() : '';
+      await loadSmartMatchBlockKeywords();
+      if (kw && kw === smartMatchBlockSelectedKeyword) {
+        await loadSmartMatchBlockItems(kw);
+      }
+    });
+  } catch (_e) {}
+
+  const renderSmartMatchBlock = () => {
+    const fillEmptyRow = (tbody, text, colspan) => {
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.className = 'px-3 py-2 text-gray-500 dark:text-gray-400';
+      td.colSpan = colspan;
+      td.textContent = text;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    };
+
+    if (smartMatchBlockSelectedKeywordEl) {
+      smartMatchBlockSelectedKeywordEl.textContent = smartMatchBlockSelectedKeyword ? smartMatchBlockSelectedKeyword : '';
+    }
+
+    if (smartMatchBlockKeywordList) {
+      smartMatchBlockKeywordList.innerHTML = '';
+      const list = Array.isArray(smartMatchBlockKeywordsCache) ? smartMatchBlockKeywordsCache : [];
+      if (!list.length) {
+        const li = document.createElement('li');
+        li.className = 'px-4 py-3 text-gray-500 dark:text-gray-400 text-sm';
+        li.textContent = '无数据';
+        smartMatchBlockKeywordList.appendChild(li);
+      } else {
+        list.forEach((row) => {
+          const keyword = row && typeof row.keyword === 'string' ? row.keyword.trim() : '';
+          if (!keyword) return;
+          const count = row && Number.isFinite(Number(row.count)) ? Math.max(0, Math.floor(Number(row.count))) : 0;
+
+          const li = document.createElement('li');
+          li.dataset.keyword = keyword;
+          li.className = 'px-4 py-2 rounded-full border flex items-center gap-2 cursor-pointer transition-colors';
+          if (keyword === smartMatchBlockSelectedKeyword) {
+            li.classList.add('bg-green-500/10', 'border-green-500/30', 'dark:border-green-400/20');
+          } else {
+            li.classList.add('border-gray-200', 'hover:bg-gray-500/5', 'dark:border-white/10', 'dark:hover:bg-white/5');
+          }
+
+          const name = document.createElement('div');
+          name.className = 'flex-1 min-w-0 text-sm text-gray-700 dark:text-gray-200 truncate';
+          name.textContent = keyword;
+
+          const badge = document.createElement('div');
+          badge.className = 'text-xs px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-700 dark:text-gray-200';
+          badge.textContent = String(count);
+
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'px-3 py-1 rounded-full border border-red-300 text-red-600 hover:bg-red-50 text-xs dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10';
+          del.textContent = '删除';
+          del.dataset.action = 'deleteKeyword';
+
+          li.appendChild(name);
+          li.appendChild(badge);
+          li.appendChild(del);
+          smartMatchBlockKeywordList.appendChild(li);
+        });
+      }
+    }
+
+    if (smartMatchBlockItemTableBody) {
+      const keyword = smartMatchBlockSelectedKeyword;
+      if (!keyword) {
+        fillEmptyRow(smartMatchBlockItemTableBody, '请选择关键字', 5);
+        return;
+      }
+      const list = Array.isArray(smartMatchBlockItemsCache) ? smartMatchBlockItemsCache : [];
+      if (!list.length) {
+        fillEmptyRow(smartMatchBlockItemTableBody, '无数据', 5);
+        return;
+      }
+      smartMatchBlockItemTableBody.innerHTML = '';
+      list.forEach((row) => {
+        const siteKey = row && typeof row.siteKey === 'string' ? row.siteKey.trim() : '';
+        const siteName = row && typeof row.siteName === 'string' ? row.siteName.trim() : '';
+        const spiderApi = row && typeof row.spiderApi === 'string' ? row.spiderApi.trim() : '';
+        const videoId = row && typeof row.videoId === 'string' ? row.videoId.trim() : '';
+        const poster = row && typeof row.poster === 'string' ? row.poster.trim() : '';
+        if (!siteKey || !videoId) return;
+
+        const tr = document.createElement('tr');
+        tr.dataset.keyword = keyword;
+        tr.dataset.siteKey = siteKey;
+        tr.dataset.videoId = videoId;
+
+        const tdPoster = document.createElement('td');
+        tdPoster.className = 'px-3 py-2';
+        if (poster) {
+          const img = document.createElement('img');
+          img.src = poster;
+          img.alt = '';
+          img.loading = 'lazy';
+          img.decoding = 'async';
+          img.referrerPolicy = 'no-referrer';
+          img.className = 'w-10 h-14 object-cover rounded-md bg-gray-200 dark:bg-white/10';
+          tdPoster.appendChild(img);
+        } else {
+          const box = document.createElement('div');
+          box.className = 'w-10 h-14 rounded-md bg-gray-200 dark:bg-white/10';
+          tdPoster.appendChild(box);
+        }
+
+        const tdSite = document.createElement('td');
+        tdSite.className = 'px-3 py-2 text-sm text-gray-700 dark:text-gray-200';
+        tdSite.textContent = siteName || siteKey;
+
+        const tdApi = document.createElement('td');
+        tdApi.className = 'px-3 py-2 text-xs font-mono text-gray-700 dark:text-gray-200';
+        tdApi.textContent = spiderApi || '';
+
+        const tdId = document.createElement('td');
+        tdId.className = 'px-3 py-2 text-xs font-mono text-gray-700 dark:text-gray-200';
+        tdId.textContent = videoId;
+
+        const tdOps = document.createElement('td');
+        tdOps.className = 'px-3 py-2 whitespace-nowrap';
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn-ghost-red whitespace-nowrap';
+        del.textContent = '删除';
+        del.dataset.action = 'deleteItem';
+        tdOps.appendChild(del);
+
+        tr.appendChild(tdPoster);
+        tr.appendChild(tdSite);
+        tr.appendChild(tdApi);
+        tr.appendChild(tdId);
+        tr.appendChild(tdOps);
+        smartMatchBlockItemTableBody.appendChild(tr);
+      });
+    }
+  };
+
+  const loadSmartMatchBlockKeywords = async () => {
+    if (smartMatchBlockKeywordsLoading) return;
+    if (!smartMatchBlockKeywordList) return;
+    smartMatchBlockKeywordsLoading = true;
+    try {
+      const data = await fetchSmartMatchBlockKeywords();
+      smartMatchBlockKeywordsCache = data && Array.isArray(data.keywords) ? data.keywords : [];
+      const hasSelected = smartMatchBlockSelectedKeyword && smartMatchBlockKeywordsCache.some((x) => x && x.keyword === smartMatchBlockSelectedKeyword);
+      if (!hasSelected) {
+        smartMatchBlockSelectedKeyword = '';
+        smartMatchBlockItemsCache = [];
+      }
+      renderSmartMatchBlock();
+    } catch (err) {
+      notify.error((err && err.message) || '加载失败');
+    } finally {
+      smartMatchBlockKeywordsLoading = false;
+      renderSmartMatchBlock();
+    }
+  };
+
+  const loadSmartMatchBlockItems = async (keyword) => {
+    const kw = typeof keyword === 'string' ? keyword.trim() : '';
+    if (!kw) {
+      smartMatchBlockSelectedKeyword = '';
+      smartMatchBlockItemsCache = [];
+      renderSmartMatchBlock();
+      return;
+    }
+    if (smartMatchBlockItemsLoading) return;
+    if (!smartMatchBlockItemTableBody) return;
+    smartMatchBlockItemsLoading = true;
+    smartMatchBlockSelectedKeyword = kw;
+    renderSmartMatchBlock();
+    try {
+      const data = await fetchSmartMatchBlockItems(kw);
+      smartMatchBlockItemsCache = data && Array.isArray(data.items) ? data.items : [];
+      renderSmartMatchBlock();
+    } catch (err) {
+      smartMatchBlockItemsCache = [];
+      renderSmartMatchBlock();
+      notify.error((err && err.message) || '加载失败');
+    } finally {
+      smartMatchBlockItemsLoading = false;
+      renderSmartMatchBlock();
+    }
+  };
+
+  if (smartMatchBlockKeywordList) {
+    smartMatchBlockKeywordList.addEventListener('click', async (e) => {
+      const target = e && e.target ? e.target : null;
+      const li = target && target.closest ? target.closest('li[data-keyword]') : null;
+      const keyword = li ? String(li.dataset.keyword || '').trim() : '';
+      if (!keyword) return;
+      if (target && target.dataset && target.dataset.action === 'deleteKeyword') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!window.confirm(`删除关键字「${keyword}」及其禁用项？`)) return;
+        try {
+          await deleteSmartMatchBlockKeyword({ keyword });
+          if (smartMatchBlockSelectedKeyword === keyword) {
+            smartMatchBlockSelectedKeyword = '';
+            smartMatchBlockItemsCache = [];
+          }
+          await loadSmartMatchBlockKeywords();
+          renderSmartMatchBlock();
+          notify.success('已删除');
+        } catch (err) {
+          notify.error((err && err.message) || '删除失败');
+        }
+        return;
+      }
+      if (keyword === smartMatchBlockSelectedKeyword) return;
+      await loadSmartMatchBlockItems(keyword);
+    });
+  }
+
+  if (smartMatchBlockItemTableBody) {
+    smartMatchBlockItemTableBody.addEventListener('click', async (e) => {
+      const target = e && e.target ? e.target : null;
+      if (!target || !target.closest) return;
+      if (!(target.dataset && target.dataset.action === 'deleteItem')) return;
+      const tr = target.closest('tr[data-site-key][data-video-id]');
+      if (!tr) return;
+      const keyword = String(tr.dataset.keyword || '').trim();
+      const siteKey = String(tr.dataset.siteKey || '').trim();
+      const videoId = String(tr.dataset.videoId || '').trim();
+      if (!keyword || !siteKey || !videoId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        await deleteSmartMatchBlockItem({ keyword, siteKey, videoId });
+        await loadSmartMatchBlockItems(keyword);
+        await loadSmartMatchBlockKeywords();
+        notify.success('已删除');
+      } catch (err) {
+        notify.error((err && err.message) || '删除失败');
+      }
+    });
+  }
 
   const setGlobalSettingsSaveStatus = bindInlineStatus(globalSettingsSaveStatus);
   let globalSettingsSaving = false;
@@ -7548,7 +7838,6 @@ export function initDashboardPage(bootstrap = {}) {
     try {
       // Unified save: report via the global info box only.
       setSiteSaveStatus('', '');
-      setSmartPrefStatus('', '');
 
       await validateSearchDisplayModeToken();
       if (siteForm) {
@@ -7564,7 +7853,6 @@ export function initDashboardPage(bootstrap = {}) {
           }
         });
       }
-      await persistSmartPreferences({ silent: true });
       setGlobalSettingsSaveStatus('', '');
       notify.success('保存成功');
     } catch (err) {
@@ -7591,19 +7879,21 @@ export function initDashboardPage(bootstrap = {}) {
   const loadSmartPanel = async () => {
     if (smartSettingsLoaded || smartSettingsLoading) return;
     smartSettingsLoading = true;
-    setSmartPrefStatus('', '加载中...');
     try {
       const data = await fetchSmartSettings();
       if (!data) {
-        setSmartPrefStatus('error', '加载失败');
+        notify.error('加载失败');
         return;
       }
       smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(data.smartSourceExtractPriority);
+      smartSiteCleanKeywords = typeof data.siteCleanKeywords === 'string' ? data.siteCleanKeywords : '';
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : [];
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : [];
       renderSmartPanSettings();
-      setSmartPrefStatus('', '');
+      await loadSmartMatchBlockKeywords();
       smartSettingsLoaded = true;
+    } catch (err) {
+      notify.error((err && err.message) || '加载失败');
     } finally {
       smartSettingsLoading = false;
     }
@@ -7906,17 +8196,23 @@ export function initDashboardPage(bootstrap = {}) {
   if (smartPanSettingsSave) {
     smartPanSettingsSave.addEventListener('click', async () => {
       if (smartSaving) return;
-      renderSmartPanSettings();
-      await persistSmartPreferences();
+      try {
+        await persistSmartPreferences();
+        notify.success('保存成功');
+      } catch (e) {
+        notify.error((e && e.message) || '保存失败');
+      }
     });
   }
 
   const DEFAULT_SMART_SOURCE_PRIORITY_TOKENS = [];
   const DEFAULT_SMART_PAN_MATCH_TOKENS = ['逸动', '天意', '夸父', '优夕', '百度'];
+  const DEFAULT_SMART_SITE_CLEAN_KEYWORDS = ['直播', '体育', '短剧', '听书', '舞曲', '哔哩'];
 
   if (smartPanDefaultsRestore) {
     smartPanDefaultsRestore.addEventListener('click', () => {
       if (smartSaving) return;
+      syncSmartDraftFromInputs();
       smartPanDefaultsConfirming = true;
       renderSmartPanSettings();
     });
@@ -7924,18 +8220,62 @@ export function initDashboardPage(bootstrap = {}) {
   if (smartPanDefaultsRestoreCancel) {
     smartPanDefaultsRestoreCancel.addEventListener('click', () => {
       if (smartSaving) return;
+      syncSmartDraftFromInputs();
       smartPanDefaultsConfirming = false;
       renderSmartPanSettings();
     });
   }
   if (smartPanDefaultsRestoreConfirm) {
-    smartPanDefaultsRestoreConfirm.addEventListener('click', () => {
+    smartPanDefaultsRestoreConfirm.addEventListener('click', async () => {
       if (smartSaving) return;
       smartPanDefaultsConfirming = false;
       smartSourceExtractPriority = '无';
       smartSourcePriorityTokens = DEFAULT_SMART_SOURCE_PRIORITY_TOKENS.slice();
       smartPanMatchTokens = DEFAULT_SMART_PAN_MATCH_TOKENS.slice();
       renderSmartPanSettings();
+      setButtonLoading(smartPanDefaultsRestoreConfirm, true);
+      try {
+        await persistSmartPreferences();
+        notify.success('恢复默认并保存成功');
+      } catch (e) {
+        notify.error((e && e.message) || '保存失败');
+      } finally {
+        setButtonLoading(smartPanDefaultsRestoreConfirm, false);
+      }
+    });
+  }
+
+  if (smartSiteCleanDefaultsRestore) {
+    smartSiteCleanDefaultsRestore.addEventListener('click', () => {
+      if (smartSaving) return;
+      syncSmartDraftFromInputs();
+      smartSiteCleanDefaultsConfirming = true;
+      renderSmartPanSettings();
+    });
+  }
+  if (smartSiteCleanDefaultsRestoreCancel) {
+    smartSiteCleanDefaultsRestoreCancel.addEventListener('click', () => {
+      if (smartSaving) return;
+      syncSmartDraftFromInputs();
+      smartSiteCleanDefaultsConfirming = false;
+      renderSmartPanSettings();
+    });
+  }
+  if (smartSiteCleanDefaultsRestoreConfirm) {
+    smartSiteCleanDefaultsRestoreConfirm.addEventListener('click', async () => {
+      if (smartSaving) return;
+      smartSiteCleanDefaultsConfirming = false;
+      smartSiteCleanKeywords = DEFAULT_SMART_SITE_CLEAN_KEYWORDS.join(',');
+      renderSmartPanSettings();
+      setButtonLoading(smartSiteCleanDefaultsRestoreConfirm, true);
+      try {
+        await persistSmartPreferences();
+        notify.success('恢复默认并保存成功');
+      } catch (e) {
+        notify.error((e && e.message) || '保存失败');
+      } finally {
+        setButtonLoading(smartSiteCleanDefaultsRestoreConfirm, false);
+      }
     });
   }
   // Unified save button persists smart preferences; no auto-save on change/enter.
@@ -8026,6 +8366,7 @@ export function initDashboardPage(bootstrap = {}) {
     if (key === 'pan') return loadPanPanel();
     if (key === 'interface') return loadInterfacePanel();
     if (key === 'magic') return loadMagicPanel();
+    if (key === 'smart') return loadSmartPanel();
     if (key === 'metadata') return loadMetadataPanel();
     return null;
   }

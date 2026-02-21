@@ -287,6 +287,7 @@ function setupHomeSpiderBrowse() {
           JSON.stringify(Array.isArray(s.magicAggregateRegexRules) ? s.magicAggregateRegexRules : [])
         );
         setCfgAttr('data-search-display-mode', (s.searchDisplayMode || 'sites').trim());
+        setCfgAttr('data-smart-skip-site-keys', JSON.stringify(Array.isArray(s.smartSkipSiteKeys) ? s.smartSkipSiteKeys : []));
         if (!finalCatBase) throw new Error('CatPawOpen 接口地址未设置（bootstrap/search 未返回）');
         searchSettingsLoaded = true;
       } catch (e) {

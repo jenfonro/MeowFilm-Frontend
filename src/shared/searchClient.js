@@ -52,6 +52,7 @@ export function initSearchPage() {
   let siteOrderMap = new Map();
   let magicSearchCleanRules = [];
   let searchDisplayMode = 'sites'; // sites | tmdb | both
+  let smartSkipSiteKeySet = new Set();
 
   const safeParseJsonArray = (text) => {
     try {
@@ -91,6 +92,12 @@ export function initSearchPage() {
 
     const modeRaw = ((configEl && configEl.getAttribute('data-search-display-mode')) || 'sites').trim();
     searchDisplayMode = modeRaw === 'tmdb' || modeRaw === 'both' || modeRaw === 'sites' ? modeRaw : 'sites';
+
+    const skipRaw = (configEl && configEl.getAttribute('data-smart-skip-site-keys')) || '[]';
+    const skipKeys = safeParseJsonArray(skipRaw)
+      .map((k) => (typeof k === 'string' ? k.trim() : ''))
+      .filter(Boolean);
+    smartSkipSiteKeySet = new Set(skipKeys);
   };
 
   refreshSearchConfigFromDom();
@@ -566,7 +573,11 @@ export function initSearchPage() {
       const wrapper = document.createElement('div');
       wrapper.className = 'w-full';
       wrapper.dataset.siteKey = siteKey || '';
+      wrapper.dataset.spiderApi = siteApi || '';
       wrapper.dataset.videoId = id || '';
+      if (siteKey && id && matchBlockedKeySet && matchBlockedKeySet.has(`${siteKey}::${id}`)) {
+        wrapper.dataset.matchBlocked = '1';
+      }
       if (it && typeof it.__groupKey === 'string' && it.__groupKey) wrapper.dataset.titleAggKey = it.__groupKey;
       if (isAggregate) wrapper.dataset.aggregate = '1';
       if (it && (it.__tmdbRank != null || it.tmdbRank != null)) {
@@ -800,12 +811,16 @@ export function initSearchPage() {
   };
 
   let currentRunId = 0;
+  let lastSearchKeyword = '';
+  let matchBlockedKeySet = new Set(); // `${siteKey}::${videoId}` for current keyword
   const runSearch = async (keyword) => {
     refreshSearchConfigFromDom();
 
     const runId = (currentRunId += 1);
     const q = (keyword || '').trim();
     if (!q) return;
+    lastSearchKeyword = q;
+    matchBlockedKeySet = new Set();
 
     const debugEnabled = (() => {
       try {
@@ -839,6 +854,22 @@ export function initSearchPage() {
     setCount(0);
     setStatus('');
     syncRawListToggleVisibility();
+
+    try {
+      const data = await requestJson(`/api/smart/matchblock/items?keyword=${encodeURIComponent(q)}`, {
+        method: 'GET',
+        credentials: 'same-origin',
+      });
+      const items = data && Array.isArray(data.items) ? data.items : [];
+      items.forEach((it) => {
+        const sk = it && typeof it.siteKey === 'string' ? it.siteKey.trim() : '';
+        const vid = it && typeof it.videoId === 'string' ? it.videoId.trim() : '';
+        if (!sk || !vid) return;
+        matchBlockedKeySet.add(`${sk}::${vid}`);
+      });
+    } catch (_e) {
+      matchBlockedKeySet = new Set();
+    }
 
     const grid = document.createElement('div');
     grid.className = 'douban-grid';
@@ -1512,7 +1543,12 @@ export function initSearchPage() {
       const key = s && typeof s.key === 'string' ? s.key : '';
       return api.includes('/spider/baseset/') || key.toLowerCase().includes('baseset');
     };
-    const sites = (await loadSites()).filter((s) => s && s.enabled !== false && s.search !== false && s.api && !isConfigCenter(s));
+    const sites = (await loadSites()).filter((s) => {
+      if (!s || s.enabled === false || s.search === false || !s.api || isConfigCenter(s)) return false;
+      const k = s && typeof s.key === 'string' ? s.key.trim() : '';
+      if (k && smartSkipSiteKeySet.has(k)) return false;
+      return true;
+    });
     if (runId !== currentRunId) return;
     if (!sites.length) {
       setStatus(grid.children.length ? '' : '暂无可用站点');
@@ -2188,6 +2224,162 @@ export function initSearchPage() {
       setCount(getVisibleCardCount());
     };
   };
+
+  const flashStatus = (text, { ms = 1600 } = {}) => {
+    const msg = typeof text === 'string' ? text.trim() : '';
+    if (!msg) return;
+    setStatus(msg);
+    window.setTimeout(() => {
+      if ((resultsStatus && resultsStatus.textContent ? resultsStatus.textContent.trim() : '') === msg) {
+        setStatus('');
+      }
+    }, Math.max(400, Math.floor(ms)));
+  };
+
+  let matchBlockMenuEl = null;
+  let matchBlockMenuCtx = null;
+  let matchBlockMenuActionBtn = null;
+
+  const hideMatchBlockMenu = () => {
+    if (!matchBlockMenuEl) return;
+    matchBlockMenuEl.classList.add('hidden');
+    matchBlockMenuCtx = null;
+  };
+
+  const ensureMatchBlockMenu = () => {
+    if (matchBlockMenuEl) return matchBlockMenuEl;
+    const el = document.createElement('div');
+    el.id = 'tvMatchBlockMenu';
+    el.className = 'fixed z-50 hidden';
+    el.innerHTML = `
+      <div class="min-w-[220px] rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden dark:border-white/10 dark:bg-[#0b1220]">
+        <button type="button" data-action="toggle" class="w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10">
+          加入匹配禁用
+        </button>
+      </div>
+    `;
+    matchBlockMenuActionBtn = el.querySelector('button[data-action="toggle"]');
+    el.addEventListener('click', async (e) => {
+      const target = e && e.target ? e.target : null;
+      const btn = target && target.closest ? target.closest('button[data-action]') : null;
+      const action = btn ? String(btn.dataset.action || '').trim() : '';
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (action !== 'toggle') return;
+      const ctx = matchBlockMenuCtx;
+      hideMatchBlockMenu();
+      if (!ctx || !ctx.keyword || !ctx.siteKey || !ctx.videoId) return;
+      try {
+        const blocked = !!ctx.blocked;
+        const endpoint = blocked ? '/api/smart/matchblock/delete' : '/api/smart/matchblock/add';
+        await requestJson(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            keyword: ctx.keyword,
+            siteKey: ctx.siteKey,
+            spiderApi: ctx.spiderApi,
+            videoId: ctx.videoId,
+            poster: ctx.poster,
+          }),
+        });
+        const key = `${ctx.siteKey}::${ctx.videoId}`;
+        if (blocked) {
+          matchBlockedKeySet.delete(key);
+          if (ctx.wrapperEl && ctx.wrapperEl.dataset) delete ctx.wrapperEl.dataset.matchBlocked;
+          flashStatus('已取消禁用', { ms: 1200 });
+        } else {
+          matchBlockedKeySet.add(key);
+          if (ctx.wrapperEl && ctx.wrapperEl.dataset) ctx.wrapperEl.dataset.matchBlocked = '1';
+          flashStatus('已加入禁用', { ms: 1200 });
+        }
+        try {
+          window.dispatchEvent(new CustomEvent('tv:smart-matchblock-updated', { detail: { keyword: ctx.keyword } }));
+        } catch (_e) {}
+      } catch (err) {
+        flashStatus(formatHttpError(err), { ms: 2600 });
+      }
+    });
+    document.body.appendChild(el);
+    matchBlockMenuEl = el;
+
+    document.addEventListener(
+      'click',
+      (ev) => {
+        const t = ev && ev.target ? ev.target : null;
+        if (t && matchBlockMenuEl && matchBlockMenuEl.contains(t)) return;
+        hideMatchBlockMenu();
+      },
+      { capture: true }
+    );
+    document.addEventListener('keydown', (e) => {
+      if (!e) return;
+      if (e.key === 'Escape') hideMatchBlockMenu();
+    });
+    window.addEventListener('scroll', () => hideMatchBlockMenu(), { passive: true });
+    window.addEventListener('resize', () => hideMatchBlockMenu(), { passive: true });
+    return el;
+  };
+
+  resultsList.addEventListener('contextmenu', (e) => {
+    if (!e || !e.target || !e.target.closest) return;
+
+    const wrapper = e.target.closest('div[data-site-key][data-video-id]');
+    if (!wrapper || !wrapper.dataset) return;
+    if ((wrapper.dataset.aggregate || '') === '1') return;
+
+    const siteKey = String(wrapper.dataset.siteKey || '').trim();
+    const spiderApi = String(wrapper.dataset.spiderApi || '').trim();
+    const videoId = String(wrapper.dataset.videoId || '').trim();
+    if (!siteKey || !videoId || siteKey === 'tmdb') return;
+
+    const keyword = String(lastSearchKeyword || '').trim();
+    if (!keyword) return;
+
+    const isBlocked =
+      (wrapper.dataset.matchBlocked || '') === '1' || (matchBlockedKeySet && matchBlockedKeySet.has(`${siteKey}::${videoId}`));
+
+    let poster = '';
+    try {
+      const img = wrapper.querySelector && wrapper.querySelector('img');
+      poster = (img && img.dataset && (img.dataset.originalSrc || img.dataset.src)) || (img && img.getAttribute && img.getAttribute('src')) || '';
+    } catch (_e) {
+      poster = '';
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    matchBlockMenuCtx = {
+      keyword,
+      siteKey,
+      spiderApi,
+      videoId,
+      poster: typeof poster === 'string' ? poster.trim() : '',
+      blocked: isBlocked,
+      wrapperEl: wrapper,
+    };
+
+    const menu = ensureMatchBlockMenu();
+    if (matchBlockMenuActionBtn) {
+      if (isBlocked) {
+        matchBlockMenuActionBtn.textContent = '取消匹配禁用';
+        matchBlockMenuActionBtn.className =
+          'w-full px-4 py-3 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5';
+      } else {
+        matchBlockMenuActionBtn.textContent = '加入匹配禁用';
+        matchBlockMenuActionBtn.className =
+          'w-full px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-500/10';
+      }
+    }
+    const x = typeof e.clientX === 'number' ? e.clientX : 0;
+    const y = typeof e.clientY === 'number' ? e.clientY : 0;
+    menu.style.left = `${Math.max(8, x)}px`;
+    menu.style.top = `${Math.max(8, y)}px`;
+    menu.classList.remove('hidden');
+  });
 
   const startSearch = (keyword, { saveHistory } = { saveHistory: true }) => {
     const q = (keyword || '').trim().replace(/\s+/g, ' ');
