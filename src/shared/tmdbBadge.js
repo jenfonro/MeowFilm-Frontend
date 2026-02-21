@@ -75,15 +75,11 @@ export const formatTMDBTVRemark = ({ badge, status, seasonCount, episodeCount } 
     return `更新至第${le}集`;
   })();
 
-  const totalPart = (() => {
-    if (ec <= 0) return '';
+  if (updatePart) return updatePart;
+  if (ec > 0) {
     if (!multi) return `共${ec}集`;
     if (sc > 0) return `共${sc}季${ec}集`;
     return `共${ec}集`;
-  })();
-
-  if (updatePart && totalPart) return `${updatePart}，${totalPart}`;
-  if (updatePart) return updatePart;
-  if (totalPart) return totalPart;
+  }
   return raw || '';
 };

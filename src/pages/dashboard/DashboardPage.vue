@@ -151,17 +151,32 @@
             </div>
 
             <div id="smartPanSettingsStatus" class="text-xs hidden"></div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">
-              说明：规则用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。
-            </div>
-          </div>
+	            <div class="text-xs text-gray-500 dark:text-gray-400">
+	              说明：规则用逗号分隔（支持中文逗号，会自动转换）。匹配大小写不敏感。
+	            </div>
+	          </div>
 
-          <div class="pt-1 flex justify-start">
-            <div class="flex flex-col gap-2">
-              <button id="globalSettingsSave" type="button" class="btn-green">保存</button>
-              <div id="globalSettingsSaveStatus" class="text-sm hidden"></div>
-            </div>
-          </div>
+	          <div class="admin-card space-y-4">
+	            <div class="flex items-center gap-3">
+	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">备份/恢复</div>
+	            </div>
+	            <div class="text-xs text-gray-500 dark:text-gray-400">
+	              导出/导入后台配置（用于删库后快速恢复；导入会忽略未知字段）。
+	            </div>
+	            <div class="flex items-center gap-2">
+	              <button id="backupExportBtn" type="button" class="btn-green">备份</button>
+	              <button id="backupImportBtn" type="button" class="btn-ghost-blue">恢复</button>
+	              <input id="backupImportFile" type="file" accept="application/json,.json" class="hidden" />
+	            </div>
+	            <div id="backupRestoreStatus" class="text-sm hidden"></div>
+	          </div>
+
+	          <div class="pt-1 flex justify-start">
+	            <div class="flex flex-col gap-2">
+	              <button id="globalSettingsSave" type="button" class="btn-green">保存</button>
+	              <div id="globalSettingsSaveStatus" class="text-sm hidden"></div>
+	            </div>
+	          </div>
         </section>
         <section v-if="bootstrap.user.role === 'admin'" id="adminUser" class="admin-panel hidden space-y-4">
           <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">

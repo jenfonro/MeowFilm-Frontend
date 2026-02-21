@@ -124,6 +124,11 @@ export function initDashboardPage(bootstrap = {}) {
   const tmdbRegionInput = document.getElementById('tmdbRegion');
   const tmdbIncludeAdultInput = document.getElementById('tmdbIncludeAdult');
 
+  const backupExportBtn = document.getElementById('backupExportBtn');
+  const backupImportBtn = document.getElementById('backupImportBtn');
+  const backupImportFile = document.getElementById('backupImportFile');
+  const backupRestoreStatus = document.getElementById('backupRestoreStatus');
+
   const panelLoaded = {
     site: false,
     user: false,
@@ -589,6 +594,32 @@ export function initDashboardPage(bootstrap = {}) {
     setTimeout(() => setStatus('', ''), d);
   };
 
+  const setBackupStatus = (text, kind) => {
+    if (!backupRestoreStatus) return;
+    const msg = typeof text === 'string' ? text.trim() : '';
+    const k = typeof kind === 'string' ? kind.trim() : '';
+    backupRestoreStatus.classList.toggle('hidden', !msg);
+    backupRestoreStatus.classList.toggle('text-green-600', k === 'ok');
+    backupRestoreStatus.classList.toggle('text-red-600', k === 'err');
+    backupRestoreStatus.classList.toggle('text-gray-600', !k);
+    backupRestoreStatus.textContent = msg;
+  };
+
+  const downloadJson = (obj, filename) => {
+    try {
+      const json = JSON.stringify(obj != null ? obj : {}, null, 2);
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'meowfilm-backup.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (_e) {}
+  };
+
   const swapCopy = (arr, i, j) => {
     const list = Array.isArray(arr) ? arr.slice() : [];
     const a = Number(i);
@@ -629,6 +660,58 @@ export function initDashboardPage(bootstrap = {}) {
     );
     if (target) target.classList.remove('hidden');
   };
+
+  if (backupExportBtn) {
+    backupExportBtn.addEventListener('click', () =>
+      withDatasetLock(backupExportBtn, 'backup', async () => {
+        setBackupStatus('正在导出...', '');
+        const data = await getSuccessJson('/dashboard/backup');
+        if (!data) {
+          setBackupStatus('导出失败', 'err');
+          return;
+        }
+        const ts = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const name = `meowfilm_backup_${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.json`;
+        downloadJson(data, name);
+        setBackupStatus('导出成功', 'ok');
+        clearStatusLater(setBackupStatus, 1500);
+      })
+    );
+  }
+
+  const pickImportFile = () => {
+    if (!backupImportFile) return;
+    try {
+      backupImportFile.value = '';
+    } catch (_e) {}
+    backupImportFile.click();
+  };
+
+  if (backupImportBtn) {
+    backupImportBtn.addEventListener('click', () => pickImportFile());
+  }
+
+  if (backupImportFile) {
+    backupImportFile.addEventListener('change', async () => {
+      const file = backupImportFile.files && backupImportFile.files[0] ? backupImportFile.files[0] : null;
+      if (!file) return;
+      setBackupStatus('正在导入...', '');
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text || '{}');
+        const { resp, data } = await postJsonSafe('/dashboard/restore', parsed);
+        if (resp.ok && data && data.success) {
+          setBackupStatus('导入成功（建议刷新页面）', 'ok');
+          return;
+        }
+        const msg = (data && (data.message || data.error)) ? String(data.message || data.error) : '导入失败';
+        setBackupStatus(msg, 'err');
+      } catch (e) {
+        setBackupStatus(e && e.message ? String(e.message) : '导入失败', 'err');
+      }
+    });
+  }
 
   let goProxyServers = [];
   let goProxyProbes = new Map();
