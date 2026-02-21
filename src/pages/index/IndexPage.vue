@@ -160,7 +160,6 @@
 		                :data-search-cover-site="bootstrap.settings.searchCoverSite || ''"
 		                :data-magic-search-clean-rules="JSON.stringify(bootstrap.settings.magicAggregateRegexRules || [])"
 		                :data-search-display-mode="bootstrap.settings.searchDisplayMode || 'sites'"
-		                :data-search-badge-prefer-episode="bootstrap.settings.searchBadgePreferEpisode ? '1' : '0'"
 		              ></div>
 	            <div id="homeSegToggle" class="mb-8 flex justify-center">
 	              <div class="seg-toggle relative inline-flex bg-gray-300/80 rounded-full p-1">

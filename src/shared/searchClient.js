@@ -52,7 +52,6 @@ export function initSearchPage() {
   let siteOrderMap = new Map();
   let magicSearchCleanRules = [];
   let searchDisplayMode = 'sites'; // sites | tmdb | both
-  let searchBadgePreferEpisode = true;
 
   const safeParseJsonArray = (text) => {
     try {
@@ -92,8 +91,6 @@ export function initSearchPage() {
 
     const modeRaw = ((configEl && configEl.getAttribute('data-search-display-mode')) || 'sites').trim();
     searchDisplayMode = modeRaw === 'tmdb' || modeRaw === 'both' || modeRaw === 'sites' ? modeRaw : 'sites';
-    // Always prefer unified episode badge formatting (no legacy SxEy output).
-    searchBadgePreferEpisode = true;
   };
 
   refreshSearchConfigFromDom();
@@ -1062,7 +1059,6 @@ export function initSearchPage() {
     };
 
     const extractMaxEpisodeFromSources = (sources) => {
-      if (!searchBadgePreferEpisode) return 0;
       const list = Array.isArray(sources) ? sources : [];
       if (!list.length) return 0;
       let maxEp = 0;

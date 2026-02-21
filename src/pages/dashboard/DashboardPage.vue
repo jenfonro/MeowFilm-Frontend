@@ -79,43 +79,6 @@
 
           <div class="admin-card space-y-4">
             <div class="flex items-center gap-3">
-              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">智能设置</div>
-              <div id="smartSettingsStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
-            </div>
-
-            <div class="space-y-3">
-              <div class="space-y-1">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">智能搜索片源进行播放</div>
-                <div>
-                  <label class="enable-switch" title="智能搜索片源进行播放">
-                    <input id="smartPlayEnabled" type="checkbox" />
-                    <span class="enable-slider"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="space-y-1">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">智能选集列表生成</div>
-                <div>
-                  <label class="enable-switch" title="智能选集列表生成">
-                    <input id="smartListEnabled" type="checkbox" />
-                    <span class="enable-slider"></span>
-                  </label>
-                </div>
-              </div>
-              <div class="space-y-1">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">角标优先显示集数</div>
-                <div>
-                  <label class="enable-switch" title="角标优先显示集数">
-                    <input id="searchBadgePreferEpisode" name="searchBadgePreferEpisode" type="checkbox" form="siteSettingsForm" />
-                    <span class="enable-slider"></span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="admin-card space-y-4">
-            <div class="flex items-center gap-3">
               <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">偏好设置</div>
               <button id="smartPanDefaultsRestore" type="button" class="btn-ghost-red">恢复默认规则</button>
               <button id="smartPanDefaultsRestoreConfirm" type="button" class="btn-ghost-red hidden">确定</button>

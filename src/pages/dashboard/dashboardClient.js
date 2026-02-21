@@ -94,7 +94,6 @@ export function initDashboardPage(bootstrap = {}) {
 
   const searchDisplayModeSelect = document.getElementById('searchDisplayModeSelect');
   const searchDisplayModeError = document.getElementById('searchDisplayModeError');
-  const searchBadgePreferEpisodeInput = document.getElementById('searchBadgePreferEpisode');
   const globalSettingsSave = document.getElementById('globalSettingsSave');
   const globalSettingsSaveStatus = document.getElementById('globalSettingsSaveStatus');
 
@@ -106,10 +105,6 @@ export function initDashboardPage(bootstrap = {}) {
   const smartPanDefaultsRestore = document.getElementById('smartPanDefaultsRestore');
   const smartPanDefaultsRestoreConfirm = document.getElementById('smartPanDefaultsRestoreConfirm');
   const smartPanDefaultsRestoreCancel = document.getElementById('smartPanDefaultsRestoreCancel');
-  const smartSettingsStatus = document.getElementById('smartSettingsStatus');
-  const smartSettingsSave = document.getElementById('smartSettingsSave');
-  const smartPlayEnabledInput = document.getElementById('smartPlayEnabled');
-  const smartListEnabledInput = document.getElementById('smartListEnabled');
 
   const metadataSettingsForm = document.getElementById('metadataSettingsForm');
   const metadataSaveStatus = document.getElementById('metadataSaveStatus');
@@ -6681,9 +6676,6 @@ export function initDashboardPage(bootstrap = {}) {
 
       setInputValueByName('siteName', settings.siteName || '');
       syncCustomSelectValue('searchDisplayModeSelect', settings.searchDisplayMode || 'sites');
-      if (searchBadgePreferEpisodeInput) {
-        searchBadgePreferEpisodeInput.checked = !!settings.searchBadgePreferEpisode;
-      }
 
       await validateSearchDisplayModeToken({ toast: false });
 
@@ -6706,8 +6698,6 @@ export function initDashboardPage(bootstrap = {}) {
   let magicSaving = false;
 
   // 智能设置
-  let smartPlayEnabled = true;
-  let smartListEnabled = true;
   let smartSourceExtractPriority = '无';
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
@@ -7508,41 +7498,7 @@ export function initDashboardPage(bootstrap = {}) {
     return data;
   };
 
-  const setSmartStatus = bindInlineStatus(smartSettingsStatus);
   const setSmartPrefStatus = bindInlineStatus(smartPanSettingsStatus);
-
-  const renderSmartBasics = () => {
-    if (smartPlayEnabledInput) smartPlayEnabledInput.checked = !!smartPlayEnabled;
-    if (smartListEnabledInput) smartListEnabledInput.checked = !!smartListEnabled;
-    if (smartSettingsSave) smartSettingsSave.disabled = smartSaving;
-    if (smartPlayEnabledInput) smartPlayEnabledInput.disabled = smartSaving;
-    if (smartListEnabledInput) smartListEnabledInput.disabled = smartSaving;
-  };
-
-  const persistSmartBasics = async ({ silent = false } = {}) => {
-    if (smartSaving) return;
-    smartSaving = true;
-    if (!silent) setSmartStatus('', '');
-    try {
-      smartPlayEnabled = !!(smartPlayEnabledInput && smartPlayEnabledInput.checked);
-      smartListEnabled = !!(smartListEnabledInput && smartListEnabledInput.checked);
-      const data = await saveSmartSettings({
-        smartPlayEnabled,
-        smartListEnabled,
-      });
-      smartPlayEnabled = !!data.smartPlayEnabled;
-      smartListEnabled = !!data.smartListEnabled;
-      renderSmartBasics();
-      if (!silent) setSmartStatus('', '');
-    } catch (err) {
-      const msg = (err && err.message) || '保存失败';
-      if (!silent) setSmartStatus('error', msg);
-      throw new Error(msg);
-    } finally {
-      smartSaving = false;
-      renderSmartBasics();
-    }
-  };
 
   const persistSmartPreferences = async ({ silent = false } = {}) => {
     if (smartSaving) return;
@@ -7592,7 +7548,6 @@ export function initDashboardPage(bootstrap = {}) {
     try {
       // Unified save: report via the global info box only.
       setSiteSaveStatus('', '');
-      setSmartStatus('', '');
       setSmartPrefStatus('', '');
 
       await validateSearchDisplayModeToken();
@@ -7609,7 +7564,6 @@ export function initDashboardPage(bootstrap = {}) {
           }
         });
       }
-      await persistSmartBasics({ silent: true });
       await persistSmartPreferences({ silent: true });
       setGlobalSettingsSaveStatus('', '');
       notify.success('保存成功');
@@ -7637,33 +7591,23 @@ export function initDashboardPage(bootstrap = {}) {
   const loadSmartPanel = async () => {
     if (smartSettingsLoaded || smartSettingsLoading) return;
     smartSettingsLoading = true;
-    setSmartStatus('', '加载中...');
     setSmartPrefStatus('', '加载中...');
     try {
       const data = await fetchSmartSettings();
       if (!data) {
-        setSmartStatus('error', '加载失败');
         setSmartPrefStatus('error', '加载失败');
         return;
       }
-      smartPlayEnabled = !!data.smartPlayEnabled;
-      smartListEnabled = !!data.smartListEnabled;
       smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(data.smartSourceExtractPriority);
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : [];
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : [];
-      renderSmartBasics();
       renderSmartPanSettings();
-      setSmartStatus('', '');
       setSmartPrefStatus('', '');
       smartSettingsLoaded = true;
     } finally {
       smartSettingsLoading = false;
     }
   };
-
-  if (smartSettingsSave) {
-    smartSettingsSave.addEventListener('click', () => void persistSmartBasics());
-  }
 
 	  const loadMagicPanel = async () => {
 	    if (panelLoaded.magic || panelLoading.magic) return;

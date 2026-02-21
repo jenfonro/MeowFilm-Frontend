@@ -3483,16 +3483,6 @@ const compiledMagicMovieRules = computed(() => {
 
 const hasMagicEpisodeRules = computed(() => compiledMagicEpisodeRules.value.length > 0);
 
-const smartPlayEnabledSetting = computed(() => {
-  const raw = effectiveBootstrapSettings.value.smartPlayEnabled;
-  return raw !== false;
-});
-
-const smartListEnabledSetting = computed(() => {
-  const raw = effectiveBootstrapSettings.value.smartListEnabled;
-  return raw !== false;
-});
-
 const smartSourceExtractPrioritySetting = computed(() => {
   const raw = effectiveBootstrapSettings.value.smartSourceExtractPriority;
   const text = typeof raw === 'string' ? raw.trim() : String(raw || '').trim();
@@ -4120,7 +4110,6 @@ const extractSeasonEpisodeFromCandidates = (candidates, rules, cleanRules) => {
 };
 
 const smartPanEpisodes = computed(() => {
-  if (!smartListEnabledSetting.value) return [];
   if (!hasMagicEpisodeRules.value) return [];
 
   const panTokenOrder = compiledSmartPanMatchTokens.value;
@@ -4363,7 +4352,6 @@ const extractMovieSignatureParts = (textLower) => {
 };
 
 const smartMovieEpisodes = computed(() => {
-  if (!smartListEnabledSetting.value) return [];
   if (contentKind.value !== 'movie') return [];
   const rules = compiledMagicMovieRules.value;
   if (!Array.isArray(rules) || !rules.length) return [];
@@ -4731,15 +4719,11 @@ const tmdbSmartEpisodes = computed(() => {
 const tmdbSmartListAvailable = computed(() => {
   if (!tmdbMode.value) return false;
   if (tmdbMovieMode.value) return false;
-  if (!smartPlayEnabledSetting.value) return false;
-  if (!smartListEnabledSetting.value) return false;
   return tmdbSmartEpisodeCount.value > 0;
 });
 
 const tmdbMovieSmartListAvailable = computed(() => {
   if (!tmdbMovieMode.value) return false;
-  if (!smartPlayEnabledSetting.value) return false;
-  if (!smartListEnabledSetting.value) return false;
   return Array.isArray(tmdbMovieSmartEpisodes.value) && tmdbMovieSmartEpisodes.value.length > 0;
 });
 
@@ -6548,10 +6532,6 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
     tmdbMovieSmartEpisodes.value = [];
     return;
   }
-  if (!smartPlayEnabledSetting.value || !smartListEnabledSetting.value) {
-    tmdbMovieSmartEpisodes.value = [];
-    return;
-  }
   const tmdbId = Number(props.tmdbId || 0);
   if (!(Number.isFinite(tmdbId) && tmdbId > 0)) {
     tmdbMovieSmartEpisodes.value = [];
@@ -7835,7 +7815,7 @@ const requestPlay = async () => {
   const idx = idxRaw >= 0 ? idxRaw : 0;
   const ep = eps[idx];
 
-  consumeClickPauseIfAny({ takeover: tmdbMode.value && smartPlayEnabledSetting.value });
+  consumeClickPauseIfAny({ takeover: tmdbMode.value });
   lastTMDBPlayReportCtx.value = null;
 
   let playShareUrl = '';
@@ -9263,7 +9243,7 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
   if (!api) return;
   if (tmdbMode.value && (updateIntro || updateMeta)) return;
 
-  consumeClickPauseIfAny({ takeover: tmdbMode.value && smartPlayEnabledSetting.value });
+  consumeClickPauseIfAny({ takeover: tmdbMode.value });
 
   const apiBase = resolveCatApiBaseForPlay();
   const tvUser = props.bootstrap?.user?.username || '';
@@ -9410,7 +9390,7 @@ const onEpisodeGroupMoreEnter = () => {
 onMounted(() => {
   initPlayPage();
   try {
-    consumeClickPauseIfAny({ takeover: tmdbMode.value && smartPlayEnabledSetting.value });
+    consumeClickPauseIfAny({ takeover: tmdbMode.value });
   } catch (_e) {}
 
   // iPhone edge-swipe back (PWA-like behavior): swipe from left edge to go back.
