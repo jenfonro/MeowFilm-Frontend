@@ -101,6 +101,7 @@ export const apiRequestJson = async (url, options = {}) => {
   const dedupe = opts.dedupe !== false;
   const cacheMs = opts.cacheMs != null ? Number(opts.cacheMs) : 0;
   const body = opts.body != null ? opts.body : null;
+  const signal = opts.signal || null;
 
   const key = toKey(method, u, body);
   const cached = cacheGet(key, cacheMs);
@@ -115,6 +116,7 @@ export const apiRequestJson = async (url, options = {}) => {
       cache: opts.cache || 'no-store',
       headers,
     };
+    if (signal) init.signal = signal;
     if (body != null) {
       init.body = typeof body === 'string' ? body : JSON.stringify(body);
       if (!headers['Content-Type'] && !headers['content-type']) headers['Content-Type'] = 'application/json';

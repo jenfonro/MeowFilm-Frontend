@@ -72,12 +72,14 @@ export async function requestCatSpider({
   payload,
   query,
   headers: extraHeaders,
+  signal,
 }) {
   const safeAction = typeof action === 'string' ? action.trim() : '';
   const safeSpider = typeof spiderApi === 'string' ? spiderApi.trim() : '';
   const body = payload && typeof payload === 'object' ? payload : {};
   const q = query && typeof query === 'object' ? query : null;
   const extra = extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : null;
+  const sig = signal || null;
 
   if (!safeAction) throw new Error('action 不能为空');
   if (!safeSpider || !(/^\/spider\/|^\/[a-f0-9]{10}\/spider\//.test(safeSpider))) throw new Error('站点 API 无效');
@@ -104,6 +106,7 @@ export async function requestCatSpider({
     headers,
     body: JSON.stringify(body),
     credentials: 'omit',
+    ...(sig ? { signal: sig } : {}),
   });
   const status = resp && typeof resp.status === 'number' ? resp.status : 0;
   const data = await resp.json().catch(() => ({}));
@@ -116,10 +119,11 @@ export async function requestCatSpider({
   return data;
 }
 
-export async function requestCatPlay({ apiBase, username, payload, query, headers: extraHeaders }) {
+export async function requestCatPlay({ apiBase, username, payload, query, headers: extraHeaders, signal }) {
   const body = payload && typeof payload === 'object' ? payload : {};
   const q = query && typeof query === 'object' ? query : null;
   const extra = extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : null;
+  const sig = signal || null;
 
   const normalizedBase = normalizeCatPawOpenApiBase(apiBase);
   if (!normalizedBase) throw new Error('CatPawOpen 接口地址未设置');
@@ -143,6 +147,7 @@ export async function requestCatPlay({ apiBase, username, payload, query, header
     headers,
     body: JSON.stringify(body),
     credentials: 'omit',
+    ...(sig ? { signal: sig } : {}),
   });
   const status = resp && typeof resp.status === 'number' ? resp.status : 0;
   const data = await resp.json().catch(() => ({}));
