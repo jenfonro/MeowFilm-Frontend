@@ -44,8 +44,6 @@ export function initSearchPage() {
   const configEl = document.getElementById('homeDoubanConfig');
   let catApiBase = (configEl && configEl.getAttribute('data-cat-api-base')) || '';
   const tvUser = (configEl && configEl.getAttribute('data-tv-user')) || '';
-  let doubanDataProxy = (configEl && configEl.getAttribute('data-douban-data-proxy')) || '';
-  let doubanDataCustom = (configEl && configEl.getAttribute('data-douban-data-custom')) || '';
   let searchConcurrency = 5;
   let searchCoverSiteKey = '';
   let siteOrderList = [];
@@ -65,8 +63,6 @@ export function initSearchPage() {
 
   const refreshSearchConfigFromDom = () => {
     catApiBase = (configEl && configEl.getAttribute('data-cat-api-base')) || '';
-    doubanDataProxy = (configEl && configEl.getAttribute('data-douban-data-proxy')) || '';
-    doubanDataCustom = (configEl && configEl.getAttribute('data-douban-data-custom')) || '';
     const threadRaw = (configEl && configEl.getAttribute('data-search-thread-count')) || '5';
     const threadNum = Number(threadRaw);
     searchConcurrency =
@@ -139,259 +135,12 @@ export function initSearchPage() {
     tmdbDetailCache.set(`${t}::${String(i)}`, { at: Date.now(), badge, status, seasonCount, episodeCount });
   };
 
-  const normalizeProxyBase = (base) => {
-    const raw = typeof base === 'string' ? base.trim() : '';
-    if (!raw) return '';
-    if (/[?&=]$/.test(raw)) return raw;
-    return raw.endsWith('/') ? raw : `${raw}/`;
-  };
-
   const normalizeTmdbMediaType = (t) => {
     const raw = typeof t === 'string' ? t.trim().toLowerCase() : '';
     if (raw === 'tv' || raw === 'movie') return raw;
     if (raw === 'series') return 'tv';
     if (raw === 'film') return 'movie';
     return '';
-  };
-
-  const toProxiedUrl = (targetUrl, proxyBase) => {
-    const base = normalizeProxyBase(proxyBase);
-    if (!base) return targetUrl;
-    if (base.includes('cors-anywhere.com/')) return `${base}${targetUrl}`;
-    return `${base}${encodeURIComponent(targetUrl)}`;
-  };
-
-  const getDoubanDataApiBase = () => {
-    const p = String(doubanDataProxy || '').trim();
-    if (p === 'cdn-tx' || p === 'cmliussss-cdn-tencent') {
-      return { m: 'https://m.douban.cmliussss.net', proxyBase: '' };
-    }
-    if (p === 'cdn-ali' || p === 'cmliussss-cdn-ali') {
-      return { m: 'https://m.douban.cmliussss.com', proxyBase: '' };
-    }
-    if (p === 'cors' || p === 'cors-proxy-zwei') {
-      return { m: 'https://m.douban.com', proxyBase: 'https://ciao-cors.is-an.org/' };
-    }
-    if (p === 'cors-anywhere') {
-      return { m: 'https://m.douban.com', proxyBase: 'https://cors-anywhere.com/' };
-    }
-    if (p === 'custom') {
-      return { m: 'https://m.douban.com', proxyBase: String(doubanDataCustom || '').trim() };
-    }
-    return { m: 'https://m.douban.com', proxyBase: '' };
-  };
-
-  const requestDoubanJson = async (targetUrl) => {
-    const { proxyBase } = getDoubanDataApiBase();
-    const target = typeof targetUrl === 'string' ? targetUrl.trim() : '';
-    if (!target) return null;
-    const url = proxyBase ? toProxiedUrl(target, proxyBase) : target;
-    const resp = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json, text/plain, */*',
-      },
-      credentials: 'omit',
-      cache: 'no-store',
-    });
-    const data = await resp.json().catch(() => null);
-    if (!resp.ok) return null;
-    return data;
-  };
-
-  const parseChineseSeasonNo = (raw) => {
-    const s = typeof raw === 'string' ? raw.trim() : '';
-    if (!s) return 0;
-    const digits = s.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
-    if (/^\d+$/.test(digits)) {
-      const n = Number.parseInt(digits, 10);
-      return Number.isFinite(n) && n > 0 ? n : 0;
-    }
-    const map = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
-    if (s === '十') return 10;
-    if (s.includes('十')) {
-      const [a, b] = s.split('十');
-      const tens = a ? (map[a] || 0) : 1;
-      const ones = b ? (map[b] || 0) : 0;
-      const n = tens * 10 + ones;
-      return n > 0 ? n : 0;
-    }
-    return map[s] || 0;
-  };
-
-  const parseSeasonNoFromTitle = (title, { baseHasSeason1 = false } = {}) => {
-    const s = typeof title === 'string' ? title.trim() : '';
-    if (!s) return 0;
-    const m = s.match(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})\s*季/i);
-    if (m && m[1]) return parseChineseSeasonNo(String(m[1]));
-    const yb = s.match(/年番\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})/i);
-    if (yb && yb[1]) {
-      const n = parseChineseSeasonNo(String(yb[1]));
-      if (n > 0) return baseHasSeason1 ? n + 1 : n;
-    }
-    return 0;
-  };
-
-  const parseEpisodeCountFromDoubanInfo = (text) => {
-    const s = typeof text === 'string' ? text.trim() : '';
-    if (!s) return 0;
-    const mAll = s.match(/(\d{1,4})\s*集\s*全/);
-    if (mAll && mAll[1]) {
-      const n = Number.parseInt(String(mAll[1]), 10);
-      return Number.isFinite(n) && n > 0 ? n : 0;
-    }
-    const mUp = s.match(/更新至\s*(\d{1,4})\s*集/);
-    if (mUp && mUp[1]) {
-      const n = Number.parseInt(String(mUp[1]), 10);
-      return Number.isFinite(n) && n > 0 ? n : 0;
-    }
-    const mCnt = s.match(/(\d{1,4})\s*集/);
-    if (mCnt && mCnt[1]) {
-      const n = Number.parseInt(String(mCnt[1]), 10);
-      return Number.isFinite(n) && n > 0 ? n : 0;
-    }
-    return 0;
-  };
-
-  const doubanSeasonMetaByGroupKey = new Map();
-  const doubanSeasonProbeInFlight = new Map();
-
-  const getEffectiveTVSeasonCountForGroupKey = (groupKey, { fallback } = {}) => {
-    const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
-    if (!gk) return 0;
-    const override = doubanSeasonMetaByGroupKey.get(gk) || null;
-    const overrideCount =
-      override && Number.isFinite(Number(override.seasonCount)) ? Math.floor(Number(override.seasonCount)) : 0;
-    if (overrideCount > 0) return overrideCount;
-    if (typeof fallback === 'function') {
-      const n = fallback(gk);
-      return Number.isFinite(Number(n)) && Number(n) > 0 ? Math.floor(Number(n)) : 0;
-    }
-    return 0;
-  };
-
-  const storeDoubanSeasonMetaToSession = (tmdbId, meta) => {
-    const id = Number.isFinite(Number(tmdbId)) ? Math.floor(Number(tmdbId)) : 0;
-    if (id <= 0 || !meta || typeof meta !== 'object') return;
-    try {
-      const seasons = Array.isArray(meta.seasons) ? meta.seasons : [];
-      const out = {
-        tmdbId: id,
-        seasonCount: Number.isFinite(Number(meta.seasonCount)) ? Math.floor(Number(meta.seasonCount)) : 0,
-        seasons: seasons
-          .map((s) => ({
-            season: Number.isFinite(Number(s.season)) ? Math.floor(Number(s.season)) : 0,
-            episodeCount: Number.isFinite(Number(s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
-          }))
-          .filter((s) => s.season > 0 && s.episodeCount > 0),
-        updatedAt: Date.now(),
-      };
-      if (!out.seasonCount) out.seasonCount = out.seasons.length;
-      sessionStorage.setItem(`tv:douban:tmdbSeasons:${id}`, JSON.stringify(out));
-    } catch (_e) {}
-  };
-
-  const ensureDoubanSeasonMetaForGroupKey = async ({ groupKey, keyword, tmdbId, minSeasonHint = 0 } = {}) => {
-    const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
-    if (!gk) return null;
-    const existing = doubanSeasonMetaByGroupKey.get(gk) || null;
-    if (existing && existing.seasonCount && existing.seasonCount >= Math.max(2, minSeasonHint || 0)) return existing;
-    const inFlight = doubanSeasonProbeInFlight.get(gk) || null;
-    if (inFlight) return await inFlight;
-
-    const task = (async () => {
-      try {
-        const debugDouban = (() => {
-          try {
-            const qs = String(window.location && window.location.search ? window.location.search : '');
-            return qs.includes('debug=1');
-          } catch (_e) {
-            return false;
-          }
-        })();
-        const dbg = (event, payload) => {
-          if (!debugDouban) return;
-          try {
-            const row = { t: Date.now(), event, ...(payload || {}) };
-            window.__tvDoubanProbe = Array.isArray(window.__tvDoubanProbe) ? window.__tvDoubanProbe : [];
-            window.__tvDoubanProbe.push(row);
-            // eslint-disable-next-line no-console
-            console.log('[douban-probe]', row);
-          } catch (_e) {}
-        };
-
-        const { m } = getDoubanDataApiBase();
-        const q = typeof keyword === 'string' ? keyword.trim() : '';
-        if (!q) return null;
-        dbg('search_start', { groupKey: gk, tmdbId: Number(tmdbId) || 0, q, minSeasonHint: Number(minSeasonHint) || 0 });
-        const searchUrl = new URL(`${m}/rexxar/api/v2/search`);
-        searchUrl.searchParams.set('q', q);
-        searchUrl.searchParams.set('type', 'tv');
-        searchUrl.searchParams.set('start', '0');
-        searchUrl.searchParams.set('count', '20');
-        const searchData = await requestDoubanJson(searchUrl.toString());
-        dbg('search_done', { ok: Boolean(searchData), hasSubjects: Boolean(searchData && searchData.subjects), hasSmartBox: Boolean(searchData && searchData.smart_box) });
-        const subjectItems = searchData && searchData.subjects && Array.isArray(searchData.subjects.items) ? searchData.subjects.items : [];
-        const smartBox = Array.isArray(searchData && searchData.smart_box) ? searchData.smart_box : [];
-        const raw = subjectItems.concat(smartBox);
-
-        const items = raw
-          .map((it) => {
-            const t = it && it.target ? it.target : null;
-            const targetType = it && typeof it.target_type === 'string' ? it.target_type : '';
-            const id = t && (t.id != null ? String(t.id) : it && it.target_id != null ? String(it.target_id) : '');
-            const title = t && typeof t.title === 'string' ? t.title : '';
-            if (!id || !title || targetType !== 'tv') return null;
-            return { id, title };
-          })
-          .filter(Boolean);
-        if (!items.length) return null;
-
-        const baseHasSeason1 = items.some((x) => /第\s*(?:1|01|一)\s*季/.test(x.title));
-        const candidates = items
-          .map((x) => {
-            const season = parseSeasonNoFromTitle(x.title, { baseHasSeason1 });
-            return { ...x, season: season > 0 ? season : 0 };
-          })
-          .filter((x) => x.season > 0);
-        if (!candidates.length) return null;
-
-        const bySeason = new Map();
-        candidates.forEach((x) => {
-          const prev = bySeason.get(x.season);
-          if (!prev) bySeason.set(x.season, x);
-        });
-
-        const seasons = [];
-        const list = Array.from(bySeason.values()).slice(0, 10);
-        for (let i = 0; i < list.length; i += 1) {
-          const it = list[i];
-          const detailUrl = `${m}/rexxar/api/v2/tv/${encodeURIComponent(it.id)}`;
-          // eslint-disable-next-line no-await-in-loop
-          const d = await requestDoubanJson(detailUrl);
-          const epCountRaw = d && Number.isFinite(Number(d.episodes_count)) ? Math.floor(Number(d.episodes_count)) : 0;
-          const epInfo = d && typeof d.episodes_info === 'string' ? d.episodes_info : '';
-          const epCount = epCountRaw > 0 ? epCountRaw : parseEpisodeCountFromDoubanInfo(epInfo);
-          if (epCount > 0) seasons.push({ season: it.season, episodeCount: epCount });
-        }
-        dbg('detail_done', { seasonsFound: seasons.length });
-        seasons.sort((a, b) => a.season - b.season);
-        if (seasons.length < 2) return null;
-        const seasonCount = seasons.reduce((mmax, s) => Math.max(mmax, s.season), 0) || seasons.length;
-        const meta = { seasonCount, seasons };
-        doubanSeasonMetaByGroupKey.set(gk, meta);
-        storeDoubanSeasonMetaToSession(tmdbId, meta);
-        dbg('meta_saved', { seasonCount, seasons: seasons.slice(0, 10) });
-        return meta;
-      } catch (_e) {
-        return null;
-      } finally {
-        doubanSeasonProbeInFlight.delete(gk);
-      }
-    })();
-
-    doubanSeasonProbeInFlight.set(gk, task);
-    return await task;
   };
 
   const setStatus = (text, isError = false) => {
@@ -839,7 +588,7 @@ export function initSearchPage() {
         console.log('[search-debug]', row);
       } catch (_e) {}
     };
-    dbg('run_start', { q, searchDisplayMode, doubanDataProxy });
+    dbg('run_start', { q, searchDisplayMode });
 
     refreshAggregatesForCurrentRun = null;
 
@@ -2023,51 +1772,7 @@ export function initSearchPage() {
           const items = normalizeSearchList(data);
 
           const sliced = items.slice(0, 12);
-          const slicedForProbe = items.slice(0, 30);
           const groupKeysActivated = new Set();
-
-          // Probe Douban season meta for multi-season titles when TMDB only has 1 season.
-          // This is used later by PlayPage to build a better episode list (not for search badge display).
-          if ((searchDisplayMode === 'tmdb' || searchDisplayMode === 'both') && tmdbByGroupKeyByType.size) {
-            const probes = [];
-            for (let i = 0; i < slicedForProbe.length; i += 1) {
-              const it = slicedForProbe[i];
-              const name = it && it.name ? String(it.name) : '';
-              const originalTitle = sanitizeDisplayTitle(name) || name;
-              const seasonHint = extractSeasonHintFromText(originalTitle) || extractSeasonHintFromText(it && it.remark ? String(it.remark) : '');
-              if (!(seasonHint >= 2)) continue;
-
-              const base = preCleanForRules(originalTitle) || originalTitle || name;
-              const cleanedRaw = applyCleanRules(base, compiledAggregateCleanRules, { skipTrailingDigitsRule: Boolean(qTrailingDigits) }) || base;
-              const cleanedTitle = sanitizeDisplayTitle(cleanedRaw) || cleanedRaw || base || name;
-              const cleanedForMatch = normalizeDisplayTitle(cleanedTitle) || cleanedTitle || name;
-              const seasonStripped = stripSeasonMarkers(cleanedForMatch);
-              if (!seasonStripped || seasonStripped === cleanedForMatch) continue;
-
-              const gkStripped = normalizeForGroupKey(seasonStripped);
-              if (!gkStripped || !hasTMDBTVForGroupKey(gkStripped)) continue;
-
-              const tmdbSeasonCount = getTMDBTVSeasonCountForGroupKey(gkStripped);
-              if (tmdbSeasonCount >= seasonHint) continue;
-              if (tmdbSeasonCount > 1) continue;
-
-              const typed = tmdbByGroupKeyByType.get(gkStripped) || null;
-              const tv = typed && typed.tv ? typed.tv : null;
-              const tmdbIdRaw = tv && tv.tmdbId != null ? tv.tmdbId : tv && tv.id != null ? tv.id : 0;
-              const tmdbId = Number(tmdbIdRaw) || 0;
-              if (!Number.isFinite(tmdbId) || tmdbId <= 0) continue;
-
-              probes.push(
-                ensureDoubanSeasonMetaForGroupKey({
-                  groupKey: gkStripped,
-                  keyword: q,
-                  tmdbId,
-                  minSeasonHint: seasonHint,
-                })
-              );
-            }
-            if (probes.length) await Promise.allSettled(probes);
-          }
 
           const normalItems = sliced
             .map((it) => {
