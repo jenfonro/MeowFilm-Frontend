@@ -694,6 +694,18 @@ const props = defineProps({
 	tmdbType: { type: String, default: '' },
 });
 
+const tmdbMode = computed(() => {
+  const id = Number(props.tmdbId || 0);
+  const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+  return Number.isFinite(id) && id > 0 && (typRaw === 'tv' || typRaw === 'movie');
+});
+
+const tmdbMovieMode = computed(() => {
+  if (!tmdbMode.value) return false;
+  const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+  return typRaw === 'movie';
+});
+
 const artPlayerRef = ref(null);
 
 const playBootstrapSettings = ref(null);
@@ -3601,7 +3613,14 @@ watch(
   () => `${isIos.value ? '1' : '0'}|${sitePanOptions.value.length}|${selectedPan.value}`,
   () => {
     if (!isIos.value) return;
-    if (tmdbSmartListAvailable.value) return;
+    // Avoid referencing TMDB computeds here (they are declared later in this file and can trigger TDZ errors).
+    // In TMDB mode we don't auto-pick a default pan source.
+    try {
+      const id = Number(props.tmdbId || 0);
+      const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+      const isTmdb = Number.isFinite(id) && id > 0 && (typRaw === 'tv' || typRaw === 'movie');
+      if (isTmdb) return;
+    } catch (_e) {}
     if (smartListAvailable.value) return;
     if (selectedPan.value) return;
     const k = preferBaiduPanKey.value;
@@ -3755,34 +3774,42 @@ const selectTMDBSitePan = (key) => {
   tmdbPanDropdownOpen.value = false;
 };
 
-watch(
-  () => `${tmdbMode.value ? '1' : '0'}|${selectedPanKey.value}`,
-  () => {
-    if (!tmdbMode.value) return;
-    const k = selectedPanKey.value;
-    if (!isTMDBSitePanKey(k)) return;
-    const opt = (Array.isArray(tmdbSitePanOptions.value) ? tmdbSitePanOptions.value : []).find((o) => o && o.key === k) || null;
-    if (!opt) return;
-    void ensureTMDBSitePanLoaded(opt);
-  },
-  { immediate: true }
-);
+onMounted(() => {
+  // Register TMDB-site-pan watchers after mount to avoid TDZ issues (they depend on TMDB computeds declared later).
+  try {
+    const stopEnsureLoaded = watch(
+      () => `${tmdbMode.value ? '1' : '0'}|${selectedPanKey.value}`,
+      () => {
+        if (!tmdbMode.value) return;
+        const k = selectedPanKey.value;
+        if (!isTMDBSitePanKey(k)) return;
+        const opt =
+          (Array.isArray(tmdbSitePanOptions.value) ? tmdbSitePanOptions.value : []).find((o) => o && o.key === k) || null;
+        if (!opt) return;
+        void ensureTMDBSitePanLoaded(opt);
+      },
+      { immediate: true }
+    );
+    cleanupFns.push(stopEnsureLoaded);
 
-watch(
-  () => `${tmdbMode.value ? '1' : '0'}|${selectedPanKey.value}|${tmdbSitePanCacheVersion.value}`,
-  () => {
-    if (!tmdbMode.value) return;
-    const k = selectedPanKey.value;
-    if (!isTMDBSitePanKey(k)) return;
-    const cached = readTMDBSitePanCacheEntry(k);
-    const pans = cached && Array.isArray(cached.pans) ? cached.pans : [];
-    if (!pans.length) return;
-    const cur = tmdbSelectedSitePanKey.value;
-    if (cur && pans.some((p) => p && p.key === cur)) return;
-    tmdbSelectedSitePanKey.value = pans[0].key || '';
-  },
-  { immediate: true }
-);
+    const stopFillSubPan = watch(
+      () => `${tmdbMode.value ? '1' : '0'}|${selectedPanKey.value}|${tmdbSitePanCacheVersion.value}`,
+      () => {
+        if (!tmdbMode.value) return;
+        const k = selectedPanKey.value;
+        if (!isTMDBSitePanKey(k)) return;
+        const cached = readTMDBSitePanCacheEntry(k);
+        const pans = cached && Array.isArray(cached.pans) ? cached.pans : [];
+        if (!pans.length) return;
+        const cur = tmdbSelectedSitePanKey.value;
+        if (cur && pans.some((p) => p && p.key === cur)) return;
+        tmdbSelectedSitePanKey.value = pans[0].key || '';
+      },
+      { immediate: true }
+    );
+    cleanupFns.push(stopFillSubPan);
+  } catch (_e) {}
+});
 
 const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
   const raw = typeof episodeUrl === 'string' ? episodeUrl : '';
@@ -4266,18 +4293,6 @@ const smartPanMatchTokensSetting = computed(() => {
   return list.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
 });
 
-const tmdbMode = computed(() => {
-  const id = Number(props.tmdbId || 0);
-  const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
-  return Number.isFinite(id) && id > 0 && (typRaw === 'tv' || typRaw === 'movie');
-});
-
-const tmdbMovieMode = computed(() => {
-  if (!tmdbMode.value) return false;
-  const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
-  return typRaw === 'movie';
-});
-
 watch(
   () => `${props.tmdbType || ''}::${String(props.tmdbId || '')}`,
   () => refreshDoubanSeasonMeta(),
@@ -4692,16 +4707,22 @@ watch(
   { immediate: true }
 );
 
-watch(
-  () => `${tmdbSmartListAvailable.value ? '1' : '0'}|${selectedPanKey.value}`,
-  () => {
-    if (!tmdbSmartListAvailable.value) return;
-    if (!isSmartPanKey(selectedPanKey.value)) return;
-    rawListMode.value = false;
-    autoRawListMode.value = false;
-  },
-  { immediate: true }
-);
+onMounted(() => {
+  // Register this watcher after mount to avoid TDZ issues (it reads `selectedPanKey`).
+  try {
+    const stop = watch(
+      () => `${tmdbMode.value ? '1' : '0'}|${tmdbMovieMode.value ? '1' : '0'}|${selectedPanKey.value}`,
+      () => {
+        if (!tmdbMode.value || tmdbMovieMode.value) return;
+        if (!isSmartPanKey(selectedPanKey.value)) return;
+        rawListMode.value = false;
+        autoRawListMode.value = false;
+      },
+      { immediate: true }
+    );
+    cleanupFns.push(stop);
+  } catch (_e) {}
+});
 
 const computePriorityMatch = (textLower, tokensLower) => {
   const text = typeof textLower === 'string' ? textLower : '';
@@ -5470,10 +5491,16 @@ const tmdbLatestEpisode = computed(() => {
 
 const tmdbSmartEpisodeCount = computed(() => {
   if (!tmdbMode.value) return 0;
+  if (tmdbMovieMode.value) return 0;
   const base = tmdbLatestEpisode.value;
   const extra = maxEpisodeFromSourceBadges.value;
   if (base > 0 && extra === base + 1) return extra;
-  if (base <= 0) return Math.max(0, extra);
+  if (base <= 0) {
+    const picked = Math.max(0, extra);
+    if (picked > 0) return picked;
+    // Fallback: expose a minimal list so "TMDB/豆瓣" smart entries can appear even before meta is ready.
+    return 1;
+  }
   return Math.max(0, base);
 });
 
@@ -6769,29 +6796,8 @@ const reportTMDBPlay = async ({ ctx, stage = 'resolve', result = 'success', erro
 };
 
 const pushDoubanSeasonMetaToServerIfNeeded = () => {
-  try {
-    if (!tmdbMode.value) return;
-    const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
-    const tmdbId = Number(props.tmdbId || 0);
-    if (typRaw !== 'tv' || tmdbId <= 0) return;
-    if (!doubanSeasonOverrideActive.value) return;
-    const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
-    const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
-    if (seasons.length < 2) return;
-    const payload = {
-      tmdbId,
-      type: 'tv',
-      source: 'douban',
-      seasons: seasons
-        .map((s) => ({
-          season: Number.isFinite(Number(s.season)) ? Math.floor(Number(s.season)) : 0,
-          episodeCount: Number.isFinite(Number(s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
-        }))
-        .filter((s) => s.season > 0 && s.episodeCount > 0),
-    };
-    if (!payload.seasons.length) return;
-    void apiPostJson('/api/tmdb/meta/push', payload, { dedupe: false, timeoutMs: 3000 });
-  } catch (_e) {}
+  // Temporarily disabled: server-side TMDB/Douban meta caching may be unavailable.
+  return;
 };
 
 const fetchTMDBCandidatesFromServer = async ({ tmdbId, type = 'tv', season = 0, episode = 0 } = {}) => {
@@ -8920,8 +8926,7 @@ const requestPlay = async () => {
     const metaId = Number(props.tmdbId || 0);
     const metaType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : 'tv';
 
-    // Keep server-side season_meta warm (best-effort).
-    pushDoubanSeasonMetaToServerIfNeeded();
+    // server-side season_meta push disabled
 
     const seasonEp = wantEpisode > 0 ? tmdbSeasonEpisodeOfGlobal(wantEpisode) : { season: 0, episode: 0 };
     const seasonNo = desiredSeason > 0 ? desiredSeason : (seasonEp && seasonEp.season ? Number(seasonEp.season) : 0);
@@ -9303,6 +9308,7 @@ const tryAutoStartPlayback = () => {
       if (!started) return;
       initialAutoPlayTriggered.value = true;
     })
+    .catch(() => {})
     .finally(() => {
       initialAutoPlayInFlight.value = false;
     });
@@ -10820,7 +10826,7 @@ watch(
     lastContentKey = nextContentKey;
 
     const prevIdx = Number.isFinite(selectedEpisodeIndex.value) ? Math.floor(selectedEpisodeIndex.value) : 0;
-    void runEntryFlow({ isNewContent, restoreEpisodeIndex: prevIdx });
+    void runEntryFlow({ isNewContent, restoreEpisodeIndex: prevIdx }).catch(() => {});
   },
   { immediate: true }
 );

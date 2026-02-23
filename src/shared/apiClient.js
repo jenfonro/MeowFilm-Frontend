@@ -88,6 +88,8 @@ export class ApiError extends Error {
     this.name = 'ApiError';
     this.status = typeof status === 'number' ? status : 0;
     this.data = data;
+    this.method = '';
+    this.url = '';
   }
 }
 
@@ -130,7 +132,10 @@ export const apiRequestJson = async (url, options = {}) => {
         data && typeof data === 'object'
           ? String(data.message || data.error || data.msg || `HTTP ${status}`)
           : `HTTP ${status || 0}`;
-      throw new ApiError(msg || '请求失败', status, data);
+      const err = new ApiError(msg || '请求失败', status, data);
+      err.method = method;
+      err.url = u;
+      throw err;
     }
     if (cacheMs > 0) cacheSet(key, data);
     return data;
