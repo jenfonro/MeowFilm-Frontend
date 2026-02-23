@@ -242,12 +242,14 @@
                                 {{ o.label }}
                               </div>
                               <div v-if="panDropdownOptions.length === 0 && !smartListAvailable" class="custom-dropdown-item">
-                                {{ introLoading ? '加载中...' : '暂无数据' }}
+                                <span :class="panDropdownStatusIsError ? 'text-red-600 dark:text-red-400' : ''">
+                                  {{ panDropdownStatusText || '暂无数据' }}
+                                </span>
                               </div>
                             </div>
                           </div>
-	                        </div>
-                        <div v-if="introLoading" class="flex-shrink-0 w-5 h-5 flex items-center justify-center" aria-label="加载中">
+		                        </div>
+                        <div v-if="panDropdownLoading" class="flex-shrink-0 w-5 h-5 flex items-center justify-center" aria-label="加载中">
                           <div class="tv-spinner" aria-hidden="true"></div>
                         </div>
                         <template v-if="!tmdbSmartListAvailable">
@@ -287,39 +289,34 @@
 	                              @click="tmdbPanDropdownOpen = !tmdbPanDropdownOpen"
 	                            >
 	                              {{ tmdbSelectedSitePanLabel }}
-	                            </button>
-		                            <div class="custom-dropdown-list" :class="{ hidden: !tmdbPanDropdownOpen }">
+		                            </button>
+			                            <div class="custom-dropdown-list" :class="{ hidden: !tmdbPanDropdownOpen }">
 		                              <div
-		                                v-for="s in smartPanEntries"
-		                                :key="s.key"
+		                                v-for="p in tmdbSelectedSitePanOptions"
+		                                :key="p.key"
 		                                class="custom-dropdown-item"
-		                                :class="{ active: s.key === selectedPanKey }"
-		                                role="option"
-		                                @click="selectPan(s.key)"
-		                              >
-		                                {{ s.label }}
-		                              </div>
-	                              <div
-	                                v-for="p in tmdbSelectedSitePanOptions"
-	                                :key="p.key"
-	                                class="custom-dropdown-item"
-	                                :class="{ active: p.key === tmdbSelectedSitePanKey }"
-	                                role="option"
-	                                :title="p.label"
-	                                @click="selectTMDBSitePan(p.key)"
-	                              >
-	                                {{ p.label }}
-	                              </div>
-	                              <div v-if="tmdbSelectedSitePanOptions.length === 0" class="custom-dropdown-item">
-	                                {{ selectedPanAuxLoading ? '加载中...' : '暂无数据' }}
-	                              </div>
-	                            </div>
-	                          </div>
-	                        </div>
-	                        <button
-	                          id="rawListBtn"
-	                          type="button"
-	                          class="episode-control episode-control--btn flex-shrink-0"
+                                :class="{ active: p.key === tmdbSelectedSitePanKey }"
+                                role="option"
+                                :title="p.label"
+                                @click="selectTMDBSitePan(p.key)"
+                              >
+                                {{ p.label }}
+                              </div>
+                              <div v-if="tmdbSelectedSitePanOptions.length === 0" class="custom-dropdown-item">
+                                <span :class="selectedPanAuxError ? 'text-red-600 dark:text-red-400' : ''">
+                                  {{ selectedPanAuxError || (selectedPanAuxLoading ? '加载中...' : '') || '暂无数据' }}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+		                        </div>
+                        <div v-if="selectedPanAuxLoading" class="flex-shrink-0 w-5 h-5 flex items-center justify-center" aria-label="加载中">
+                          <div class="tv-spinner" aria-hidden="true"></div>
+                        </div>
+                        <button
+                          id="rawListBtn"
+                          type="button"
+                          class="episode-control episode-control--btn flex-shrink-0"
 	                          :data-active="rawListMode ? 'true' : 'false'"
 	                          v-show="!forceRawListMode"
 	                          @click="toggleRawList"
@@ -411,16 +408,16 @@
                       </div>
 
 	                      <div id="rawListView" ref="rawListViewEl" class="raw-list flex-1 overflow-y-auto content-start pb-4" v-show="rawListMode">
-	                        <div v-if="introLoading || selectedPanAuxLoading" class="tv-center-loading">
-	                          <div class="tv-spinner" aria-hidden="true"></div>
-	                          <div class="tv-center-loading__text">加载中...</div>
-	                        </div>
-		                        <div v-else-if="(selectedPanAuxError || introError) && !isSmartPanActive" class="raw-list__hint raw-list__hint--error">{{ selectedPanAuxError || introError }}</div>
-	                        <div v-else-if="rawListItems.length === 0" class="tv-episode-overlay">
-	                          <div class="tv-episode-overlay__inner">
-	                            <div class="tv-center-loading__text">暂无数据</div>
-	                          </div>
-	                        </div>
+                        <div v-if="introLoading || selectedPanAuxLoading || panDropdownLoading" class="tv-center-loading">
+                          <div class="tv-spinner" aria-hidden="true"></div>
+                          <div class="tv-center-loading__text">加载中...</div>
+                        </div>
+			                        <div v-else-if="(selectedPanAuxError || introError || panDropdownErrorText) && !isSmartPanActive" class="raw-list__hint raw-list__hint--error">{{ selectedPanAuxError || introError || panDropdownErrorText }}</div>
+                        <div v-else-if="rawListItems.length === 0" class="tv-episode-overlay">
+                          <div class="tv-episode-overlay__inner">
+                            <div class="tv-center-loading__text">暂无数据</div>
+                          </div>
+                        </div>
 	                        <div v-else class="raw-list__items">
                           <button
                             v-for="it in rawListPagedItems"
@@ -441,17 +438,17 @@
 	                        class="relative flex flex-wrap gap-3 overflow-y-auto flex-1 content-start pb-4"
 	                        v-show="!rawListMode"
 	                      >
-	                        <div v-if="introLoading && !smartListAvailable" class="tv-episode-overlay" aria-hidden="true">
-	                          <div class="tv-episode-overlay__inner">
-	                            <div class="tv-spinner" aria-hidden="true"></div>
-	                            <div class="tv-center-loading__text">加载中...</div>
-	                          </div>
-	                        </div>
-		                        <div v-else-if="introError && !isSmartPanActive" class="tv-episode-overlay">
-	                          <div class="tv-episode-overlay__inner">
-	                            <div class="tv-center-loading__text text-red-600 dark:text-red-400">{{ introError }}</div>
-	                          </div>
-	                        </div>
+                        <div v-if="(introLoading || panDropdownLoading) && !smartListAvailable" class="tv-episode-overlay" aria-hidden="true">
+                          <div class="tv-episode-overlay__inner">
+                            <div class="tv-spinner" aria-hidden="true"></div>
+                            <div class="tv-center-loading__text">加载中...</div>
+                          </div>
+                        </div>
+			                        <div v-else-if="(introError || panDropdownErrorText) && !isSmartPanActive" class="tv-episode-overlay">
+                          <div class="tv-episode-overlay__inner">
+                            <div class="tv-center-loading__text text-red-600 dark:text-red-400">{{ introError || panDropdownErrorText }}</div>
+                          </div>
+                        </div>
 	                        <template v-else>
 	                          <template v-if="groupedDisplayedEpisodes.length">
 	                            <button
@@ -513,6 +510,9 @@
                               <div class="text-xs text-gray-600 dark:text-gray-300 truncate" :title="src.siteName || ''">
                                 {{ src.siteName || '站点' }}
                               </div>
+                              <div v-if="src.error" class="text-xs text-red-600 dark:text-red-400 truncate" :title="src.error">
+                                {{ src.error }}
+                              </div>
                             </template>
                             <template v-else>
                               <div class="flex items-start justify-between gap-3 h-6">
@@ -538,6 +538,9 @@
                                 </span>
                               </div>
                               <div v-else class="h-5"></div>
+                              <div v-if="src.error" class="text-xs text-red-600 dark:text-red-400 truncate" :title="src.error">
+                                {{ src.error }}
+                              </div>
 
                               <div class="mt-auto flex items-center justify-between">
                                 <span class="source-card__site text-xs px-2 py-1 border border-gray-500/60 rounded text-gray-700 dark:text-gray-200 truncate max-w-[70%]">
@@ -2338,8 +2341,8 @@ const orderedSiteSources = computed(() => {
 });
 
 const sourcesTabItems = computed(() => {
-	  const buildSmartSwitchItems = () => {
-	    try {
+  const buildSmartSwitchItems = () => {
+    try {
       const eps = selectedEpisodes.value;
       const idxRaw = Number.isFinite(Number(selectedEpisodeIndex.value)) ? Math.floor(Number(selectedEpisodeIndex.value)) : 0;
       const idx = idxRaw >= 0 ? idxRaw : 0;
@@ -2658,8 +2661,37 @@ const sourcesTabItems = computed(() => {
           qualityTitle: best.qualityTitle,
           __smartCand: best.__smartCand,
           __smartQualityTierRank: qualityTierRankOf(best.qualityTitle),
+          error: '',
         };
       });
+
+      const errorSites = (() => {
+        const out = [];
+        const seen = new Set();
+        try {
+          Array.from(tmdbSmartDetailCache.values()).forEach((entry) => {
+            if (!entry || entry.ok !== false) return;
+            const sk = entry && entry.siteKey ? String(entry.siteKey) : '';
+            if (!sk || seen.has(sk)) return;
+            seen.add(sk);
+            const msg = entry && entry.lastError ? String(entry.lastError) : '请求失败';
+            out.push({
+              kind: 'smart',
+              key: `site_err::${sk}`,
+              active: false,
+              siteKey: sk,
+              spiderApi: entry && entry.spiderApi ? String(entry.spiderApi) : '',
+              siteName: entry && entry.siteName ? String(entry.siteName) : sk,
+              videoId: entry && entry.videoId ? String(entry.videoId) : '',
+              qualityTitle: '加载失败',
+              __smartCand: null,
+              __smartQualityTierRank: 0,
+              error: msg,
+            });
+          });
+        } catch (_e) {}
+        return out;
+      })();
 
       return merged
         .slice()
@@ -2673,7 +2705,8 @@ const sourcesTabItems = computed(() => {
           const bo = orderMap.has(b.siteKey) ? orderMap.get(b.siteKey) : 999999;
           if (ao !== bo) return ao - bo;
           return (a.siteName || a.siteKey).localeCompare(b.siteName || b.siteKey, 'zh');
-        });
+        })
+        .concat(errorSites);
     } catch (_e) {
       return [];
     }
@@ -2705,6 +2738,7 @@ const sourcesTabItems = computed(() => {
     title: displayTitle.value || '未命名',
     poster: displayPoster.value,
     remark: (detail.value.remark || props.videoRemark || '').trim(),
+    error: !isSmartPanActive.value && introError.value ? String(introError.value) : '',
   });
 
   (aggregatedSources.value || []).forEach((s) => {
@@ -2728,6 +2762,7 @@ const sourcesTabItems = computed(() => {
 const switchAggregatedSource = async (src) => {
   if (!src || src.active) return;
   if (src.kind === 'smart') {
+    if (src.error && !src.__smartCand) return;
     try {
       const qTitle = src && typeof src.qualityTitle === 'string' ? src.qualityTitle.trim() : '';
       const qualityMode =
@@ -3037,10 +3072,37 @@ const metaPills = computed(() => {
   return uniq;
 });
 
-const parsePlaySources = (fromRaw, urlRaw) => {
+const parsePlaySources = (fromRaw, urlRaw, options = {}) => {
+  const opt = options && typeof options === 'object' ? options : {};
+  const panMockEnabled = !!opt.panMockEnabled;
   const fromStr = typeof fromRaw === 'string' ? fromRaw.trim() : '';
   const urlStr = typeof urlRaw === 'string' ? urlRaw.trim() : '';
   if (!fromStr && !urlStr) return [];
+
+  const isResolvedPanMockVod = (vodPlayUrl) => {
+    const t = typeof vodPlayUrl === 'string' ? vodPlayUrl.trim() : '';
+    if (!t) return false;
+    if (/https?:\/\//i.test(t)) return false;
+    const segs = t
+      .split('#')
+      .map((x) => String(x || '').trim())
+      .filter(Boolean);
+    if (!segs.length) return false;
+    for (let i = 0; i < segs.length; i += 1) {
+      const seg = segs[i];
+      const idx = seg.indexOf('$');
+      if (idx <= 0) return false;
+      const namePart = seg.slice(0, idx).trim();
+      const idPart = seg.slice(idx + 1).trim();
+      if (!idPart) return false;
+      if (/https?:\/\//i.test(idPart)) return false;
+      if (namePart && namePart.toLowerCase().includes('nopass')) return false;
+      if (/^nopass(\.mp4)?$/i.test(namePart)) return false;
+      if (idPart.toLowerCase().includes('nopass')) return false;
+      if (idPart.length < 8 && !idPart.includes('*')) return false;
+    }
+    return true;
+  };
 
   const splitTop = (s) => (s ? s.split('$$$') : []);
   const fromParts = splitTop(fromStr);
@@ -3062,6 +3124,13 @@ const parsePlaySources = (fromRaw, urlRaw) => {
       const label = (fromSubs[j] || '').trim() || (subLen > 1 ? `${baseLabel}-${j + 1}` : baseLabel);
       const u = (urlSubs[j] || '').trim();
       if (!u) continue;
+
+      if (panMockEnabled) {
+        const provider = panMockProviderFromFlag(label);
+        if (provider) {
+          if (!isResolvedPanMockVod(u)) continue;
+        }
+      }
 
       const parseEpisodeSeg = (seg, flag) => {
         const s = String(seg || '').trim();
@@ -3134,7 +3203,11 @@ const parsePlaySources = (fromRaw, urlRaw) => {
 	const TMDB_SMART_PAN_LABEL = 'TMDB';
 	const isSmartPanKey = (key) => key === SMART_PAN_KEY || key === DOUBAN_SMART_PAN_KEY;
 
-const sitePanOptions = computed(() => parsePlaySources(detail.value.playFrom, detail.value.playUrl));
+const sitePanOptions = computed(() => {
+  const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+  const panMockEnabled = !!(d && d.panMockEnabled);
+  return parsePlaySources(d.playFrom, d.playUrl, { panMockEnabled });
+});
 
 const TMDB_SITE_PAN_KEY_PREFIX = 'tmdb_site_pan::';
 const buildTMDBSitePanKey = (siteKey, spiderApi, videoId) => {
@@ -3184,6 +3257,39 @@ const tmdbSitePanOptions = computed(() => {
 });
 
 const panDropdownOptions = computed(() => (tmdbMode.value ? tmdbSitePanOptions.value : sitePanOptions.value));
+
+const panDropdownLoading = computed(() => {
+  if (tmdbMode.value) return false;
+  const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+  const panMockEnabled = !!(d && d.panMockEnabled);
+  if (!panMockEnabled) return false;
+  // During pan_mock resolution, we filter unresolved pans out; keep a "loading" hint for the dropdown.
+  return !!(d && d.panMockResolving);
+});
+
+const panDropdownErrorText = computed(() => {
+  if (tmdbMode.value) return '';
+  const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+  const panMockEnabled = !!(d && d.panMockEnabled);
+  if (!panMockEnabled) return '';
+  if (d && d.panMockResolving) return '';
+  const errors = d && d.panMockListErrors && typeof d.panMockListErrors === 'object' ? d.panMockListErrors : {};
+  const msgs = Object.values(errors)
+    .map((x) => (typeof x === 'string' ? x.trim() : String(x || '').trim()))
+    .filter(Boolean);
+  if (!msgs.length) return '';
+  // Keep it short for the dropdown placeholder.
+  return msgs.slice(0, 1)[0] || '';
+});
+
+const panDropdownStatusText = computed(() => {
+  if (panDropdownLoading.value) return '加载中...';
+  const err = panDropdownErrorText.value;
+  if (err) return err;
+  return '';
+});
+
+const panDropdownStatusIsError = computed(() => !!(panDropdownStatusText.value && !panDropdownLoading.value));
 
 const tmdbSitePanCache = new Map();
 const tmdbSitePanCacheVersion = ref(0);
@@ -3725,12 +3831,13 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
 const panMockProviderFromFlag = (flag) => {
   const s = typeof flag === 'string' ? flag.trim() : '';
   if (!s) return '';
-  const lower = s.toLowerCase();
-  if (s.includes('天意') || s.includes('天翼') || lower.includes('tianyi') || lower.includes('189')) return '189';
-  if (s.includes('逸动') || s.includes('和彩云') || lower.includes('yidong') || lower.includes('139')) return '139';
-  if (s.includes('夸父') || s.includes('夸克') || lower.includes('quark')) return 'quark';
-  if (s.includes('优夕') || lower.includes('uc')) return 'uc';
-  if (s.includes('百度') || lower.includes('baidu')) return 'baidu';
+  const head2 = Array.from(s).slice(0, 2).join('');
+  const lowerHead2 = head2.toLowerCase();
+  if (head2 === '天意' || head2 === '天翼') return '189';
+  if (head2 === '逸动' || head2 === '和彩' || head2 === '移动') return '139';
+  if (head2 === '夸父' || head2 === '夸克') return 'quark';
+  if (head2 === '优夕' || lowerHead2 === 'uc') return 'uc';
+  if (head2 === '百度') return 'baidu';
   return '';
 };
 
@@ -3787,9 +3894,9 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
   if (panMockEnabled) panMockEnabledHint.value = true;
   const fromStr = typeof playFrom === 'string' ? playFrom.trim() : '';
   const urlStr = typeof playUrl === 'string' ? playUrl.trim() : '';
-  if (!panMockEnabled || !fromStr || !urlStr) {
-    return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {} };
-  }
+	  if (!panMockEnabled || !fromStr || !urlStr) {
+	    return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {}, panMockListErrors: {} };
+	  }
 
   try {
     const splitTop = (s) => (s ? String(s || '').split('$$$') : []);
@@ -3825,7 +3932,7 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
       }
     }
 
-    if (!listReqsRaw.length) return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {} };
+	    if (!listReqsRaw.length) return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {}, panMockListErrors: {} };
 
     const listReqs = new Map();
     listReqsRaw.forEach((it) => {
@@ -3836,11 +3943,12 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
       if (!listReqs.has(key)) listReqs.set(key, it);
     });
 
-    const resolvedVodByKey = new Map(); // `${provider}::${label}` -> vod_play_url
-    const tianyiAccessByShareId = new Map();
-    const onPartial = typeof onUpdate === 'function' ? onUpdate : null;
+	    const resolvedVodByKey = new Map(); // `${provider}::${label}` -> vod_play_url
+	    const tianyiAccessByShareId = new Map();
+	    const errorByKey = new Map(); // `${provider}::${label}` -> error message
+	    const onPartial = typeof onUpdate === 'function' ? onUpdate : null;
 
-    const computeOut = () => {
+	    const computeOut = () => {
       const outFrom = [];
       const outUrl = [];
       for (let i = 0; i < len; i += 1) {
@@ -3875,13 +3983,14 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
         outFrom.push(nextFromSubs.join('|||'));
         outUrl.push(nextUrlSubs.join('|||'));
       }
-      return {
-        panMockEnabled,
-        playFrom: outFrom.join('$$$') || fromStr,
-        playUrl: outUrl.join('$$$') || urlStr,
-        panMock189AccessByShareId: Object.fromEntries(Array.from(tianyiAccessByShareId.entries())),
-      };
-    };
+	      return {
+	        panMockEnabled,
+	        playFrom: outFrom.join('$$$') || fromStr,
+	        playUrl: outUrl.join('$$$') || urlStr,
+	        panMock189AccessByShareId: Object.fromEntries(Array.from(tianyiAccessByShareId.entries())),
+	        panMockListErrors: Object.fromEntries(Array.from(errorByKey.entries())),
+	      };
+	    };
 
     const emitPartial = () => {
       if (!onPartial) return;
@@ -3890,38 +3999,52 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
       } catch (_e) {}
     };
 
-    const callList = async (req) => {
-      const provider = req && req.provider ? String(req.provider).trim() : '';
-      const label = req && req.label ? String(req.label).trim() : '';
-      if (!provider || !label) return;
+	    const callList = async (req) => {
+	      const provider = req && req.provider ? String(req.provider).trim() : '';
+	      const label = req && req.label ? String(req.label).trim() : '';
+	      if (!provider || !label) return;
 
-      const call = async (path, body) => {
-        const resp = await fetch(path, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body || {}),
-          credentials: 'include',
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (!resp.ok || !data || data.ok === false) return null;
-        return data && typeof data === 'object' ? data : null;
-      };
+	      const call = async (path, body) => {
+	        const resp = await fetch(path, {
+	          method: 'POST',
+	          headers: { 'Content-Type': 'application/json' },
+	          body: JSON.stringify(body || {}),
+	          credentials: 'include',
+	        });
+	        const data = await resp.json().catch(() => ({}));
+	        if (!resp.ok || !data || data.ok === false) {
+	          const msg = data && data.message ? String(data.message) : `HTTP ${resp.status}`;
+	          throw new Error(msg);
+	        }
+	        return data && typeof data === 'object' ? data : null;
+	      };
 
       const flag = req && req.flag ? String(req.flag).trim() : '';
       const passcode = req && req.passcode ? String(req.passcode).trim() : '';
       const accessCode = req && req.accessCode ? String(req.accessCode).trim() : '';
 
-      let data = null;
-      if (provider === 'quark') data = await call('/api/pan/quark/list', { flag: flag || label, passcode });
-      else if (provider === 'uc') data = await call('/api/pan/uc/list', { flag: flag || label, passcode });
-      else if (provider === 'baidu') data = await call('/api/pan/baidu/list', { flag: flag || label, pwd: passcode });
-      else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label, passcode: passcode || '' });
-      else if (provider === '189') data = await call('/api/pan/189/list', { flag: flag || label, accessCode });
-      if (!data) return;
+	      let data = null;
+	      try {
+	        if (provider === 'quark') data = await call('/api/pan/quark/list', { flag: flag || label, passcode });
+	        else if (provider === 'uc') data = await call('/api/pan/uc/list', { flag: flag || label, passcode });
+	        else if (provider === 'baidu') data = await call('/api/pan/baidu/list', { flag: flag || label, pwd: passcode });
+	        else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label, passcode: passcode || '' });
+	        else if (provider === '189') data = await call('/api/pan/189/list', { flag: flag || label, accessCode });
+	      } catch (e) {
+	        const msg = e && e.message ? String(e.message) : '请求失败';
+	        errorByKey.set(`${provider}::${label}`, msg);
+	        emitPartial();
+	        return;
+	      }
+	      if (!data) return;
 
-      const vod = typeof data.vod_play_url === 'string' ? String(data.vod_play_url || '').trim() : '';
-      if (!vod) return;
-      resolvedVodByKey.set(`${provider}::${label}`, vod);
+	      const vod = typeof data.vod_play_url === 'string' ? String(data.vod_play_url || '').trim() : '';
+	      if (!vod) {
+	        errorByKey.set(`${provider}::${label}`, '未返回可播放列表');
+	        emitPartial();
+	        return;
+	      }
+	      resolvedVodByKey.set(`${provider}::${label}`, vod);
 
       if (provider === '189' && accessCode) {
         try {
@@ -3950,10 +4073,10 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
       panMock189AccessByShareIdHint.value = { ...prev, ...finalOut.panMock189AccessByShareId };
     }
     return finalOut;
-  } catch (_e) {
-    return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {} };
-  }
-};
+	  } catch (_e) {
+	    return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {}, panMockListErrors: {} };
+	  }
+	};
 
 const magicEpisodeRules = computed(() => {
   const list = effectiveBootstrapSettings.value && Array.isArray(effectiveBootstrapSettings.value.magicEpisodeRules)
@@ -6792,7 +6915,7 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
   entry.lastPlayFrom = pf;
   entry.lastPlayUrl = pu;
 
-  const pans = parsePlaySources(pf, pu);
+  const pans = parsePlaySources(pf, pu, { panMockEnabled: !!(entry && entry.panMockEnabled) });
   entry.pans = Array.isArray(pans) ? pans : [];
   entry.episodeMap = new Map();
   entry.episodeMapLoose = new Map();
@@ -10209,18 +10332,25 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 		        payload: { id },
 		      });
 		      if (seqAtCall !== detailFetchState.seq) return;
-			      const d = extractDetailFromResponse(raw);
-			      const panMockEnabled = !!(raw && typeof raw === 'object' && raw.pan_mock);
-				      const next = (() => {
-			        const prev = detail.value && typeof detail.value === 'object' ? detail.value : {};
-			        const shouldUpdateMeta = !!updateMeta;
-			        const shouldFillMeta = !prev.title || !prev.poster || !prev.year;
-		        const base = {
-		          ...prev,
-		          playFrom: d.playFrom,
-		          playUrl: d.playUrl,
-		          ...(panMockEnabled ? { panMockEnabled: true } : {}),
-		        };
+				      const d = extractDetailFromResponse(raw);
+				      const panMockEnabled = !!(raw && typeof raw === 'object' && raw.pan_mock);
+					      const next = (() => {
+				        const prev = detail.value && typeof detail.value === 'object' ? detail.value : {};
+				        const shouldUpdateMeta = !!updateMeta;
+				        const shouldFillMeta = !prev.title || !prev.poster || !prev.year;
+			        const base = {
+			          ...prev,
+			          playFrom: d.playFrom,
+			          playUrl: d.playUrl,
+			          ...(panMockEnabled
+			            ? {
+			                panMockEnabled: true,
+			                panMockResolving: !!(d.playFrom && d.playUrl),
+			                panMockResolved: false,
+			                panMockListErrors: {},
+			              }
+			            : {}),
+			        };
 		        if (shouldUpdateMeta || shouldFillMeta) {
 		          if (d.title) base.title = d.title;
 		          if (d.poster) base.poster = d.poster;
@@ -10238,27 +10368,55 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 	        if (nextIntro) introText.value = nextIntro;
 	      }
 
-	      if (panMockEnabled && d.playFrom && d.playUrl) {
-	        const seqForResolve = seqAtCall;
-	        void resolvePanMockPlaySources({
-	          raw,
-	          playFrom: d.playFrom,
-	          playUrl: d.playUrl,
-	          onUpdate: (resolved) => {
-	            if (!resolved || typeof resolved !== 'object') return;
-	            if (seqForResolve !== detailFetchState.seq) return;
-	            const cur = detail.value && typeof detail.value === 'object' ? detail.value : {};
-	            const merged = { ...cur };
-	            if (typeof resolved.playFrom === 'string' && resolved.playFrom.trim()) merged.playFrom = resolved.playFrom;
-	            if (typeof resolved.playUrl === 'string' && resolved.playUrl.trim()) merged.playUrl = resolved.playUrl;
-	            if (resolved.panMock189AccessByShareId && typeof resolved.panMock189AccessByShareId === 'object') {
-	              const prevMap = cur && typeof cur.panMock189AccessByShareId === 'object' ? cur.panMock189AccessByShareId : {};
-	              merged.panMock189AccessByShareId = { ...prevMap, ...resolved.panMock189AccessByShareId };
-	            }
-	            detail.value = merged;
-	          },
-	        });
-	      }
+		      if (panMockEnabled && d.playFrom && d.playUrl) {
+		        const seqForResolve = seqAtCall;
+		        const task = resolvePanMockPlaySources({
+		          raw,
+		          playFrom: d.playFrom,
+		          playUrl: d.playUrl,
+		          onUpdate: (resolved) => {
+		            if (!resolved || typeof resolved !== 'object') return;
+		            if (seqForResolve !== detailFetchState.seq) return;
+		            const cur = detail.value && typeof detail.value === 'object' ? detail.value : {};
+		            const merged = { ...cur };
+		            if (typeof resolved.playFrom === 'string' && resolved.playFrom.trim()) merged.playFrom = resolved.playFrom;
+		            if (typeof resolved.playUrl === 'string' && resolved.playUrl.trim()) merged.playUrl = resolved.playUrl;
+		            if (resolved.panMock189AccessByShareId && typeof resolved.panMock189AccessByShareId === 'object') {
+		              const prevMap = cur && typeof cur.panMock189AccessByShareId === 'object' ? cur.panMock189AccessByShareId : {};
+		              merged.panMock189AccessByShareId = { ...prevMap, ...resolved.panMock189AccessByShareId };
+		            }
+		            if (resolved.panMockListErrors && typeof resolved.panMockListErrors === 'object') {
+		              const prevErr = cur && typeof cur.panMockListErrors === 'object' ? cur.panMockListErrors : {};
+		              merged.panMockListErrors = { ...prevErr, ...resolved.panMockListErrors };
+		            }
+		            detail.value = merged;
+		          },
+		        });
+		        void task
+		          .then((finalResolved) => {
+		            if (seqForResolve !== detailFetchState.seq) return;
+		            const cur = detail.value && typeof detail.value === 'object' ? detail.value : {};
+		            const merged = { ...cur, panMockEnabled: true, panMockResolving: false, panMockResolved: true };
+		            if (finalResolved && typeof finalResolved === 'object') {
+		              if (typeof finalResolved.playFrom === 'string' && finalResolved.playFrom.trim()) merged.playFrom = finalResolved.playFrom;
+		              if (typeof finalResolved.playUrl === 'string' && finalResolved.playUrl.trim()) merged.playUrl = finalResolved.playUrl;
+		              if (finalResolved.panMock189AccessByShareId && typeof finalResolved.panMock189AccessByShareId === 'object') {
+		                const prevMap = cur && typeof cur.panMock189AccessByShareId === 'object' ? cur.panMock189AccessByShareId : {};
+		                merged.panMock189AccessByShareId = { ...prevMap, ...finalResolved.panMock189AccessByShareId };
+		              }
+		              if (finalResolved.panMockListErrors && typeof finalResolved.panMockListErrors === 'object') {
+		                const prevErr = cur && typeof cur.panMockListErrors === 'object' ? cur.panMockListErrors : {};
+		                merged.panMockListErrors = { ...prevErr, ...finalResolved.panMockListErrors };
+		              }
+		            }
+		            detail.value = merged;
+		          })
+		          .catch(() => {
+		            if (seqForResolve !== detailFetchState.seq) return;
+		            const cur = detail.value && typeof detail.value === 'object' ? detail.value : {};
+		            detail.value = { ...cur, panMockEnabled: true, panMockResolving: false, panMockResolved: false };
+		          });
+		      }
 			    } catch (e) {
 			      const status = e && typeof e.status === 'number' ? e.status : 0;
 			      const msg = (e && e.message) || '请求失败';
