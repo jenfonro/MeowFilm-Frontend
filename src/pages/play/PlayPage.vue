@@ -211,23 +211,37 @@
                     <div id="episodesTab" class="flex flex-col flex-1 min-h-0" v-show="activeTab === 'episodes'">
                       <div class="episode-controls-row flex items-center gap-2.5 mb-3 -mx-6 px-6 flex-shrink-0">
                         <div class="flex-1 min-w-0">
-                          <div ref="panDropdownEl" class="custom-dropdown play-pan-dropdown">
-                            <button
-                              type="button"
-                              class="custom-dropdown-btn play-pan-btn"
-                              :disabled="panDropdownOptions.length === 0 && !smartListAvailable"
-                              @click="panDropdownOpen = !panDropdownOpen"
-                            >
-                              {{ selectedPanLabel }}
-                            </button>
-	                            <div class="custom-dropdown-list" :class="{ hidden: !panDropdownOpen }">
-	                              <div
-	                                v-for="s in smartPanEntries"
-	                                :key="s.key"
-	                                class="custom-dropdown-item"
+	                          <div ref="panDropdownEl" class="custom-dropdown play-pan-dropdown">
+	                            <button
+	                              type="button"
+	                              class="custom-dropdown-btn play-pan-btn"
+	                              :disabled="(panDropdownOptions.length === 0 && !smartListAvailable) && !siteDetailBooting"
+	                              @click="panDropdownOpen = !panDropdownOpen"
+	                            >
+	                              {{ selectedPanLabel }}
+	                            </button>
+		                            <div class="custom-dropdown-list" :class="{ hidden: !panDropdownOpen }">
+		                        <template v-if="siteDetailBooting">
+		                                <div
+		                                  class="custom-dropdown-item"
+		                                  :class="{ active: selectedPanKey === SMART_PAN_KEY }"
+		                                  role="option"
+		                                  @click="selectPan(SMART_PAN_KEY, { fromUser: true })"
+		                                >
+		                                  {{ SITE_SMART_LIST_LABEL }}
+		                                </div>
+		                                <div class="custom-dropdown-item" role="option" @click="panDropdownOpen = false">
+		                                  加载中...
+		                                </div>
+		                              </template>
+		                              <template v-else>
+		                              <div
+		                                v-for="s in smartPanEntries"
+		                                :key="s.key"
+		                                class="custom-dropdown-item"
 	                                :class="{ active: s.key === selectedPanKey }"
 	                                role="option"
-	                                @click="selectPan(s.key)"
+	                                @click="selectPan(s.key, { fromUser: true })"
 	                              >
 	                                {{ s.label }}
 	                              </div>
@@ -237,21 +251,22 @@
                                 class="custom-dropdown-item"
                                 :class="{ active: o.key === selectedPanKey }"
                                 role="option"
-                                @click="selectPan(o.key)"
+                                @click="selectPan(o.key, { fromUser: true })"
                               >
                                 {{ o.label }}
                               </div>
-                              <div v-if="panDropdownOptions.length === 0 && !smartListAvailable" class="custom-dropdown-item">
-                                <span :class="panDropdownStatusIsError ? 'text-red-600 dark:text-red-400' : ''">
-                                  {{ panDropdownStatusText || '暂无数据' }}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-		                        </div>
-                        <div v-if="panDropdownLoading" class="flex-shrink-0 w-5 h-5 flex items-center justify-center" aria-label="加载中">
-                          <div class="tv-spinner" aria-hidden="true"></div>
-                        </div>
+		                              <div v-if="panDropdownOptions.length === 0 && !smartListAvailable" class="custom-dropdown-item">
+		                                <span>
+		                                  {{ panDropdownStatusText || '暂无数据' }}
+		                                </span>
+		                              </div>
+		                              </template>
+		                            </div>
+		                          </div>
+				                        </div>
+	                        <div v-if="panDropdownLoading || siteDetailBooting" class="flex-shrink-0 w-5 h-5 flex items-center justify-center" aria-label="加载中">
+	                          <div class="tv-spinner" aria-hidden="true"></div>
+	                        </div>
                         <template v-if="!tmdbSmartListAvailable">
                           <button
                             id="rawListBtn"
@@ -304,7 +319,7 @@
                               </div>
                               <div v-if="tmdbSelectedSitePanOptions.length === 0" class="custom-dropdown-item">
                                 <span :class="selectedPanAuxError ? 'text-red-600 dark:text-red-400' : ''">
-                                  {{ selectedPanAuxError || (selectedPanAuxLoading ? '加载中...' : '') || '暂无数据' }}
+                                  {{ selectedPanAuxError || '暂无数据' }}
                                 </span>
                               </div>
                             </div>
@@ -332,13 +347,31 @@
 	                          <option v-for="o in rawListPageOptions" :key="o.page" :value="o.page">
 	                            {{ o.label }}
 	                          </option>
-	                        </select>
-	                      </div>
+		                        </select>
+		                      </div>
 
-	                      <div class="flex items-center gap-4 mb-4 border-b border-gray-300 dark:border-gray-700 -mx-6 px-6 flex-shrink-0" v-show="!rawListMode">
-	                        <div class="flex-1 min-w-0">
-	                          <div v-if="seasonTabs.length" class="episode-season-bar">
-	                            <div class="episode-season-tabs">
+		                      <div
+		                        v-if="panMockRawDirBarVisible && rawListMode"
+		                        class="episode-controls-row flex items-center gap-2.5 mb-3 -mx-6 px-6 flex-shrink-0"
+		                      >
+		                        <div class="flex-1 min-w-0 text-xs text-gray-600 dark:text-gray-300 truncate" :title="panMockRawDirDisplayPath">
+		                          {{ panMockRawDirDisplayPath }}
+		                        </div>
+		                        <button
+		                          v-if="panMockRawDirCanGoBack"
+		                          type="button"
+		                          class="episode-control episode-control--btn flex-shrink-0"
+		                          style="padding:6px 10px;font-size:12px;line-height:1.1"
+		                          @click="panMockRawDirGoBack"
+		                        >
+		                          返回
+		                        </button>
+		                      </div>
+
+		                      <div class="flex items-center gap-4 mb-4 border-b border-gray-300 dark:border-gray-700 -mx-6 px-6 flex-shrink-0" v-show="!rawListMode">
+		                        <div class="flex-1 min-w-0">
+		                          <div v-if="seasonTabs.length" class="episode-season-bar">
+		                            <div class="episode-season-tabs">
 	                              <button
 	                                v-for="s in seasonTabs"
 	                                :key="s.key"
@@ -408,29 +441,41 @@
                       </div>
 
 	                      <div id="rawListView" ref="rawListViewEl" class="raw-list flex-1 overflow-y-auto content-start pb-4" v-show="rawListMode">
-                        <div v-if="introLoading || selectedPanAuxLoading || panDropdownLoading" class="tv-center-loading">
-                          <div class="tv-spinner" aria-hidden="true"></div>
-                          <div class="tv-center-loading__text">加载中...</div>
-                        </div>
-			                        <div v-else-if="(selectedPanAuxError || introError || panDropdownErrorText) && !isSmartPanActive" class="raw-list__hint raw-list__hint--error">{{ selectedPanAuxError || introError || panDropdownErrorText }}</div>
-                        <div v-else-if="rawListItems.length === 0" class="tv-episode-overlay">
-                          <div class="tv-episode-overlay__inner">
-                            <div class="tv-center-loading__text">暂无数据</div>
-                          </div>
+	                        <div
+	                          v-if="(introLoading || selectedPanAuxLoading || panDropdownLoading || smartPanMockLoading || (tmdbMovieMode && isSmartPanActive && tmdbMovieSmartResolving)) && rawListItems.length === 0"
+	                          class="tv-center-loading"
+	                        >
+	                          <div class="tv-spinner" aria-hidden="true"></div>
+	                          <div class="tv-center-loading__text">加载中...</div>
+	                        </div>
+	                        <div v-else-if="(selectedPanAuxError || introError) && rawListItems.length === 0" class="tv-episode-overlay">
+	                          <div class="tv-episode-overlay__inner">
+	                            <div class="tv-center-loading__text text-red-600 dark:text-red-400">{{ selectedPanAuxError || introError }}</div>
+	                          </div>
+	                        </div>
+	                        <div v-else-if="rawListItems.length === 0" class="tv-episode-overlay">
+	                          <div class="tv-episode-overlay__inner">
+	                            <div class="tv-center-loading__text">{{ panDropdownLoading || smartPanMockLoading || (tmdbMovieMode && isSmartPanActive && tmdbMovieSmartResolving) ? '加载中...' : '暂无数据' }}</div>
+	                          </div>
                         </div>
 	                        <div v-else class="raw-list__items">
-                          <button
-                            v-for="it in rawListPagedItems"
-                            :key="it.key"
-                            type="button"
-                            class="raw-list__row"
-                            :class="{ 'raw-list__row--active': it.index === selectedEpisodeIndex }"
-                            :title="it.text"
-                            @click="onRawListSelectEpisode(it.index)"
-                          >
-                            <span class="raw-list__text">{{ it.text }}</span>
-                          </button>
-                        </div>
+		                          <button
+		                            v-for="it in rawListPagedItems"
+		                            :key="it.key"
+		                            type="button"
+		                            class="raw-list__row"
+		                            :class="{
+		                              'raw-list__row--active':
+		                                it.kind !== 'dir' &&
+		                                (it.index === selectedEpisodeIndex ||
+		                                  (selectedEpisodeIndex < 0 && playingPanKey === selectedPanKey && playingEpisodeIndex === it.index)),
+		                            }"
+		                            :title="it.text"
+		                            @click="onRawListItemClick(it)"
+		                          >
+		                            <span class="raw-list__text">{{ it.text }}</span>
+		                          </button>
+	                        </div>
                       </div>
 
 	                      <div
@@ -438,34 +483,47 @@
 	                        class="relative flex flex-wrap gap-3 overflow-y-auto flex-1 content-start pb-4"
 	                        v-show="!rawListMode"
 	                      >
-                        <div v-if="(introLoading || panDropdownLoading) && !smartListAvailable" class="tv-episode-overlay" aria-hidden="true">
+                        <div
+                          v-if="(introLoading || panDropdownLoading) && !smartListAvailable && groupedDisplayedEpisodes.length === 0"
+                          class="tv-episode-overlay"
+                          aria-hidden="true"
+                        >
                           <div class="tv-episode-overlay__inner">
                             <div class="tv-spinner" aria-hidden="true"></div>
                             <div class="tv-center-loading__text">加载中...</div>
                           </div>
                         </div>
-			                        <div v-else-if="(introError || panDropdownErrorText) && !isSmartPanActive" class="tv-episode-overlay">
+                        <div v-else-if="selectedPanAuxLoading && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay" aria-hidden="true">
                           <div class="tv-episode-overlay__inner">
-                            <div class="tv-center-loading__text text-red-600 dark:text-red-400">{{ introError || panDropdownErrorText }}</div>
+                            <div class="tv-spinner" aria-hidden="true"></div>
+                            <div class="tv-center-loading__text">加载中...</div>
                           </div>
                         </div>
-	                        <template v-else>
+					                        <div v-else-if="(selectedPanAuxError || introError) && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay">
+                          <div class="tv-episode-overlay__inner">
+                            <div class="tv-center-loading__text text-red-600 dark:text-red-400">{{ selectedPanAuxError || introError }}</div>
+                          </div>
+                        </div>
+                        <template v-else>
 	                          <template v-if="groupedDisplayedEpisodes.length">
-	                            <button
-	                              v-for="ep in groupedDisplayedEpisodes"
-	                              :key="ep.key"
-	                              type="button"
-	                              class="episode-num-btn flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap font-mono"
-	                              :class="ep.index === selectedEpisodeIndex ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'"
-	                              :title="ep.name"
-	                              @click="selectEpisode(ep.index)"
-	                            >
+		                            <button
+		                              v-for="ep in groupedDisplayedEpisodes"
+		                              :key="ep.key"
+		                              type="button"
+		                              class="episode-num-btn flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap font-mono"
+		                              :class="(ep.index === selectedEpisodeIndex || (selectedEpisodeIndex < 0 && playingPanKey === selectedPanKey && playingEpisodeIndex === ep.index))
+		                                ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
+		                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'"
+		                              :title="ep.name"
+		                              @click="selectEpisode(ep.index)"
+		                            >
 	                              {{ ep.displayNo != null ? ep.displayNo : ep.no }}
 	                            </button>
 	                          </template>
 	                          <div v-else class="tv-episode-overlay">
 	                            <div class="tv-episode-overlay__inner">
-	                              <div class="tv-center-loading__text">暂无数据</div>
+	                              <div v-if="smartPanMockLoading || (tmdbMovieMode && isSmartPanActive && tmdbMovieSmartResolving)" class="tv-spinner" aria-hidden="true"></div>
+	                              <div class="tv-center-loading__text">{{ smartPanMockLoading || (tmdbMovieMode && isSmartPanActive && tmdbMovieSmartResolving) ? '加载中...' : '暂无数据' }}</div>
 	                            </div>
 	                          </div>
 	                        </template>
@@ -1503,6 +1561,12 @@ const resetForNewVideo = () => {
     content: '',
     playFrom: '',
     playUrl: '',
+    panMockEnabled: false,
+    panMockResolving: false,
+    panMockResolved: false,
+    panMockResolvedByKey: {},
+    panMockListErrors: {},
+    panMock189AccessByShareId: {},
   };
 };
 
@@ -1541,6 +1605,12 @@ const resetForNewSource = () => {
     ...detail.value,
     playFrom: '',
     playUrl: '',
+    panMockEnabled: false,
+    panMockResolving: false,
+    panMockResolved: false,
+    panMockResolvedByKey: {},
+    panMockListErrors: {},
+    panMock189AccessByShareId: {},
   };
 };
 
@@ -1629,7 +1699,6 @@ const tmdbSelectedSitePanKey = ref('');
 const resumeHistory = ref(null);
 const resumeHistoryLoaded = ref(false);
 const resumeHistoryApplied = ref(false);
-const panPrefApplied = ref(false);
 const resumeHistoryState = { seq: 0, key: '', inFlight: null };
 const detail = ref({
   title: '',
@@ -1640,6 +1709,12 @@ const detail = ref({
   content: '',
   playFrom: '',
   playUrl: '',
+  panMockEnabled: false,
+  panMockResolving: false,
+  panMockResolved: false,
+  panMockResolvedByKey: {},
+  panMockListErrors: {},
+  panMock189AccessByShareId: {},
 });
 
 // pan_mock is returned by CatPawOpen detail; in TMDB smart flows we might not populate `detail`,
@@ -1647,10 +1722,27 @@ const detail = ref({
 const panMockEnabledHint = ref(false);
 const panMock189AccessByShareIdHint = ref({});
 
+const readPanMockEnabledFromRaw = (raw) => {
+  try {
+    if (!raw || typeof raw !== 'object') return false;
+    if (raw.pan_mock != null) return !!raw.pan_mock;
+    if (raw.panMock != null) return !!raw.panMock;
+    const d = raw.data && typeof raw.data === 'object' ? raw.data : null;
+    if (d) {
+      if (d.pan_mock != null) return !!d.pan_mock;
+      if (d.panMock != null) return !!d.panMock;
+    }
+    return false;
+  } catch (_e) {
+    return false;
+  }
+};
+
 	const tmdbMeta = ref(null);
 	const doubanSeasonMeta = ref(null);
 		const tmdbMovieSmartEpisodes = ref([]);
 		const tmdbMovieSmartFetchState = { key: '', seq: 0, inFlight: null };
+		const tmdbMovieSmartResolving = ref(false);
 
 	const readDoubanSeasonMetaFromSession = (tmdbId) => {
 	  const id = Number.isFinite(Number(tmdbId)) ? Math.floor(Number(tmdbId)) : 0;
@@ -3075,18 +3167,24 @@ const metaPills = computed(() => {
   if (remark) pills.push(remark);
   const uniq = [];
   const seen = new Set();
-  pills.forEach((p) => {
-    const key = p.toLowerCase();
-    if (!p || seen.has(key)) return;
-    seen.add(key);
-    uniq.push(p);
-  });
-  return uniq;
+	pills.forEach((p) => {
+	  const key = p.toLowerCase();
+	  if (!p || seen.has(key)) return;
+	  seen.add(key);
+	  uniq.push(p);
+	});
+	return uniq;
 });
 
-const parsePlaySources = (fromRaw, urlRaw, options = {}) => {
-  const opt = options && typeof options === 'object' ? options : {};
-  const panMockEnabled = !!opt.panMockEnabled;
+const PAN_MOCK_EMPTY_VOD_MARK = '__PAN_MOCK_EMPTY_VOD__';
+
+	const parsePlaySources = (fromRaw, urlRaw, options = {}) => {
+	  const opt = options && typeof options === 'object' ? options : {};
+	  const panMockEnabled = !!opt.panMockEnabled;
+	  const panMockResolving = !!opt.panMockResolving;
+  const panMockListErrors = opt.panMockListErrors && typeof opt.panMockListErrors === 'object' ? opt.panMockListErrors : {};
+  const panMockResolvedByKey =
+    opt.panMockResolvedByKey && typeof opt.panMockResolvedByKey === 'object' ? opt.panMockResolvedByKey : {};
   const fromStr = typeof fromRaw === 'string' ? fromRaw.trim() : '';
   const urlStr = typeof urlRaw === 'string' ? urlRaw.trim() : '';
   if (!fromStr && !urlStr) return [];
@@ -3135,13 +3233,20 @@ const parsePlaySources = (fromRaw, urlRaw, options = {}) => {
     for (let j = 0; j < subLen; j += 1) {
       const label = (fromSubs[j] || '').trim() || (subLen > 1 ? `${baseLabel}-${j + 1}` : baseLabel);
       const u = (urlSubs[j] || '').trim();
-      if (!u) continue;
+      const provider = panMockEnabled ? panMockProviderFromFlag(label) : '';
+      const resolveKey = provider ? `${provider}::${String(label || '').trim()}` : '';
+      const isResolvedByResolver = !!(resolveKey && panMockResolvedByKey && panMockResolvedByKey[resolveKey] === true);
+      // For pan_mock providers, never treat placeholder as real episodes unless the resolver explicitly marked it resolved.
+      // This avoids showing placeholder files and guarantees list responses update the UI incrementally.
+      const unresolvedPanMock = !!(panMockEnabled && provider && !isResolvedByResolver);
 
-      if (panMockEnabled) {
-        const provider = panMockProviderFromFlag(label);
-        if (provider) {
-          if (!isResolvedPanMockVod(u)) continue;
+      // Even if the URL side is empty (some detail payloads might only provide `vod_play_from` first),
+      // we should still surface the pan option for pan_mock providers so users can see the source list.
+      if (!u) {
+        if (unresolvedPanMock) {
+          rawItems.push({ label: String(label || '').trim(), provider, unresolved: true, episodes: [] });
         }
+        continue;
       }
 
       const parseEpisodeSeg = (seg, flag) => {
@@ -3166,8 +3271,12 @@ const parsePlaySources = (fromRaw, urlRaw, options = {}) => {
       //   百度原画-xxxx#01$$$百度原画-xxxx#02 ...
       // In that case, each `$$$` entry holds exactly one episode, and the flag must come from that entry.
       const flagForThisItem = String(label || '').trim();
-      const episodes = segs.map((seg) => parseEpisodeSeg(seg, flagForThisItem)).filter(Boolean);
-      rawItems.push({ label: flagForThisItem, episodes });
+      if (unresolvedPanMock) {
+        rawItems.push({ label: flagForThisItem, provider, unresolved: true, episodes: [] });
+      } else {
+        const episodes = segs.map((seg) => parseEpisodeSeg(seg, flagForThisItem)).filter(Boolean);
+        rawItems.push({ label: flagForThisItem, provider, unresolved: false, episodes });
+      }
     }
   }
 
@@ -3185,10 +3294,15 @@ const parsePlaySources = (fromRaw, urlRaw, options = {}) => {
     const key = label.toLowerCase();
     const existing = groups.get(key);
     const nextEps = it && Array.isArray(it.episodes) ? it.episodes : [];
+    const provider = it && it.provider ? String(it.provider) : '';
+    const unresolved = !!(it && it.unresolved);
     if (!existing) {
-      groups.set(key, { label, episodes: nextEps.slice() });
+      groups.set(key, { label, provider, unresolved, rawLabels: new Set([rawLabel]), episodes: nextEps.slice() });
       return;
     }
+    if (!existing.provider && provider) existing.provider = provider;
+    if (unresolved) existing.unresolved = true;
+    if (existing.rawLabels) existing.rawLabels.add(rawLabel);
     // Keep episode order; de-dupe by (flag,url) to avoid exact duplicates.
     const seen = new Set(existing.episodes.map((e) => `${(e && e.flag) || ''}::${(e && e.url) || ''}`));
     nextEps.forEach((e) => {
@@ -3199,26 +3313,53 @@ const parsePlaySources = (fromRaw, urlRaw, options = {}) => {
     });
   });
 
-  const out = [];
-  Array.from(groups.values()).forEach((g, idx) => {
-    const episodes = Array.isArray(g.episodes) ? g.episodes.filter((e) => e && e.url) : [];
-    if (!episodes.length) return;
-    out.push({ key: `p${idx}`, label: g.label, episodes });
-  });
+	  const out = [];
+	  Array.from(groups.values()).forEach((g, idx) => {
+	    const episodes = Array.isArray(g.episodes) ? g.episodes.filter((e) => e && e.url) : [];
+	    const provider = g && g.provider ? String(g.provider) : '';
+	    const unresolved = !!(g && g.unresolved);
+	    const { error, noData } = (() => {
+	      let noData = false;
+	      if (!panMockEnabled || !provider) return { error: '', noData: false };
+	      const labels = g && g.rawLabels && typeof g.rawLabels.forEach === 'function' ? Array.from(g.rawLabels.values()) : [];
+	      let errText = '';
+	      for (let i = 0; i < labels.length; i += 1) {
+	        const rawLabel = String(labels[i] || '').trim();
+	        const k = `${provider}::${rawLabel}`;
+	        const msg = panMockListErrors && panMockListErrors[k] != null ? String(panMockListErrors[k] || '').trim() : '';
+	        if (!msg) continue;
+	        if (msg === PAN_MOCK_EMPTY_VOD_MARK) {
+	          noData = true;
+	          continue;
+	        }
+	        errText = msg;
+	        break;
+	      }
+	      return { error: errText, noData };
+	    })();
+	    const loading = !!(panMockEnabled && provider && unresolved && panMockResolving && !error && !noData);
+
+	    if (!episodes.length && !unresolved) return;
+	    out.push({ key: `p${idx}`, label: g.label, episodes, loading, error, provider });
+	  });
   return out;
 };
 
-	const SMART_PAN_KEY = 'smart';
-	const SMART_PAN_LABEL = '智能播放';
-	const DOUBAN_SMART_PAN_KEY = 'smart_douban';
-	const DOUBAN_SMART_PAN_LABEL = '豆瓣';
-	const TMDB_SMART_PAN_LABEL = 'TMDB';
-	const isSmartPanKey = (key) => key === SMART_PAN_KEY || key === DOUBAN_SMART_PAN_KEY;
+		const SMART_PAN_KEY = 'smart';
+		const SITE_SMART_LIST_LABEL = '智能列表';
+		const TMDB_SMART_PAN_LABEL = 'TMDB';
+		const DOUBAN_SMART_PAN_KEY = 'smart_douban';
+		const DOUBAN_SMART_PAN_LABEL = '豆瓣';
+		const isSmartPanKey = (key) => key === SMART_PAN_KEY || key === DOUBAN_SMART_PAN_KEY;
 
 const sitePanOptions = computed(() => {
   const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
   const panMockEnabled = !!(d && d.panMockEnabled);
-  return parsePlaySources(d.playFrom, d.playUrl, { panMockEnabled });
+  const panMockResolving = !!(d && d.panMockResolving);
+  const panMockListErrors = d && d.panMockListErrors && typeof d.panMockListErrors === 'object' ? d.panMockListErrors : {};
+  const panMockResolvedByKey =
+    d && d.panMockResolvedByKey && typeof d.panMockResolvedByKey === 'object' ? d.panMockResolvedByKey : {};
+  return parsePlaySources(d.playFrom, d.playUrl, { panMockEnabled, panMockResolving, panMockListErrors, panMockResolvedByKey });
 });
 
 const TMDB_SITE_PAN_KEY_PREFIX = 'tmdb_site_pan::';
@@ -3270,38 +3411,31 @@ const tmdbSitePanOptions = computed(() => {
 
 const panDropdownOptions = computed(() => (tmdbMode.value ? tmdbSitePanOptions.value : sitePanOptions.value));
 
+const siteDetailBooting = computed(() => {
+  if (tmdbMode.value) return false;
+  if (!introLoading.value) return false;
+  if (introError.value) return false;
+  const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+  return !(d && typeof d.playFrom === 'string' && d.playFrom.trim());
+});
+
 const panDropdownLoading = computed(() => {
   if (tmdbMode.value) return false;
+  if (siteDetailBooting.value) return true;
   const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
   const panMockEnabled = !!(d && d.panMockEnabled);
   if (!panMockEnabled) return false;
-  // During pan_mock resolution, we filter unresolved pans out; keep a "loading" hint for the dropdown.
-  return !!(d && d.panMockResolving);
-});
-
-const panDropdownErrorText = computed(() => {
-  if (tmdbMode.value) return '';
-  const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
-  const panMockEnabled = !!(d && d.panMockEnabled);
-  if (!panMockEnabled) return '';
-  if (d && d.panMockResolving) return '';
-  const errors = d && d.panMockListErrors && typeof d.panMockListErrors === 'object' ? d.panMockListErrors : {};
-  const msgs = Object.values(errors)
-    .map((x) => (typeof x === 'string' ? x.trim() : String(x || '').trim()))
-    .filter(Boolean);
-  if (!msgs.length) return '';
-  // Keep it short for the dropdown placeholder.
-  return msgs.slice(0, 1)[0] || '';
+  // Only show the dropdown spinner when *no* pan options are available yet.
+  // Pan-level resolving should be shown in the episode area after the user selects a source.
+  if (!(d && d.panMockResolving)) return false;
+  const opts = sitePanOptions.value;
+  return !opts || opts.length === 0;
 });
 
 const panDropdownStatusText = computed(() => {
   if (panDropdownLoading.value) return '加载中...';
-  const err = panDropdownErrorText.value;
-  if (err) return err;
   return '';
 });
-
-const panDropdownStatusIsError = computed(() => !!(panDropdownStatusText.value && !panDropdownLoading.value));
 
 const tmdbSitePanCache = new Map();
 const tmdbSitePanCacheVersion = ref(0);
@@ -3324,18 +3458,20 @@ const ensureTMDBSitePanLoaded = async (opt) => {
     return tmdbSitePanCache.get(key) || null;
   }
 
-  const task = (async () => {
-    tmdbSitePanCache.set(key, {
-      ok: false,
-      loading: true,
-      error: '',
-      pans: [],
-      siteKey: opt.siteKey || '',
-      siteName: opt.siteName || '',
-      spiderApi: opt.spiderApi || '',
-      videoId: opt.videoId || '',
-    });
-    tmdbSitePanCacheVersion.value += 1;
+	  const task = (async () => {
+	    tmdbSitePanCache.set(key, {
+	      ok: false,
+	      loading: true,
+	      error: '',
+	      pans: [],
+	      panMockEnabled: false,
+	      siteKey: opt.siteKey || '',
+	      siteName: opt.siteName || '',
+	      spiderApi: opt.spiderApi || '',
+	      videoId: opt.videoId || '',
+	      sourceKey: `${String(opt.siteKey || '')}::${String(opt.spiderApi || '')}::${String(opt.videoId || '')}`,
+	    });
+	    tmdbSitePanCacheVersion.value += 1;
 
     try {
       const entry = await ensureTMDBSmartDetailCacheEntry({
@@ -3347,39 +3483,46 @@ const ensureTMDBSitePanLoaded = async (opt) => {
         videoRemark: '',
       });
       const pansRaw = entry && Array.isArray(entry.pans) ? entry.pans : [];
-      const pans = pansRaw
-        .map((pan, idx) => {
-          const label = pan && pan.label != null ? String(pan.label) : '';
-          const episodes = pan && Array.isArray(pan.episodes) ? pan.episodes : [];
-          return { key: `tpan${idx}`, label, episodes };
-        })
-        .filter((p) => p && p.label && Array.isArray(p.episodes) && p.episodes.length);
+	      const pans = pansRaw
+	        .map((pan, idx) => {
+	          const label = pan && pan.label != null ? String(pan.label) : '';
+	          const episodes = pan && Array.isArray(pan.episodes) ? pan.episodes : [];
+	          const loading = !!(pan && pan.loading);
+	          const error = pan && pan.error ? String(pan.error) : '';
+	          const provider = pan && pan.provider ? String(pan.provider) : '';
+	          return { key: `tpan${idx}`, label, episodes, loading, error, provider };
+	        })
+	        .filter((p) => p && p.label);
 
-      tmdbSitePanCache.set(key, {
-        ok: true,
-        loading: false,
-        error: '',
-        pans,
-        siteKey: opt.siteKey || '',
-        siteName: opt.siteName || '',
-        spiderApi: opt.spiderApi || '',
-        videoId: opt.videoId || '',
-      });
-      tmdbSitePanCacheVersion.value += 1;
-    } catch (e) {
-      tmdbSitePanCache.set(key, {
-        ok: false,
-        loading: false,
-        error: e && e.message ? String(e.message) : '加载网盘列表失败',
-        pans: [],
-        siteKey: opt.siteKey || '',
-        siteName: opt.siteName || '',
-        spiderApi: opt.spiderApi || '',
-        videoId: opt.videoId || '',
-      });
-      tmdbSitePanCacheVersion.value += 1;
-    }
-  })();
+	      tmdbSitePanCache.set(key, {
+	        ok: true,
+	        loading: false,
+	        error: '',
+	        pans,
+	        panMockEnabled: !!(entry && entry.panMockEnabled),
+	        siteKey: opt.siteKey || '',
+	        siteName: opt.siteName || '',
+	        spiderApi: opt.spiderApi || '',
+	        videoId: opt.videoId || '',
+	        sourceKey: `${String(opt.siteKey || '')}::${String(opt.spiderApi || '')}::${String(opt.videoId || '')}`,
+	      });
+	      tmdbSitePanCacheVersion.value += 1;
+	    } catch (e) {
+	      tmdbSitePanCache.set(key, {
+	        ok: false,
+	        loading: false,
+	        error: e && e.message ? String(e.message) : '加载网盘列表失败',
+	        pans: [],
+	        panMockEnabled: false,
+	        siteKey: opt.siteKey || '',
+	        siteName: opt.siteName || '',
+	        spiderApi: opt.spiderApi || '',
+	        videoId: opt.videoId || '',
+	        sourceKey: `${String(opt.siteKey || '')}::${String(opt.spiderApi || '')}::${String(opt.videoId || '')}`,
+	      });
+	      tmdbSitePanCacheVersion.value += 1;
+	    }
+	  })();
 
   tmdbSitePanInFlight.set(key, task);
   try {
@@ -3447,16 +3590,18 @@ const legacySmartListAvailable = computed(() => {
 const smartPanEntries = computed(() => {
   if (tmdbMode.value) {
     const out = [];
-    if (tmdbSmartListAvailable.value || tmdbMovieSmartListAvailable.value) {
-      out.push({ key: SMART_PAN_KEY, label: TMDB_SMART_PAN_LABEL, episodes: tmdbPrimarySmartEpisodes.value || [] });
-    }
+	  // TMDB mode only exposes TMDB/Douban lists. Keep TMDB entry visible even while episodes are still resolving,
+	  // so the UI won't auto-fallthrough to the first site pan option.
+	  out.push({ key: SMART_PAN_KEY, label: TMDB_SMART_PAN_LABEL, episodes: tmdbPrimarySmartEpisodes.value || [] });
     if (doubanSmartListAvailable.value) {
       out.push({ key: DOUBAN_SMART_PAN_KEY, label: DOUBAN_SMART_PAN_LABEL, episodes: doubanSmartEpisodes.value || [] });
     }
     return out;
   }
-  if (legacySmartListAvailable.value) return [{ key: SMART_PAN_KEY, label: SMART_PAN_LABEL, episodes: legacySmartListEpisodes.value || [] }];
-  return [];
+  // Site mode: always keep the "智能列表" entry visible so the page doesn't auto-select the first parsed pan source.
+  // Episodes may be empty until detail resolves / smart list is computed.
+  const eps = legacySmartListAvailable.value ? (legacySmartListEpisodes.value || []) : [];
+  return [{ key: SMART_PAN_KEY, label: SITE_SMART_LIST_LABEL, episodes: eps }];
 });
 
 const smartListAvailable = computed(() => smartPanEntries.value.length > 0);
@@ -3518,13 +3663,16 @@ const selectedPanLabel = computed(() => {
   if (smartListAvailable.value && isSmartPanKey(selectedPanKey.value)) {
     const hit = (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).find((e) => e && e.key === selectedPanKey.value) || null;
     if (hit && hit.label) return String(hit.label);
-    return tmdbMode.value ? TMDB_SMART_PAN_LABEL : SMART_PAN_LABEL;
+    return tmdbMode.value ? TMDB_SMART_PAN_LABEL : SITE_SMART_LIST_LABEL;
   }
+  if (siteDetailBooting.value) return SITE_SMART_LIST_LABEL;
   if (introLoading.value) return '加载中...';
   const list = panDropdownOptions.value;
-  if (!list.length) return smartListAvailable.value ? (smartPanEntries.value[0]?.label || (tmdbMode.value ? TMDB_SMART_PAN_LABEL : SMART_PAN_LABEL)) : '暂无数据';
+  if (!list.length) return smartListAvailable.value ? (smartPanEntries.value[0]?.label || (tmdbMode.value ? TMDB_SMART_PAN_LABEL : SITE_SMART_LIST_LABEL)) : '暂无数据';
   const found = list.find((o) => o && o.key === selectedPanKey.value);
-  return (found && found.label ? String(found.label) : list[0].label) || '暂无数据';
+  const picked = found || list[0] || null;
+  const base = (picked && picked.label ? String(picked.label) : '') || (list[0] && list[0].label ? String(list[0].label) : '') || '暂无数据';
+  return base;
 });
 
 const preferBaiduPanKey = computed(() => {
@@ -3534,48 +3682,9 @@ const preferBaiduPanKey = computed(() => {
   return idx >= 0 ? list[idx].key : '';
 });
 
-const PAN_PREF_STORAGE_PREFIX = 'meowfilm_pan_pref::';
 const normalizeContentKeyForPanPref = (s) => {
   const raw = typeof s === 'string' ? s : String(s || '');
   return raw.trim().toLowerCase().replace(/\s+/g, '');
-};
-const normalizePanLabelForPanPref = (label) => {
-  return String(label || '').trim().replace(/#\d{1,3}\s*$/i, '').trim().toLowerCase();
-};
-const panPrefStorageKey = computed(() => {
-  const k = normalizeContentKeyForPanPref(displayTitle.value);
-  return k ? `${PAN_PREF_STORAGE_PREFIX}${k}` : '';
-});
-const readPanPref = () => {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return '';
-    const key = panPrefStorageKey.value;
-    if (!key) return '';
-    return String(window.localStorage.getItem(key) || '').trim().toLowerCase();
-  } catch (_e) {
-    return '';
-  }
-};
-const writePanPref = (value) => {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    const key = panPrefStorageKey.value;
-    if (!key) return;
-    const v = String(value || '').trim().toLowerCase();
-    if (!v) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, v);
-  } catch (_e) {}
-};
-const findPanKeyByPrefLabel = (prefLabel) => {
-  const wanted = String(prefLabel || '').trim().toLowerCase();
-  if (!wanted) return '';
-  const list = panDropdownOptions.value;
-  for (let i = 0; i < list.length; i += 1) {
-    const it = list[i];
-    const label = it && it.label ? normalizePanLabelForPanPref(it.label) : '';
-    if (label && label === wanted) return it.key || '';
-  }
-  return '';
 };
 
 const EP_VIEW_MODE_STORAGE_PREFIX = 'meowfilm_episode_view_mode::';
@@ -3641,21 +3750,30 @@ const toggleRawList = (e) => {
   } catch (_e) {}
 };
 
-const selectPan = (key) => {
-  const k = typeof key === 'string' ? key : '';
-  if (!k) return;
-  if (isSmartPanKey(k) && !smartListAvailable.value) return;
-  if (isSmartPanKey(k)) {
-    const ok = (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).some((s) => s && s.key === k);
-    if (!ok) return;
-  }
-  // Keep the current episode list view mode when switching pan source.
-  // If the user is currently in raw list mode, treat the switch as an explicit choice and stop auto-toggling.
-  if (rawListMode.value) autoRawListMode.value = false;
-  selectedPan.value = k;
-  panDropdownOpen.value = false;
-  selectedEpisodeGroup.value = '';
-  tmdbPanDropdownOpen.value = false;
+	const selectPan = (key, opts = {}) => {
+	  const k = typeof key === 'string' ? key : '';
+	  if (!k) return;
+	  const fromUser = !!(opts && typeof opts === 'object' && opts.fromUser);
+	  if (isSmartPanKey(k) && !smartListAvailable.value) return;
+	  if (isSmartPanKey(k)) {
+	    const ok = (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).some((s) => s && s.key === k);
+	    if (!ok) return;
+	  }
+	  if (
+	    fromUser &&
+	    !initialAutoPlayTriggered.value &&
+	    !playerPlaybackStarted.value &&
+	    (playLoading.value || initialAutoPlayInFlight.value || !playerUrl.value)
+	  ) {
+	    autoPlaySuppressedByUser.value = true;
+	  }
+		  // Keep the current episode list view mode when switching pan source.
+		  // If the user is currently in raw list mode, treat the switch as an explicit choice and stop auto-toggling.
+		  if (rawListMode.value) autoRawListMode.value = false;
+		  selectedPan.value = k;
+		  panDropdownOpen.value = false;
+		  selectedEpisodeGroup.value = '';
+		  tmdbPanDropdownOpen.value = false;
 
   if (tmdbMode.value) {
     if (isSmartPanKey(k)) {
@@ -3671,15 +3789,6 @@ const selectPan = (key) => {
         (Array.isArray(tmdbSitePanOptions.value) ? tmdbSitePanOptions.value : []).find((o) => o && o.key === k) || null;
       if (opt) void ensureTMDBSitePanLoaded(opt);
     }
-  }
-
-  if (isSmartPanKey(k)) {
-    writePanPref(k);
-  } else if (tmdbMode.value && isTMDBSitePanKey(k)) {
-  } else {
-    const src = panDropdownOptions.value.find((o) => o && o.key === k) || null;
-    const labelNorm = src && src.label ? normalizePanLabelForPanPref(String(src.label)) : '';
-    if (labelNorm) writePanPref(labelNorm);
   }
 
   if (playingPanKey.value && playingPanKey.value === k && playingEpisodeIndex.value >= 0) {
@@ -3713,17 +3822,21 @@ const selectedPanSource = computed(() => {
     const picked =
       (tmdbSelectedSitePanKey.value && pans.find((p) => p && p.key === tmdbSelectedSitePanKey.value)) || pans[0] || null;
     const episodes = picked && Array.isArray(picked.episodes) ? picked.episodes : [];
+    const pickedLoading = !!(picked && picked.loading);
+    const pickedError = picked && picked.error ? String(picked.error) : '';
+    const pickedProvider = picked && picked.provider ? String(picked.provider) : '';
     return {
       key: k,
-      label: (picked && picked.label ? String(picked.label) : '') || (opt && opt.label) || (cached && cached.siteName ? String(cached.siteName) : '') || '网盘',
+      label: (picked && picked.label ? String(picked.label) : '') || (opt && opt.label) || (cached && cached.siteName ? String(cached.siteName) : '') || '暂无数据',
       episodes,
       kind: 'tmdb_site_pan',
+      provider: pickedProvider,
       siteKey: (opt && opt.siteKey) || (cached && cached.siteKey) || '',
       siteName: (opt && opt.siteName) || (cached && cached.siteName) || '',
       spiderApi: (opt && opt.spiderApi) || (cached && cached.spiderApi) || '',
       videoId: (opt && opt.videoId) || (cached && cached.videoId) || '',
-      loading: cached ? !!cached.loading : false,
-      error: cached && cached.error ? String(cached.error) : '',
+      loading: (cached ? !!cached.loading : false) || pickedLoading,
+      error: (cached && cached.error ? String(cached.error) : '') || pickedError,
     };
   }
   const list = sitePanOptions.value;
@@ -3738,12 +3851,15 @@ const selectedEpisodes = computed(() => {
 
 const selectedPanAuxLoading = computed(() => {
   const src = selectedPanSource.value;
-  return !!(src && src.kind === 'tmdb_site_pan' && src.loading);
+  if (!src) return false;
+  if (src.kind === 'tmdb_site_pan') return !!src.loading;
+  return !!src.loading;
 });
 
 const selectedPanAuxError = computed(() => {
   const src = selectedPanSource.value;
-  if (!src || src.kind !== 'tmdb_site_pan') return '';
+  if (!src) return '';
+  if (src.kind === 'tmdb_site_pan') return src && src.error ? String(src.error) : '';
   return src && src.error ? String(src.error) : '';
 });
 
@@ -3756,6 +3872,8 @@ const tmdbSelectedSitePanOptions = computed(() => {
   return pans.map((p) => ({
     key: p.key,
     label: p && p.label != null ? String(p.label) : '',
+    loading: !!(p && p.loading),
+    error: p && p.error ? String(p.error) : '',
   }));
 });
 
@@ -3764,7 +3882,7 @@ const tmdbSelectedSitePanLabel = computed(() => {
   if (!opts.length) return selectedPanAuxLoading.value ? '加载中...' : '暂无数据';
   const cur = tmdbSelectedSitePanKey.value;
   const hit = cur ? opts.find((o) => o && o.key === cur) : null;
-  return (hit && hit.label ? String(hit.label) : '') || (opts[0] && opts[0].label ? String(opts[0].label) : '') || '网盘';
+  return (hit && hit.label ? String(hit.label) : '') || (opts[0] && opts[0].label ? String(opts[0].label) : '') || '暂无数据';
 });
 
 const selectTMDBSitePan = (key) => {
@@ -3917,12 +4035,19 @@ const extractTianyiShareCodeAndAccessCode = (flag, urlRaw) => {
 };
 
 const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = {}) => {
-  const panMockEnabled = !!(raw && typeof raw === 'object' && raw.pan_mock);
+  const panMockEnabled = readPanMockEnabledFromRaw(raw);
   if (panMockEnabled) panMockEnabledHint.value = true;
   const fromStr = typeof playFrom === 'string' ? playFrom.trim() : '';
   const urlStr = typeof playUrl === 'string' ? playUrl.trim() : '';
-	  if (!panMockEnabled || !fromStr || !urlStr) {
-	    return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {}, panMockListErrors: {} };
+  if (!panMockEnabled || !fromStr || !urlStr) {
+    return {
+      panMockEnabled,
+      playFrom: fromStr,
+      playUrl: urlStr,
+	      panMock189AccessByShareId: {},
+	      panMockListErrors: {},
+	      panMockResolvedByKey: {},
+	    };
 	  }
 
   try {
@@ -3959,7 +4084,15 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
       }
     }
 
-	    if (!listReqsRaw.length) return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {}, panMockListErrors: {} };
+	    if (!listReqsRaw.length)
+      return {
+        panMockEnabled,
+        playFrom: fromStr,
+        playUrl: urlStr,
+        panMock189AccessByShareId: {},
+        panMockListErrors: {},
+        panMockResolvedByKey: {},
+      };
 
     const listReqs = new Map();
     listReqsRaw.forEach((it) => {
@@ -3971,6 +4104,7 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
     });
 
 	    const resolvedVodByKey = new Map(); // `${provider}::${label}` -> vod_play_url
+	    const resolvedKeys = new Set(); // `${provider}::${label}`
 	    const tianyiAccessByShareId = new Map();
 	    const errorByKey = new Map(); // `${provider}::${label}` -> error message
 	    const onPartial = typeof onUpdate === 'function' ? onUpdate : null;
@@ -4016,6 +4150,7 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
 	        playUrl: outUrl.join('$$$') || urlStr,
 	        panMock189AccessByShareId: Object.fromEntries(Array.from(tianyiAccessByShareId.entries())),
 	        panMockListErrors: Object.fromEntries(Array.from(errorByKey.entries())),
+	        panMockResolvedByKey: Object.fromEntries(Array.from(resolvedKeys.values()).map((k) => [k, true])),
 	      };
 	    };
 
@@ -4031,20 +4166,20 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
 	      const label = req && req.label ? String(req.label).trim() : '';
 	      if (!provider || !label) return;
 
-	      const call = async (path, body) => {
-	        const resp = await fetch(path, {
-	          method: 'POST',
-	          headers: { 'Content-Type': 'application/json' },
-	          body: JSON.stringify(body || {}),
-	          credentials: 'include',
-	        });
-	        const data = await resp.json().catch(() => ({}));
-	        if (!resp.ok || !data || data.ok === false) {
-	          const msg = data && data.message ? String(data.message) : `HTTP ${resp.status}`;
-	          throw new Error(msg);
-	        }
-	        return data && typeof data === 'object' ? data : null;
-	      };
+      const call = async (path, body) => {
+        const resp = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {}),
+          credentials: 'include',
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data || data.ok === false) {
+          const msg = data && data.message ? String(data.message) : `HTTP ${resp.status}`;
+          throw new Error(msg);
+        }
+        return data && typeof data === 'object' ? data : null;
+      };
 
       const flag = req && req.flag ? String(req.flag).trim() : '';
       const passcode = req && req.passcode ? String(req.passcode).trim() : '';
@@ -4057,21 +4192,22 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
 	        else if (provider === 'baidu') data = await call('/api/pan/baidu/list', { flag: flag || label, pwd: passcode });
 	        else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label, passcode: passcode || '' });
 	        else if (provider === '189') data = await call('/api/pan/189/list', { flag: flag || label, accessCode });
-	      } catch (e) {
-	        const msg = e && e.message ? String(e.message) : '请求失败';
-	        errorByKey.set(`${provider}::${label}`, msg);
-	        emitPartial();
-	        return;
-	      }
+      } catch (e) {
+        const msg = e && e.message ? String(e.message) : '请求失败';
+        errorByKey.set(`${provider}::${label}`, msg);
+        emitPartial();
+        return;
+      }
 	      if (!data) return;
 
-	      const vod = typeof data.vod_play_url === 'string' ? String(data.vod_play_url || '').trim() : '';
-	      if (!vod) {
-	        errorByKey.set(`${provider}::${label}`, '未返回可播放列表');
-	        emitPartial();
-	        return;
-	      }
+		      const vod = typeof data.vod_play_url === 'string' ? String(data.vod_play_url || '').trim() : '';
+		      if (!vod) {
+		        errorByKey.set(`${provider}::${label}`, PAN_MOCK_EMPTY_VOD_MARK);
+		        emitPartial();
+		        return;
+		      }
 	      resolvedVodByKey.set(`${provider}::${label}`, vod);
+	      resolvedKeys.add(`${provider}::${label}`);
 
       if (provider === '189' && accessCode) {
         try {
@@ -4101,7 +4237,14 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
     }
     return finalOut;
 	  } catch (_e) {
-	    return { panMockEnabled, playFrom: fromStr, playUrl: urlStr, panMock189AccessByShareId: {}, panMockListErrors: {} };
+	    return {
+	      panMockEnabled,
+	      playFrom: fromStr,
+	      playUrl: urlStr,
+	      panMock189AccessByShareId: {},
+	      panMockListErrors: {},
+	      panMockResolvedByKey: {},
+	    };
 	  }
 	};
 
@@ -4401,12 +4544,16 @@ const playDebugText = computed(() => {
     .map((x) => (x && x.label != null ? String(x.label).trim() : ''))
     .filter(Boolean)
     .join(',');
+  const smartEntries = Array.isArray(smartPanEntries.value) ? smartPanEntries.value : [];
+  const tmdbPanOpts = Array.isArray(tmdbSitePanOptions.value) ? tmdbSitePanOptions.value : [];
 	  const lines = [
 	    `debug=1`,
 	    `tmdbId=${Number(p.tmdbId || 0)}`,
 	    `tmdbType=${String(p.tmdbType || '')}`,
 	    `searchType=${String(p.searchType || '')}`,
 	    `tmdbMode=${tmdbMode.value ? '1' : '0'}`,
+	    `smartListAvailable=${smartListAvailable.value ? '1' : '0'}`,
+	    `smartPanEntries=${smartEntries.length}`,
 	    `doubanSeasonOverride=${doubanSeasonOverrideActive.value ? '1' : '0'}`,
 	    `doubanSeasonCount=${dm && Number.isFinite(Number(dm.seasonCount)) ? Math.floor(Number(dm.seasonCount)) : 0}`,
 	    `doubanSeasonItems=${dm && Array.isArray(dm.seasons) ? dm.seasons.length : 0}`,
@@ -4430,10 +4577,12 @@ const playDebugText = computed(() => {
     `rawListMode=${rawListMode.value ? '1' : '0'}`,
     `forceRawListMode=${forceRawListMode.value ? '1' : '0'}`,
     `selectedPan=${String(selectedPanKey.value || '')}`,
+    `selectedEpisodes=${selectedEpisodes.value.length}`,
     `selectedSeason=${Number(selectedSeason.value || 0)}`,
     `seasonTabs=${tabs.map((t) => t && t.label ? t.label : '').filter(Boolean).join(',')}`,
     `panOptions=${pans.length}`,
     `panLabels=${panLabels}`,
+    `tmdbSitePanOptions=${tmdbPanOpts.length}`,
     `aggregatedSources=${sources.length}`,
     `smartDetailCacheOk=${smartDetailCacheOk}`,
     `smartDetailCacheFail=${smartDetailCacheFail}`,
@@ -4839,59 +4988,55 @@ const parseChineseNumeralToInt = (text) => {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 };
 
-const extractSeasonEpisodeFromText = (text, rules, cleanRules) => {
-  const s = cleanMagicEpisodeText(text, cleanRules);
-  if (!s || !Array.isArray(rules) || !rules.length) return { season: 0, episode: 0 };
-  for (let i = 0; i < rules.length; i += 1) {
-    const rule = rules[i];
-    const re = rule && rule.re ? rule.re : null;
-    if (!re) continue;
-    const m = s.match(re);
-    if (!m) continue;
+	const extractSeasonEpisodeFromText = (text, rules, cleanRules) => {
+	  const s = cleanMagicEpisodeText(text, cleanRules);
+	  if (!s || !Array.isArray(rules) || !rules.length) return { season: 0, episode: 0 };
+	  for (let i = 0; i < rules.length; i += 1) {
+	    const rule = rules[i];
+	    const re = rule && rule.re ? rule.re : null;
+	    if (!re) continue;
+	    const m = s.match(re);
+	    if (!m) continue;
 
-    if (rule && rule.replace) {
-      let normalized = '';
-      try {
-        normalized = s.replace(re, rule.replace);
-      } catch (_e) {
-        normalized = '';
-      }
-      const mm = normalized.match(/(?:S(\d{1,2}))?\s*E(\d{1,3})/i);
-      if (mm && mm[2]) {
-        const seasonRaw = mm[1] ? Number.parseInt(String(mm[1]), 10) : 0;
-        const episodeRaw = Number.parseInt(String(mm[2]), 10);
-        const season = Number.isFinite(seasonRaw) && seasonRaw >= 0 && seasonRaw <= 99 ? seasonRaw : 0;
-        const episode = Number.isFinite(episodeRaw) && episodeRaw >= 1 && episodeRaw <= 99999 ? episodeRaw : 0;
-        if (episode) return { season, episode };
-      }
-    }
+	    const picked =
+	      (m.length > 2 && m[2] != null ? String(m[2]) : '') ||
+	      (m.length > 1 && m[1] != null ? String(m[1]) : '') ||
+	      String(m[0] || '');
 
-    const seasonFrom = (val) => {
-      const ss = typeof val === 'string' ? val : String(val || '');
-      const sm = ss.match(/S(\d{1,2})/i);
-      if (!sm || !sm[1]) return 0;
-      const n = Number.parseInt(String(sm[1]), 10);
-      return Number.isFinite(n) && n >= 0 && n <= 99 ? n : 0;
-    };
-    const picked =
-      (m.length > 2 && m[2] != null ? String(m[2]) : '') ||
-      (m.length > 1 && m[1] != null ? String(m[1]) : '') ||
-      String(m[0] || '');
-    const season = seasonFrom(m.length > 1 ? m[1] : '') || seasonFrom(picked) || seasonFrom(m[0] || '') || 0;
-    const digits = String(picked || '').trim().replace(/\D+/g, '');
-    if (digits) {
-      const episode = Number.parseInt(digits, 10);
-      if (Number.isFinite(episode) && episode >= 1 && episode <= 99999) return { season, episode };
-      continue;
-    }
+	    // Strict: only accept backend-normalized markers like "S01E02" or "E02" (no extra front-end fallbacks).
+	    const normalized = (() => {
+	      if (rule && rule.replace) {
+	        try {
+	          const v = s.replace(re, rule.replace);
+	          return typeof v === 'string' ? v : '';
+	        } catch (_e) {
+	          return '';
+	        }
+	      }
+	      return picked;
+	    })();
 
-    const cn = String(picked || '').match(/第\s*([一二三四五六七八九十百千两零〇万]{1,16})\s*(?:集|话|回|期)/);
-    if (!cn || !cn[1]) continue;
-    const episode = parseChineseNumeralToInt(cn[1]);
-    if (Number.isFinite(episode) && episode >= 1 && episode <= 99999) return { season, episode };
-  }
-  return { season: 0, episode: 0 };
-};
+	    const mm = String(normalized || '').match(/S\s*0*(\d{1,2})\s*E\s*0*(\d{1,5})/i);
+	    if (mm && mm[1] && mm[2]) {
+	      const seasonRaw = Number.parseInt(String(mm[1]), 10);
+	      const episodeRaw = Number.parseInt(String(mm[2]), 10);
+	      const season = Number.isFinite(seasonRaw) && seasonRaw >= 0 && seasonRaw <= 99 ? seasonRaw : 0;
+	      const episode = Number.isFinite(episodeRaw) && episodeRaw >= 1 && episodeRaw <= 99999 ? episodeRaw : 0;
+	      if (episode) return { season, episode };
+	      continue;
+	    }
+
+	    const me = String(normalized || '').match(/\bE\s*0*(\d{1,5})\b/i);
+	    if (me && me[1]) {
+	      const episodeRaw = Number.parseInt(String(me[1]), 10);
+	      const episode = Number.isFinite(episodeRaw) && episodeRaw >= 1 && episodeRaw <= 99999 ? episodeRaw : 0;
+	      if (episode) return { season: 0, episode };
+	      continue;
+	    }
+		  }
+
+		  return { season: 0, episode: 0 };
+		};
 
 const extractSeasonEpisodeFromCandidates = (candidates, rules, cleanRules) => {
   const list = Array.isArray(candidates) ? candidates : [];
@@ -4906,10 +5051,10 @@ const smartPanEpisodes = computed(() => {
   if (!hasMagicEpisodeRules.value) return [];
 
   const panTokenOrder = compiledSmartPanMatchTokens.value;
-  if (!Array.isArray(panTokenOrder) || panTokenOrder.length < 2) return [];
+  const allowAnyPan = !Array.isArray(panTokenOrder) || panTokenOrder.length === 0;
 
   const rawPans = sitePanOptions.value;
-  if (!Array.isArray(rawPans) || rawPans.length < 2) return [];
+  if (!Array.isArray(rawPans) || rawPans.length < 1) return [];
 
   const priorityExplicit =
     smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.explicit)
@@ -4922,6 +5067,7 @@ const smartPanEpisodes = computed(() => {
   const { keywordTokens } = compiledSmartSourcePriorityTokenGroups.value || {};
 
   const labelTokenIdxOf = (label) => {
+    if (allowAnyPan) return 0;
     const s = typeof label === 'string' ? label.trim().toLowerCase() : '';
     if (!s) return -1;
     for (let i = 0; i < panTokenOrder.length; i += 1) {
@@ -4936,11 +5082,11 @@ const smartPanEpisodes = computed(() => {
   rawPans.forEach((pan) => {
     if (!pan || !pan.label || !Array.isArray(pan.episodes) || !pan.episodes.length) return;
     const idx = labelTokenIdxOf(pan.label);
-    if (idx < 0) return;
+    if (!allowAnyPan && idx < 0) return;
     tokenSet.add(idx);
     candidatePans.push({ pan, tokenIdx: idx });
   });
-  if (tokenSet.size < 2) return [];
+  if (!candidatePans.length) return [];
 
   const rules = compiledMagicEpisodeRules.value;
   const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
@@ -6761,6 +6907,7 @@ const playRequestState = {
 };
 
 const initialAutoPlayInFlight = ref(false);
+const autoPlaySuppressedByUser = ref(false);
 
 const lastTMDBPlayReportCtx = ref(null);
 
@@ -6843,6 +6990,66 @@ const resolveSmartEpisodeNo = (ep) => {
 	const tmdbSmartDetailCacheVersion = ref(0);
 	const tmdbSmartLastPickDebug = ref(null);
 
+watch(
+  () => tmdbSmartDetailCacheVersion.value,
+  () => {
+	    try {
+	      tmdbSitePanCache.forEach((cached, k) => {
+	        if (!cached || cached.ok !== true || !cached.sourceKey) return;
+	        const sourceKey = String(cached.sourceKey || '').trim();
+	        if (!sourceKey) return;
+	        const entry = tmdbSmartDetailCache.get(sourceKey) || null;
+	        if (!entry || entry.ok === false || !Array.isArray(entry.pans)) return;
+
+	        const nextPans = entry.pans
+	          .map((pan, idx) => {
+	            const label = pan && pan.label != null ? String(pan.label) : '';
+	            const episodes = pan && Array.isArray(pan.episodes) ? pan.episodes : [];
+	            const loading = !!(pan && pan.loading);
+	            const error = pan && pan.error ? String(pan.error) : '';
+	            const provider = pan && pan.provider ? String(pan.provider) : '';
+	            return { key: `tpan${idx}`, label, episodes, loading, error, provider };
+	          })
+	          .filter((p) => p && p.label);
+
+	        const prevSig = JSON.stringify(
+	          (cached.pans || []).map((p) => [
+	            p && p.label ? String(p.label) : '',
+	            p && p.provider ? String(p.provider) : '',
+	            p && p.loading ? 1 : 0,
+	            p && Array.isArray(p.episodes) ? p.episodes.length : 0,
+	            p && p.error ? 1 : 0,
+	          ])
+	        );
+	        const nextSig = JSON.stringify(
+	          nextPans.map((p) => [p.label, p.provider ? String(p.provider) : '', p.loading ? 1 : 0, Array.isArray(p.episodes) ? p.episodes.length : 0, p.error ? 1 : 0])
+	        );
+	        if (prevSig === nextSig) return;
+
+	        tmdbSitePanCache.set(String(k), { ...cached, pans: nextPans, panMockEnabled: !!entry.panMockEnabled });
+	        tmdbSitePanCacheVersion.value += 1;
+	      });
+	    } catch (_e) {}
+	  }
+	);
+
+const smartPanMockLoading = computed(() => {
+  if (!smartListAvailable.value) return false;
+  // Site-mode: keep smart list in "loading" while detail/pan_mock is still resolving.
+  if (!tmdbMode.value && isSmartPanActive.value) {
+    if (introLoading.value || siteDetailBooting.value) return true;
+    const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+    if (d && d.panMockEnabled === true && d.panMockResolving === true) return true;
+  }
+  void tmdbSmartDetailCacheVersion.value;
+  try {
+    const entries = Array.from(tmdbSmartDetailCache.values());
+    return entries.some((e) => e && e.panMockEnabled === true && e.panMockResolved !== true && !!e.panMockInFlight);
+  } catch (_e) {
+    return false;
+  }
+});
+
 const resetTMDBSmartCaches = () => {
   try {
     tmdbSmartPickCache.clear();
@@ -6921,7 +7128,12 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
   entry.lastPlayFrom = pf;
   entry.lastPlayUrl = pu;
 
-  const pans = parsePlaySources(pf, pu, { panMockEnabled: !!(entry && entry.panMockEnabled) });
+  const pans = parsePlaySources(pf, pu, {
+    panMockEnabled: !!(entry && entry.panMockEnabled),
+    panMockResolving: !!(entry && entry.panMockEnabled && entry.panMockResolved !== true),
+    panMockListErrors: entry && entry.panMockListErrors && typeof entry.panMockListErrors === 'object' ? entry.panMockListErrors : {},
+    panMockResolvedByKey: entry && entry.panMockResolvedByKey && typeof entry.panMockResolvedByKey === 'object' ? entry.panMockResolvedByKey : {},
+  });
   entry.pans = Array.isArray(pans) ? pans : [];
   entry.episodeMap = new Map();
   entry.episodeMapLoose = new Map();
@@ -7403,9 +7615,12 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
         episodeMap: new Map(),
         episodeMapLoose: new Map(),
         pickedFallback: new Map(),
-        panMockEnabled: !!(raw && typeof raw === 'object' && raw.pan_mock),
+        panMockEnabled: readPanMockEnabledFromRaw(raw),
         panMockResolved: false,
         panMockInFlight: null,
+        panMockResolvedByKey: {},
+        panMockListErrors: {},
+        panMock189AccessByShareId: {},
         lastPlayFrom: '',
         lastPlayUrl: '',
         srcTitleLower: '',
@@ -7456,6 +7671,15 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
           onUpdate: (partial) => {
             try {
               if (!partial) return;
+              if (partial.panMockResolvedByKey && typeof partial.panMockResolvedByKey === 'object') {
+                entry.panMockResolvedByKey = { ...(entry.panMockResolvedByKey || {}), ...partial.panMockResolvedByKey };
+              }
+              if (partial.panMockListErrors && typeof partial.panMockListErrors === 'object') {
+                entry.panMockListErrors = { ...(entry.panMockListErrors || {}), ...partial.panMockListErrors };
+              }
+              if (partial.panMock189AccessByShareId && typeof partial.panMock189AccessByShareId === 'object') {
+                entry.panMock189AccessByShareId = { ...(entry.panMock189AccessByShareId || {}), ...partial.panMock189AccessByShareId };
+              }
               applyPlaySourcesToEntry(partial.playFrom, partial.playUrl, { fromPanMock: true });
               tmdbSmartDetailCache.set(sourceKey, entry);
               tmdbSmartDetailCacheVersion.value += 1;
@@ -7465,6 +7689,15 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
           .then((resolved) => {
             try {
               if (resolved && (resolved.playFrom || resolved.playUrl)) {
+                if (resolved.panMockResolvedByKey && typeof resolved.panMockResolvedByKey === 'object') {
+                  entry.panMockResolvedByKey = { ...(entry.panMockResolvedByKey || {}), ...resolved.panMockResolvedByKey };
+                }
+                if (resolved.panMockListErrors && typeof resolved.panMockListErrors === 'object') {
+                  entry.panMockListErrors = { ...(entry.panMockListErrors || {}), ...resolved.panMockListErrors };
+                }
+                if (resolved.panMock189AccessByShareId && typeof resolved.panMock189AccessByShareId === 'object') {
+                  entry.panMock189AccessByShareId = { ...(entry.panMock189AccessByShareId || {}), ...resolved.panMock189AccessByShareId };
+                }
                 applyPlaySourcesToEntry(resolved.playFrom, resolved.playUrl, { fromPanMock: true });
               }
               entry.panMockResolved = true;
@@ -7672,6 +7905,7 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
   tmdbMovieSmartFetchState.seq += 1;
   const seqAtCall = tmdbMovieSmartFetchState.seq;
   tmdbMovieSmartFetchState.key = k;
+  tmdbMovieSmartResolving.value = true;
 
   const explicit =
     smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.explicit)
@@ -7793,6 +8027,7 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
     await task;
   } finally {
     if (tmdbMovieSmartFetchState.inFlight === task) tmdbMovieSmartFetchState.inFlight = null;
+    if (seqAtCall === tmdbMovieSmartFetchState.seq) tmdbMovieSmartResolving.value = false;
   }
 };
 
@@ -8060,7 +8295,7 @@ const smartSwitchTo = async ({
   tmdbSmartPickCache.set(episodeNo, chosen);
   tmdbSmartPickCacheVersion.value += 1;
   try {
-    const started = await requestPlay();
+	    const started = await requestPlay({ trigger: 'auto' });
     if (started && played && played.groupKey && played.set) {
       const id = smartSourceIdentity(chosen);
       if (id) {
@@ -8856,7 +9091,13 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
   }
 };
 
-const requestPlay = async () => {
+const requestPlay = async (opts = {}) => {
+  const trigger = opts && typeof opts === 'object' && typeof opts.trigger === 'string' ? opts.trigger : 'auto';
+  if (trigger !== 'user' && autoPlaySuppressedByUser.value) return false;
+  if (trigger === 'user') {
+    initialAutoPlayTriggered.value = true;
+    autoPlaySuppressedByUser.value = false;
+  }
   let api = resolvedSpiderApiFinal.value;
   const src = selectedPanSource.value;
   const eps = selectedEpisodes.value;
@@ -9294,6 +9535,7 @@ const requestPlay = async () => {
 const tryAutoStartPlayback = () => {
   if (initialAutoPlayTriggered.value) return;
   if (initialAutoPlayInFlight.value) return;
+  if (autoPlaySuppressedByUser.value) return;
   if (introLoading.value) return;
   if (!resumeHistoryLoaded.value) return;
   if (!selectedEpisodes.value.length) return;
@@ -9303,7 +9545,7 @@ const tryAutoStartPlayback = () => {
 	  }
   if (selectedEpisodeIndex.value < 0) selectedEpisodeIndex.value = 0;
   initialAutoPlayInFlight.value = true;
-  void requestPlay()
+  void requestPlay({ trigger: 'auto_init' })
     .then((started) => {
       if (!started) return;
       initialAutoPlayTriggered.value = true;
@@ -9552,7 +9794,7 @@ const playEpisodeFromPlayingList = async ({ delta = 1, reason = '' } = {}) => {
     const eps = selectedEpisodes.value;
     if (!Array.isArray(eps) || !eps.length || nextIdx < 0 || nextIdx >= eps.length) return false;
     selectedEpisodeIndex.value = nextIdx;
-    await requestPlay();
+	    await requestPlay({ trigger: 'auto_next' });
     return true;
   } catch (e) {
     console.warn('[autonext] failed:', reason, e && e.message ? e.message : e);
@@ -9606,12 +9848,22 @@ const playerPhase = computed(() => {
   if (playError.value) return 'error';
   if (playerRuntimeError.value) return 'error';
   if (introLoading.value) return 'detail';
-  if (introError.value && !playerUrl.value && !isSmartPanActive.value) return 'error';
-	  if (!playerUrl.value) {
-	    if (playLoading.value) return 'play_url';
-	    if (isSmartPanActive.value && (!sourcesSearchDone.value || sourcesLoading.value)) return 'detail';
-	    return 'idle';
-	  }
+  if (
+    introError.value &&
+    !playerUrl.value &&
+    !(isSmartPanActive.value || initialAutoPlayInFlight.value || initialAutoPlayTriggered.value || !!playRequestState.inFlight)
+  ) {
+    return 'error';
+  }
+		  if (!playerUrl.value) {
+		    if (playLoading.value) return 'play_url';
+		    const smartSearching =
+		      (!sourcesSearchDone.value || sourcesLoading.value) &&
+		      (tmdbMode.value ? tmdbSmartListAvailable.value : smartListAvailable.value) &&
+		      (initialAutoPlayInFlight.value || initialAutoPlayTriggered.value || !!playRequestState.inFlight);
+		    if (smartSearching || (isSmartPanActive.value && (!sourcesSearchDone.value || sourcesLoading.value))) return 'detail';
+		    return 'idle';
+		  }
   if (!playerMetaReady.value) return 'play_info';
   if (playerBuffering.value) return 'buffering';
   if (!playerPlaybackStarted.value || !playerFirstFrameReady.value) return 'buffering';
@@ -9693,7 +9945,6 @@ const playerStageProgress = computed(() => {
 const loadResumeFromHistory = async () => {
   resumeHistoryLoaded.value = false;
   resumeHistoryApplied.value = false;
-  panPrefApplied.value = false;
   resumeHistory.value = null;
   const siteKey = (props.siteKey || '').trim();
   const videoId = (props.videoId || '').trim();
@@ -9865,7 +10116,6 @@ watch(
     [
       introLoading.value,
       resumeHistoryLoaded.value ? '1' : '0',
-      panPrefStorageKey.value,
       selectedPanKey.value,
       resolvedSpiderApiFinal.value,
       selectedEpisodes.value.length,
@@ -9883,74 +10133,36 @@ watch(
       autoPickedEpisodeFromVideoId.value = true;
       const picked = pickEpisodeByUrlAcrossPans(props.videoId || '');
       if (picked && picked.panKey) {
-        selectedPan.value = picked.panKey;
+        selectPan(picked.panKey);
         selectedEpisodeIndex.value = picked.index;
         return;
       }
     }
 
-    // Apply remembered pan preference (same video dimension) when there's no play history for this site/videoId.
-	    if (!panPrefApplied.value && !resumeHistory.value) {
-	      const prevPan = selectedPan.value;
-	      const canReadPref = !!panPrefStorageKey.value;
-	      const pref = canReadPref ? readPanPref() : '';
-	      if (pref && smartListAvailable.value && (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).some((s) => s && s.key === pref)) {
-	        selectedPan.value = pref;
-	        panDropdownOpen.value = false;
-	        selectedEpisodeGroup.value = '';
-	        selectedEpisodeIndex.value = -1;
-	        panPrefApplied.value = true;
-	        if (prevPan !== selectedPan.value) return;
-	      } else if (pref) {
-	        const foundKey = findPanKeyByPrefLabel(pref);
-	        if (foundKey) {
-	          selectedPan.value = foundKey;
-          panDropdownOpen.value = false;
-          selectedEpisodeGroup.value = '';
-          selectedEpisodeIndex.value = -1;
-          panPrefApplied.value = true;
-	          if (prevPan !== selectedPan.value) return;
-	        }
-	      } else if (smartListAvailable.value) {
-	        selectedPan.value = defaultSmartPanKey.value || SMART_PAN_KEY;
-	        panDropdownOpen.value = false;
-	        selectedEpisodeGroup.value = '';
-	        selectedEpisodeIndex.value = -1;
-	        panPrefApplied.value = true;
-	        if (prevPan !== selectedPan.value) return;
-	      } else if (canReadPref) {
-	        // No preference, no smart pan: mark applied once we have a stable content key.
-	        panPrefApplied.value = true;
-	      }
-	    }
-
-	    // Restore from history once (pan + episode), if available and already loaded.
-	    if (!resumeHistoryApplied.value && resumeHistoryLoaded.value && resumeHistory.value) {
-	      const prevPan = selectedPan.value;
-	      const prevIdx = selectedEpisodeIndex.value;
+    // Restore from history once (pan + episode), if available and already loaded.
+      if (!resumeHistoryApplied.value && resumeHistoryLoaded.value && resumeHistory.value) {
+      const prevPan = selectedPan.value;
+      const prevIdx = selectedEpisodeIndex.value;
 	      const wantedPanLabel = typeof resumeHistory.value.panLabel === 'string' ? resumeHistory.value.panLabel.trim() : '';
 	      const wantedIdxRaw = resumeHistory.value.episodeIndex != null ? Number(resumeHistory.value.episodeIndex) : 0;
 	      const wantedIdx = Number.isFinite(wantedIdxRaw) && wantedIdxRaw >= 0 ? Math.floor(wantedIdxRaw) : 0;
 	      const wantedEpName = typeof resumeHistory.value.episodeName === 'string' ? resumeHistory.value.episodeName.trim() : '';
 	      const normalize = (label) => String(label || '').trim().replace(/#\d{1,3}\s*$/i, '').trim().toLowerCase();
 
-		      let target = null;
-		      if (wantedPanLabel) {
-		        const want = normalize(wantedPanLabel);
-	          const smartHit =
-	            smartListAvailable.value
-	              ? (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).find((s) => s && normalize(s.label) === want) || null
-	              : null;
+	      let target = null;
+	      if (wantedPanLabel) {
+	        const want = normalize(wantedPanLabel);
+          const smartHit =
+            smartListAvailable.value
+              ? (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).find((s) => s && normalize(s.label) === want) || null
+              : null;
 	          if (smartHit && smartHit.key) {
-	            selectedPan.value = smartHit.key;
-	          } else if (want === normalize(SMART_PAN_LABEL) && smartListAvailable.value) {
-	            // Backward-compatible: old history stored "智能播放".
-	            selectedPan.value = defaultSmartPanKey.value || SMART_PAN_KEY;
-	          } else {
+	            selectPan(smartHit.key);
+		          } else {
 	            target = panDropdownOptions.value.find((o) => o && normalize(o.label) === want) || null;
-	            if (target && target.key) selectedPan.value = target.key;
+	            if (target && target.key) selectPan(target.key);
 	          }
-		      }
+	      }
 
 	      const rules = compiledMagicEpisodeRules.value;
 	      const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
@@ -10078,24 +10290,250 @@ const siteQuality = computed(() => {
   return '';
 });
 
+const PAN_MOCK_DIR_PROVIDERS = new Set(['quark', 'uc', 'baidu', '139', '189']);
+const panMockRawDirPath = ref([]);
+const panMockRawDirLockedDepth = ref(0);
+let lastPanMockRawDirIdentity = '';
+
+const panMockRawDirPanMockEnabled = computed(() => {
+  if (tmdbMode.value && isTMDBSitePanKey(selectedPanKey.value)) {
+    const cached = readTMDBSitePanCacheEntry(selectedPanKey.value);
+    return !!(cached && cached.panMockEnabled);
+  }
+  return !!(detail.value && detail.value.panMockEnabled);
+});
+
+const panMockRawDirModeEnabled = computed(() => {
+  if (!rawListMode.value) return false;
+  if (!panMockRawDirPanMockEnabled.value) return false;
+  const src = selectedPanSource.value;
+  const provider = src && src.provider ? String(src.provider).trim() : '';
+  if (!provider || !PAN_MOCK_DIR_PROVIDERS.has(provider)) return false;
+  const eps = selectedEpisodes.value;
+  return Array.isArray(eps) && eps.length > 0;
+});
+
+const panMockRawDirIdentity = computed(() => {
+  if (!panMockRawDirModeEnabled.value) return '';
+  const src = selectedPanSource.value;
+  const provider = src && src.provider ? String(src.provider).trim() : '';
+  const label = src && src.label != null ? String(src.label) : '';
+  if (provider && label) return `${provider}::${label}`;
+  const key = src && src.key != null ? String(src.key) : '';
+  return key || String(selectedPanKey.value || '');
+});
+
+const panMockRawDirTree = computed(() => {
+  if (!panMockRawDirModeEnabled.value) return null;
+  const eps = selectedEpisodes.value;
+  if (!Array.isArray(eps) || !eps.length) return null;
+
+  const root = { dirs: new Map(), files: [] };
+  const ensureDir = (node, name) => {
+    const key = String(name || '').trim();
+    if (!key) return node;
+    if (!node.dirs.has(key)) node.dirs.set(key, { name: key, dirs: new Map(), files: [] });
+    return node.dirs.get(key);
+  };
+
+  eps.forEach((ep, idx) => {
+    const url = ep && ep.url != null ? String(ep.url) : '';
+    const epName = ep && ep.name != null ? String(ep.name) : '';
+    const fallbackFileName = `第${idx + 1}集`;
+
+    const fileName = (() => {
+      const rawNames = extractRawNamesFromEpisodeUrl(url);
+      const raw = rawNames && rawNames[0] != null ? String(rawNames[0]) : '';
+      return (raw || '').trim() || fallbackFileName;
+    })();
+
+    const dirs = (() => {
+      const base = (epName || '').trim();
+      if (!base) return [];
+      return String(base)
+        .replace(/\\/g, '/')
+        .split('/')
+        .map((s) => String(s || '').trim())
+        .filter(Boolean);
+    })();
+
+    let node = root;
+    dirs.forEach((d) => {
+      node = ensureDir(node, d);
+    });
+    node.files.push({ name: fileName, index: idx, url });
+  });
+
+  return root;
+});
+
+const panMockRawDirNode = computed(() => {
+  const tree = panMockRawDirTree.value;
+  if (!tree) return null;
+  const path = Array.isArray(panMockRawDirPath.value) ? panMockRawDirPath.value : [];
+  let node = tree;
+  for (let i = 0; i < path.length; i += 1) {
+    const seg = String(path[i] || '').trim();
+    if (!seg) continue;
+    if (!node.dirs || !node.dirs.has(seg)) return null;
+    node = node.dirs.get(seg);
+  }
+  return node;
+});
+
+const panMockRawDirEntries = computed(() => {
+  if (!panMockRawDirModeEnabled.value) return [];
+  const node = panMockRawDirNode.value;
+  if (!node) return [];
+  const dirs = node.dirs ? Array.from(node.dirs.keys()) : [];
+  const files = Array.isArray(node.files) ? node.files : [];
+
+  dirs.sort((a, b) => String(a).localeCompare(String(b), 'zh'));
+  const sortedFiles = files
+    .slice()
+    .sort((a, b) => String(a && a.name).localeCompare(String(b && b.name), 'zh'));
+
+  const out = [];
+  dirs.forEach((name) => {
+    const text = `${String(name)}/`;
+    out.push({ key: `d:${panMockRawDirPath.value.join('/')}:${name}`, kind: 'dir', name: String(name), index: -1, text });
+  });
+  sortedFiles.forEach((f) => {
+    const text = String(f && f.name ? f.name : '').trim() || `第${Number(f && f.index) + 1}集`;
+    out.push({ key: `f:${f.index}:${f.url}`, kind: 'file', name: text, index: f.index, text });
+  });
+  return out;
+});
+
+const panMockRawDirDisplayPath = computed(() => {
+  if (!panMockRawDirModeEnabled.value) return '';
+  const path = Array.isArray(panMockRawDirPath.value) ? panMockRawDirPath.value : [];
+  const segs = path.map((s) => String(s || '').trim()).filter(Boolean);
+  return `/${segs.join('/')}`;
+});
+
+const panMockRawDirCanGoBack = computed(() => {
+  if (!panMockRawDirModeEnabled.value) return false;
+  const pathLen = Array.isArray(panMockRawDirPath.value) ? panMockRawDirPath.value.length : 0;
+  const minDepth = Number.isFinite(Number(panMockRawDirLockedDepth.value)) ? Math.max(0, Math.floor(Number(panMockRawDirLockedDepth.value))) : 0;
+  return pathLen > minDepth;
+});
+
+const panMockRawDirBarVisible = computed(() => {
+  if (!panMockRawDirModeEnabled.value) return false;
+  const list = panMockRawDirEntries.value;
+  return Array.isArray(list) && list.length > 0;
+});
+
+const panMockRawDirEnter = (name) => {
+  const n = typeof name === 'string' ? name.trim() : '';
+  if (!n) return;
+  const cur = Array.isArray(panMockRawDirPath.value) ? panMockRawDirPath.value : [];
+  panMockRawDirPath.value = cur.concat([n]);
+  rawListPage.value = 0;
+};
+
+const panMockRawDirGoBack = () => {
+  if (!panMockRawDirCanGoBack.value) return;
+  const cur = Array.isArray(panMockRawDirPath.value) ? panMockRawDirPath.value : [];
+  panMockRawDirPath.value = cur.slice(0, -1);
+  rawListPage.value = 0;
+};
+
+const onRawListItemClick = (it) => {
+  if (!it) return;
+  if (panMockRawDirModeEnabled.value && it.kind === 'dir' && it.name) {
+    panMockRawDirEnter(it.name);
+    return;
+  }
+  onRawListSelectEpisode(it.index);
+};
+
+watch(
+  () => `${panMockRawDirModeEnabled.value ? '1' : '0'}|${panMockRawDirIdentity.value}|${selectedEpisodes.value.length}`,
+  () => {
+    const enabled = panMockRawDirModeEnabled.value;
+    const identity = String(panMockRawDirIdentity.value || '');
+    if (!enabled) {
+      panMockRawDirPath.value = [];
+      panMockRawDirLockedDepth.value = 0;
+      lastPanMockRawDirIdentity = identity;
+      return;
+    }
+
+    const tree = panMockRawDirTree.value;
+    if (!tree) return;
+
+    const panChanged = identity !== lastPanMockRawDirIdentity;
+    lastPanMockRawDirIdentity = identity;
+    if (panChanged) {
+      panMockRawDirPath.value = [];
+      panMockRawDirLockedDepth.value = 0;
+    }
+
+    const tryGetNode = (path) => {
+      let node = tree;
+      for (let i = 0; i < path.length; i += 1) {
+        const seg = String(path[i] || '').trim();
+        if (!seg) continue;
+        if (!node.dirs || !node.dirs.has(seg)) return null;
+        node = node.dirs.get(seg);
+      }
+      return node;
+    };
+
+    const curPath = Array.isArray(panMockRawDirPath.value) ? panMockRawDirPath.value : [];
+    if (curPath.length && !tryGetNode(curPath)) {
+      panMockRawDirPath.value = [];
+      panMockRawDirLockedDepth.value = 0;
+    }
+
+    if (!panMockRawDirPath.value.length) {
+      // Auto-drill down when the upper levels contain only a single directory and no files.
+      // These levels are not useful to browse, so we lock the back button above them.
+      const nextPath = [];
+      let node = tree;
+      while (node) {
+        const dirs = node.dirs ? Array.from(node.dirs.keys()) : [];
+        const hasFiles = Array.isArray(node.files) && node.files.length > 0;
+        if (hasFiles) break;
+        if (dirs.length !== 1) break;
+        const only = String(dirs[0] || '').trim();
+        if (!only) break;
+        nextPath.push(only);
+        node = node.dirs.get(only);
+      }
+      if (nextPath.length) {
+        panMockRawDirPath.value = nextPath;
+        panMockRawDirLockedDepth.value = nextPath.length;
+      }
+    }
+  },
+  { immediate: true }
+);
+
 const rawListItems = computed(() => {
   if (!rawListMode.value) return [];
   const eps = selectedEpisodes.value;
   if (!eps.length) return [];
+  if (panMockRawDirModeEnabled.value) {
+    const entries = panMockRawDirEntries.value;
+    return entries.map((it) => it);
+  }
   return eps.map((ep, idx) => {
-    const useDisplayName =
-      tmdbMovieMode.value && tmdbMovieSmartListAvailable.value && selectedPanKey.value === SMART_PAN_KEY;
-    const url = ep && ep.url != null ? String(ep.url) : '';
-    const rawNames = extractRawNamesFromEpisodeUrl(url);
-    const text = (
-      (useDisplayName ? (ep && ep.name != null ? String(ep.name) : '') : '') ||
-      rawNames[0] ||
-      (ep && ep.name != null ? String(ep.name) : '') ||
-      ''
-    ).trim() || `第${idx + 1}集`;
-    return { key: `${idx}-${url}`, index: idx, text };
-  });
-});
+	    const useDisplayName =
+	      tmdbMovieMode.value && tmdbMovieSmartListAvailable.value && selectedPanKey.value === SMART_PAN_KEY;
+	    const url = ep && ep.url != null ? String(ep.url) : '';
+	    const rawNames = extractRawNamesFromEpisodeUrl(url);
+	    const text = (
+	      (useDisplayName ? (ep && ep.name != null ? String(ep.name) : '') : '') ||
+	      rawNames[0] ||
+	      (ep && ep.name != null ? String(ep.name) : '') ||
+	      ''
+	    ).trim() || `第${idx + 1}集`;
+	    return { key: `${idx}-${url}`, index: idx, text, kind: 'file', name: text };
+	  });
+	});
 
 const rawListPageOptions = computed(() => {
   if (!rawListMode.value) return [];
@@ -10147,6 +10585,7 @@ watch(
 const selectEpisode = (idx) => {
   const n = Number(idx);
   if (!Number.isFinite(n) || n < 0) return;
+  autoPlaySuppressedByUser.value = false;
   // If the user clicks the currently playing episode within the same pan, do nothing.
   // But if they switch pan (even same episode number), we must request a new play url.
   if (
@@ -10159,7 +10598,7 @@ const selectEpisode = (idx) => {
     return;
   }
   selectedEpisodeIndex.value = n;
-  requestPlay();
+	  requestPlay({ trigger: 'user' });
 };
 
 const onRawListSelectEpisode = (idx) => {
@@ -10206,13 +10645,15 @@ const extractIntroFromDetail = (data) => {
 };
 
 const extractDetailFromResponse = (data) => {
+  const root = data && typeof data === 'object' ? data : {};
+  const nested = root.data && typeof root.data === 'object' ? root.data : {};
   const first =
-    (data && Array.isArray(data.list) && data.list[0]) ||
-    (data && data.data && Array.isArray(data.data.list) && data.data.list[0]) ||
-    (data && data.vod) ||
-    null;
-
-  const vod = first || {};
+    (Array.isArray(root.list) && root.list[0]) ||
+    (Array.isArray(nested.list) && nested.list[0]) ||
+    root.vod ||
+    nested.vod ||
+    {};
+  const vod = first && typeof first === 'object' ? first : {};
   const get = (k) => (vod && vod[k] != null ? String(vod[k]) : '').trim();
   const title = get('vod_name') || get('name') || get('title');
   const poster = get('vod_pic') || get('pic') || get('poster');
@@ -10330,17 +10771,17 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 
 		  detailFetchState.inFlight = (async () => {
 		    try {
-		      const raw = await requestCatSpider({
-		        apiBase,
-		        username: tvUser,
-		        action: 'detail',
-		        spiderApi: api,
-		        payload: { id },
-		      });
-		      if (seqAtCall !== detailFetchState.seq) return;
-				      const d = extractDetailFromResponse(raw);
-				      const panMockEnabled = !!(raw && typeof raw === 'object' && raw.pan_mock);
-					      const next = (() => {
+				      const raw = await requestCatSpider({
+				        apiBase,
+				        username: tvUser,
+				        action: 'detail',
+				        spiderApi: api,
+				        payload: { id },
+				      });
+				      if (seqAtCall !== detailFetchState.seq) return;
+					      const d = extractDetailFromResponse(raw);
+					      const panMockEnabled = readPanMockEnabledFromRaw(raw);
+						      const next = (() => {
 				        const prev = detail.value && typeof detail.value === 'object' ? detail.value : {};
 				        const shouldUpdateMeta = !!updateMeta;
 				        const shouldFillMeta = !prev.title || !prev.poster || !prev.year;
@@ -10348,14 +10789,12 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 			          ...prev,
 			          playFrom: d.playFrom,
 			          playUrl: d.playUrl,
-			          ...(panMockEnabled
-			            ? {
-			                panMockEnabled: true,
-			                panMockResolving: !!(d.playFrom && d.playUrl),
-			                panMockResolved: false,
-			                panMockListErrors: {},
-			              }
-			            : {}),
+			          panMockEnabled: !!panMockEnabled,
+			          panMockResolving: !!(panMockEnabled && d.playFrom && d.playUrl),
+			          panMockResolved: false,
+			          panMockResolvedByKey: {},
+			          panMockListErrors: {},
+			          panMock189AccessByShareId: {},
 			        };
 		        if (shouldUpdateMeta || shouldFillMeta) {
 		          if (d.title) base.title = d.title;
@@ -10391,6 +10830,10 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 		              const prevMap = cur && typeof cur.panMock189AccessByShareId === 'object' ? cur.panMock189AccessByShareId : {};
 		              merged.panMock189AccessByShareId = { ...prevMap, ...resolved.panMock189AccessByShareId };
 		            }
+		            if (resolved.panMockResolvedByKey && typeof resolved.panMockResolvedByKey === 'object') {
+		              const prevResolved = cur && typeof cur.panMockResolvedByKey === 'object' ? cur.panMockResolvedByKey : {};
+		              merged.panMockResolvedByKey = { ...prevResolved, ...resolved.panMockResolvedByKey };
+		            }
 		            if (resolved.panMockListErrors && typeof resolved.panMockListErrors === 'object') {
 		              const prevErr = cur && typeof cur.panMockListErrors === 'object' ? cur.panMockListErrors : {};
 		              merged.panMockListErrors = { ...prevErr, ...resolved.panMockListErrors };
@@ -10410,6 +10853,10 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 		                const prevMap = cur && typeof cur.panMock189AccessByShareId === 'object' ? cur.panMock189AccessByShareId : {};
 		                merged.panMock189AccessByShareId = { ...prevMap, ...finalResolved.panMock189AccessByShareId };
 		              }
+		              if (finalResolved.panMockResolvedByKey && typeof finalResolved.panMockResolvedByKey === 'object') {
+		                const prevResolved = cur && typeof cur.panMockResolvedByKey === 'object' ? cur.panMockResolvedByKey : {};
+		                merged.panMockResolvedByKey = { ...prevResolved, ...finalResolved.panMockResolvedByKey };
+		              }
 		              if (finalResolved.panMockListErrors && typeof finalResolved.panMockListErrors === 'object') {
 		                const prevErr = cur && typeof cur.panMockListErrors === 'object' ? cur.panMockListErrors : {};
 		                merged.panMockListErrors = { ...prevErr, ...finalResolved.panMockListErrors };
@@ -10423,13 +10870,13 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 		            detail.value = { ...cur, panMockEnabled: true, panMockResolving: false, panMockResolved: false };
 		          });
 		      }
-			    } catch (e) {
-			      const status = e && typeof e.status === 'number' ? e.status : 0;
-			      const msg = (e && e.message) || '请求失败';
-			      if (shouldShowDetailLoading && seqAtCall === detailFetchState.seq) {
-		        introError.value = status ? `HTTP ${status}：${msg}` : msg;
-		      }
-		    } finally {
+				    } catch (e) {
+				      const status = e && typeof e.status === 'number' ? e.status : 0;
+				      const msg = (e && e.message) || '请求失败';
+				      if (shouldShowDetailLoading && seqAtCall === detailFetchState.seq) {
+			        introError.value = status ? `HTTP ${status}：${msg}` : msg;
+			      }
+			    } finally {
       if (shouldShowDetailLoading && seqAtCall === detailFetchState.seq) introLoading.value = false;
       if (detailFetchState.key === key && detailFetchState.seq === seqAtCall) detailFetchState.inFlight = null;
       releaseLowPriority();
@@ -11570,17 +12017,6 @@ watch(
   100% { background-position: 200% 50%; }
 }
 
-.raw-list__hint {
-  padding: 10px 8px;
-  font-size: 13px;
-  color: rgba(107, 114, 128, 1);
-  text-align: center;
-}
-
-.raw-list__hint--error {
-  color: rgba(239, 68, 68, 1);
-}
-
 .raw-list__items {
   display: flex;
   flex-direction: column;
@@ -11720,10 +12156,6 @@ watch(
 .dark .source-more-btn {
   border-color: rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(156, 163, 175, 1);
-}
-
-.dark .raw-list__hint {
   color: rgba(156, 163, 175, 1);
 }
 
