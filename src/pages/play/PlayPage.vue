@@ -459,20 +459,21 @@
 	                          </div>
                         </div>
 	                        <div v-else class="raw-list__items">
-		                          <button
-		                            v-for="it in rawListPagedItems"
-		                            :key="it.key"
-		                            type="button"
-		                            class="raw-list__row"
-		                            :class="{
-		                              'raw-list__row--active':
-		                                it.kind !== 'dir' &&
-		                                (it.index === selectedEpisodeIndex ||
-		                                  (selectedEpisodeIndex < 0 && playingPanKey === selectedPanKey && playingEpisodeIndex === it.index)),
-		                            }"
-		                            :title="it.text"
-		                            @click="onRawListItemClick(it)"
-		                          >
+			                            <button
+			                              v-for="it in rawListPagedItems"
+			                              :key="it.key"
+			                              type="button"
+			                              class="raw-list__row"
+			                              :class="{
+			                              'raw-list__row--active':
+			                                it.kind !== 'dir' &&
+			                                (it.index === selectedEpisodeIndex ||
+			                                  (selectedEpisodeIndex < 0 && playingPanKey === selectedPanKey && playingEpisodeIndex === it.index) ||
+			                                  (playingSmartEpisodeNo > 0 && episodeGlobalNoOf(it) === playingSmartEpisodeNo)),
+			                            }"
+			                            :title="it.text"
+			                            @click="onRawListItemClick(it)"
+			                          >
 		                            <span class="raw-list__text">{{ it.text }}</span>
 		                          </button>
 	                        </div>
@@ -483,22 +484,28 @@
 	                        class="relative flex flex-wrap gap-3 overflow-y-auto flex-1 content-start pb-4"
 	                        v-show="!rawListMode"
 	                      >
-                        <div
-                          v-if="(introLoading || panDropdownLoading) && !smartListAvailable && groupedDisplayedEpisodes.length === 0"
-                          class="tv-episode-overlay"
-                          aria-hidden="true"
-                        >
-                          <div class="tv-episode-overlay__inner">
-                            <div class="tv-spinner" aria-hidden="true"></div>
-                            <div class="tv-center-loading__text">加载中...</div>
-                          </div>
-                        </div>
-                        <div v-else-if="selectedPanAuxLoading && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay" aria-hidden="true">
-                          <div class="tv-episode-overlay__inner">
-                            <div class="tv-spinner" aria-hidden="true"></div>
-                            <div class="tv-center-loading__text">加载中...</div>
-                          </div>
-                        </div>
+	                        <div
+	                          v-if="(introLoading || panDropdownLoading) && !smartListAvailable && groupedDisplayedEpisodes.length === 0"
+	                          class="tv-episode-overlay"
+	                          aria-hidden="true"
+	                        >
+	                          <div class="tv-episode-overlay__inner">
+	                            <div class="tv-spinner" aria-hidden="true"></div>
+	                            <div class="tv-center-loading__text">加载中...</div>
+	                          </div>
+	                        </div>
+	                        <div v-else-if="doubanEpisodesLoading && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay" aria-hidden="true">
+	                          <div class="tv-episode-overlay__inner">
+	                            <div class="tv-spinner" aria-hidden="true"></div>
+	                            <div class="tv-center-loading__text">加载中...</div>
+	                          </div>
+	                        </div>
+	                        <div v-else-if="selectedPanAuxLoading && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay" aria-hidden="true">
+	                          <div class="tv-episode-overlay__inner">
+	                            <div class="tv-spinner" aria-hidden="true"></div>
+	                            <div class="tv-center-loading__text">加载中...</div>
+	                          </div>
+	                        </div>
 					                        <div v-else-if="(selectedPanAuxError || introError) && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay">
                           <div class="tv-episode-overlay__inner">
                             <div class="tv-center-loading__text text-red-600 dark:text-red-400">{{ selectedPanAuxError || introError }}</div>
@@ -506,17 +513,19 @@
                         </div>
                         <template v-else>
 	                          <template v-if="groupedDisplayedEpisodes.length">
-		                            <button
-		                              v-for="ep in groupedDisplayedEpisodes"
-		                              :key="ep.key"
-		                              type="button"
-		                              class="episode-num-btn flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap font-mono"
-		                              :class="(ep.index === selectedEpisodeIndex || (selectedEpisodeIndex < 0 && playingPanKey === selectedPanKey && playingEpisodeIndex === ep.index))
-		                                ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
-		                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'"
-		                              :title="ep.name"
-		                              @click="selectEpisode(ep.index)"
-		                            >
+			                            <button
+			                              v-for="ep in groupedDisplayedEpisodes"
+			                              :key="ep.key"
+			                              type="button"
+			                              class="episode-num-btn flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap font-mono"
+			                              :class="(ep.index === selectedEpisodeIndex ||
+			                                (selectedEpisodeIndex < 0 && playingPanKey === selectedPanKey && playingEpisodeIndex === ep.index) ||
+			                                (playingSmartEpisodeNo > 0 && episodeGlobalNoOf(ep) === playingSmartEpisodeNo))
+			                                ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
+			                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'"
+			                              :title="ep.name"
+			                              @click="selectEpisode(ep.index)"
+			                            >
 	                              {{ ep.displayNo != null ? ep.displayNo : ep.no }}
 	                            </button>
 	                          </template>
@@ -802,6 +811,81 @@ const debugEnabled = computed(() => {
     return false;
   }
 });
+
+const smartDebugEvents = ref([]);
+const formatSmartLogTs = (ms) => {
+  try {
+    const d = new Date(Number.isFinite(Number(ms)) ? Number(ms) : Date.now());
+    const pad = (n) => String(Number.isFinite(Number(n)) ? Math.floor(Number(n)) : 0).padStart(2, '0');
+    const y = d.getFullYear();
+    const m = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const mm = pad(d.getMinutes());
+    const ss = pad(d.getSeconds());
+    return `${y}/${m}/${day} ${hh}:${mm}:${ss}`;
+  } catch (_e) {
+    return '';
+  }
+};
+const smartConsoleLog = (evt) => {
+  try {
+    if (!debugEnabled.value) return;
+    if (!evt || typeof evt !== 'object') return;
+    const t = evt.type != null ? String(evt.type) : '';
+    if (!t) return;
+    const ts = formatSmartLogTs(evt.at);
+
+    const pick = (k) => (evt[k] != null ? String(evt[k]) : '');
+    const siteKey = pick('siteKey') || pick('siteId') || '';
+    const siteName = pick('siteName') || '';
+    const panFlag = pick('panFlag') || pick('flag') || pick('label') || '';
+    const provider = pick('provider') || '';
+    const showName = pick('showName') || '';
+    const rawName = pick('rawName') || '';
+    const spiderApi = pick('spiderApi') || pick('spider') || '';
+    const videoId = pick('videoId') || '';
+    const want = pick('want') || '';
+    const quality = pick('quality') || '';
+    const ms = pick('ms') || '';
+    const episodes = pick('episodes') || '';
+    const url = pick('url') || '';
+    const err = pick('err') || pick('error') || '';
+
+    const parts = [];
+    if (want) parts.push(`want=${want}`);
+    if (siteKey) parts.push(`site=${siteKey}${siteName ? `(${siteName})` : ''}`);
+    if (panFlag) parts.push(`panFlag=${panFlag}`);
+    if (provider) parts.push(`provider=${provider}`);
+    if (quality) parts.push(`quality=${quality}`);
+    if (ms) parts.push(`ms=${ms}`);
+    if (episodes) parts.push(`episodes=${episodes}`);
+    if (showName) parts.push(`showName=${showName}`);
+    if (rawName) parts.push(`rawName=${rawName}`);
+    if (spiderApi) parts.push(`spider=${spiderApi}`);
+    if (videoId) parts.push(`videoId=${videoId}`);
+    if (url) parts.push(`url=${url}`);
+    if (err) parts.push(`err=${err}`);
+
+    const line = `${ts ? `${ts} ` : ''}[smart][${t}]${parts.length ? ` ${parts.join(' ')}` : ''}`;
+    // eslint-disable-next-line no-console
+    console.log(line);
+  } catch (_e) {}
+};
+const smartDebugLog = (type, payload) => {
+  try {
+    if (!debugEnabled.value) return;
+    const t = typeof type === 'string' ? type.trim() : '';
+    if (!t) return;
+    const data = payload && typeof payload === 'object' ? payload : payload != null ? { value: payload } : {};
+    const list = Array.isArray(smartDebugEvents.value) ? smartDebugEvents.value.slice() : [];
+    const evt = { at: Date.now(), type: t, ...data };
+    list.push(evt);
+    while (list.length > 60) list.shift();
+    smartDebugEvents.value = list;
+    smartConsoleLog(evt);
+  } catch (_e) {}
+};
 
 const playerStatsSiteName = ref('');
 const playerStatsPanName = ref('');
@@ -1688,6 +1772,7 @@ const playerFirstFrameReady = ref(false);
 let playerFirstFrameTimer = 0;
 const playingPanKey = ref('');
 const playingEpisodeIndex = ref(-1);
+const playingSmartEpisodeNo = ref(0);
 const playingTMDBSubPanKey = ref('');
 const initialAutoPlayTriggered = ref(false);
 const selectedPan = ref('');
@@ -1738,45 +1823,58 @@ const readPanMockEnabledFromRaw = (raw) => {
   }
 };
 
-	const tmdbMeta = ref(null);
-	const doubanSeasonMeta = ref(null);
-		const tmdbMovieSmartEpisodes = ref([]);
-		const tmdbMovieSmartFetchState = { key: '', seq: 0, inFlight: null };
-		const tmdbMovieSmartResolving = ref(false);
+		const tmdbMeta = ref(null);
+		const doubanSeasonMeta = ref(null);
+			const tmdbMovieSmartEpisodes = ref([]);
+			const tmdbMovieSmartFetchState = { key: '', seq: 0, inFlight: null };
+			const tmdbMovieSmartResolving = ref(false);
 
-	const readDoubanSeasonMetaFromSession = (tmdbId) => {
-	  const id = Number.isFinite(Number(tmdbId)) ? Math.floor(Number(tmdbId)) : 0;
-	  if (id <= 0) return null;
-	  try {
-	    const raw = sessionStorage.getItem(`tv:douban:tmdbSeasons:${id}`);
-	    if (!raw) return null;
-	    const parsed = JSON.parse(raw);
-	    if (!parsed || typeof parsed !== 'object') return null;
-	    const seasons = Array.isArray(parsed.seasons) ? parsed.seasons : [];
-	    const out = {
-	      tmdbId: Number.isFinite(Number(parsed.tmdbId)) ? Math.floor(Number(parsed.tmdbId)) : id,
-	      seasonCount: Number.isFinite(Number(parsed.seasonCount)) ? Math.floor(Number(parsed.seasonCount)) : 0,
-	      seasons: seasons
-	        .map((s) => ({
-	          season: Number.isFinite(Number(s.season)) ? Math.floor(Number(s.season)) : 0,
-	          episodeCount: Number.isFinite(Number(s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
-	          doubanId: s && s.doubanId != null ? String(s.doubanId) : '',
-	          title: s && s.title != null ? String(s.title) : '',
-	          aliases: Array.isArray(s && s.aliases) ? s.aliases.map((x) => (x != null ? String(x) : '')).filter(Boolean) : [],
-	          hints: s && typeof s.hints === 'object' && s.hints ? s.hints : null,
-	          airDate: s && typeof s.airDate === 'string' ? String(s.airDate).trim() : '',
-	          displayLabel: s && typeof s.displayLabel === 'string' ? String(s.displayLabel).trim() : '',
-	        }))
-	        .filter((s) => s.season > 0 && s.episodeCount > 0),
-	      updatedAt: Number.isFinite(Number(parsed.updatedAt)) ? Number(parsed.updatedAt) : 0,
-	    };
-	    if (!out.seasonCount) out.seasonCount = out.seasons.length;
-	    if (out.seasonCount < 2 || out.seasons.length < 2) return null;
-	    return out;
-	  } catch (_e) {
-	    return null;
-	  }
-	};
+			const computeTMDBSeasonsSignatureForCache = () => {
+			  try {
+			    const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+			    return seasons
+			      .filter((it) => it && Number.isFinite(Number(it.season)) && Number(it.season) > 0)
+			      .map((it) => `${Math.floor(Number(it.season))}:${Math.floor(Number(it.episodeCount || 0))}`)
+			      .join('|');
+			  } catch (_e) {
+			    return '';
+			  }
+			};
+
+			const readDoubanSeasonMetaFromSession = (tmdbId) => {
+			  const id = Number.isFinite(Number(tmdbId)) ? Math.floor(Number(tmdbId)) : 0;
+			  if (id <= 0) return null;
+			  try {
+			    const raw = sessionStorage.getItem(`tv:douban:tmdbSeasons:${id}`);
+			    if (!raw) return null;
+			    const parsed = JSON.parse(raw);
+			    if (!parsed || typeof parsed !== 'object') return null;
+			    const seasons = Array.isArray(parsed.seasons) ? parsed.seasons : [];
+			    const out = {
+			      tmdbId: Number.isFinite(Number(parsed.tmdbId)) ? Math.floor(Number(parsed.tmdbId)) : id,
+			      tmdbSig: typeof parsed.tmdbSig === 'string' ? parsed.tmdbSig : '',
+			      seasonCount: Number.isFinite(Number(parsed.seasonCount)) ? Math.floor(Number(parsed.seasonCount)) : 0,
+			      seasons: seasons
+			        .map((s) => ({
+			          season: Number.isFinite(Number(s.season)) ? Math.floor(Number(s.season)) : 0,
+		          episodeCount: Number.isFinite(Number(s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
+		          doubanId: s && s.doubanId != null ? String(s.doubanId) : '',
+		          title: s && s.title != null ? String(s.title) : '',
+		          aliases: Array.isArray(s && s.aliases) ? s.aliases.map((x) => (x != null ? String(x) : '')).filter(Boolean) : [],
+		          hints: s && typeof s.hints === 'object' && s.hints ? s.hints : null,
+		          airDate: s && typeof s.airDate === 'string' ? String(s.airDate).trim() : '',
+		          displayLabel: s && typeof s.displayLabel === 'string' ? String(s.displayLabel).trim() : '',
+		        }))
+			        .filter((s) => s.season > 0 && s.episodeCount > 0),
+			      updatedAt: Number.isFinite(Number(parsed.updatedAt)) ? Number(parsed.updatedAt) : 0,
+			    };
+			    if (!out.seasonCount) out.seasonCount = out.seasons.length;
+			    if (out.seasonCount < 1 || out.seasons.length < 1) return null;
+			    return out;
+			  } catch (_e) {
+			    return null;
+			  }
+			};
 
 	const refreshDoubanSeasonMeta = () => {
 	  if (!tmdbMode.value) {
@@ -1862,30 +1960,9 @@ const readPanMockEnabledFromRaw = (raw) => {
 	  return 0;
 	};
 
-	const parseDoubanEpisodeCountFromInfo = (text) => {
-	  const s = typeof text === 'string' ? text.trim() : '';
-	  if (!s) return 0;
-	  const mAll = s.match(/(\d{1,4})\s*集\s*全/);
-	  if (mAll && mAll[1]) {
-	    const n = Number.parseInt(String(mAll[1]), 10);
-	    if (Number.isFinite(n) && n > 0) return n;
-	  }
-	  const mUp = s.match(/更新至\s*(\d{1,4})\s*集/);
-	  if (mUp && mUp[1]) {
-	    const n = Number.parseInt(String(mUp[1]), 10);
-	    if (Number.isFinite(n) && n > 0) return n;
-	  }
-	  const mCnt = s.match(/(\d{1,4})\s*集/);
-	  if (mCnt && mCnt[1]) {
-	    const n = Number.parseInt(String(mCnt[1]), 10);
-	    if (Number.isFinite(n) && n > 0) return n;
-	  }
-	  return 0;
-	};
-
-	const extractEpisodeRangeHint = (text) => {
-	  const s = typeof text === 'string' ? text.trim() : '';
-	  if (!s) return null;
+		const extractEpisodeRangeHint = (text) => {
+		  const s = typeof text === 'string' ? text.trim() : '';
+		  if (!s) return null;
 	  const m = s.match(/第\s*(\d{1,5})\s*[-—~～]\s*(\d{1,5})\s*集/);
 	  if (!m || !m[1] || !m[2]) return null;
 	  const a = Number.parseInt(String(m[1]), 10);
@@ -2028,58 +2105,118 @@ const readPanMockEnabledFromRaw = (raw) => {
 	  const url = proxyBase ? toProxiedUrl(target, proxyBase) : target;
 	  const data = await fetchJsonWithTimeout(url, 12000);
 
-	  const subjects = Array.isArray(data?.subjects?.items) ? data.subjects.items : [];
-		  const smartBox = Array.isArray(data?.smart_box) ? data.smart_box : [];
-		  const items = [];
-		  const push = (it) => {
-		    const typ = it && it.target_type != null ? String(it.target_type).trim() : '';
-		    if (typ !== 'tv') return;
-		    const title = it && it.target && it.target.title != null ? String(it.target.title).trim() : '';
-		    if (!title) return;
-		    const yearRaw = it && it.target && it.target.year != null ? it.target.year : '';
-		    const year = yearRaw != null ? String(yearRaw).trim() : '';
-		    const subtitle =
-		      it && it.target
-		        ? (it.target.card_subtitle != null
-		            ? String(it.target.card_subtitle)
-		            : it.target.cardSubtitle != null
-		              ? String(it.target.cardSubtitle)
-		              : it.target.subtitle != null
-		                ? String(it.target.subtitle)
-		                : it.target.sub_title != null
-		                  ? String(it.target.sub_title)
-		                  : '')
-		        : '';
-		    const id =
-		      it && it.target && it.target.id != null
-		        ? String(it.target.id).trim()
-		        : it && it.target_id != null
-		          ? String(it.target_id).trim()
-		          : '';
-		    if (!id) return;
-		    items.push({ doubanId: id, title, year, subtitle: subtitle ? subtitle.trim() : '' });
-		  };
-	  subjects.forEach(push);
-	  smartBox.forEach(push);
-	  if (items.length < 2) return null;
+		  const subjects = Array.isArray(data?.subjects?.items) ? data.subjects.items : [];
+			  const smartBox = Array.isArray(data?.smart_box) ? data.smart_box : [];
+			  const items = [];
+			  const push = (it) => {
+			    const typ = it && it.target_type != null ? String(it.target_type).trim() : '';
+			    if (typ !== 'tv') return;
+			    const title = it && it.target && it.target.title != null ? String(it.target.title).trim() : '';
+			    if (!title) return;
+			    const yearRaw = it && it.target && it.target.year != null ? it.target.year : '';
+			    const year = yearRaw != null ? String(yearRaw).trim() : '';
+			    const subtitle =
+			      it && it.target
+			        ? (it.target.card_subtitle != null
+			            ? String(it.target.card_subtitle)
+			            : it.target.cardSubtitle != null
+			              ? String(it.target.cardSubtitle)
+			              : it.target.subtitle != null
+			                ? String(it.target.subtitle)
+			                : it.target.sub_title != null
+			                  ? String(it.target.sub_title)
+			                  : '')
+			        : '';
+			    const nullRatingReason =
+			      it && it.target
+			        ? (it.target.null_rating_reason != null
+			            ? String(it.target.null_rating_reason)
+			            : it.target.nullRatingReason != null
+			              ? String(it.target.nullRatingReason)
+			              : '')
+			        : '';
+			    const isReleasedRaw =
+			      it && it.target
+			        ? (it.target.is_released != null
+			            ? it.target.is_released
+			            : it.target.isReleased != null
+			              ? it.target.isReleased
+			              : null)
+			        : null;
+			    const isReleased = typeof isReleasedRaw === 'boolean' ? isReleasedRaw : null;
+			    const canRateRaw =
+			      it && it.target
+			        ? (it.target.can_rate != null
+			            ? it.target.can_rate
+			            : it.target.canRate != null
+			              ? it.target.canRate
+			              : null)
+			        : null;
+			    const canRate = typeof canRateRaw === 'boolean' ? canRateRaw : null;
+			    const vendorCountRaw =
+			      it && it.target
+			        ? (it.target.vendor_count != null
+			            ? it.target.vendor_count
+			            : it.target.vendorCount != null
+			              ? it.target.vendorCount
+			              : null)
+			        : null;
+			    const vendorCountNum = Number.parseInt(String(vendorCountRaw ?? ''), 10);
+			    const vendorCount = Number.isFinite(vendorCountNum) ? vendorCountNum : 0;
+			    const pubdateRaw =
+			      it && it.target
+			        ? (it.target.pubdate != null
+			            ? it.target.pubdate
+			            : it.target.pubDate != null
+			              ? it.target.pubDate
+			              : null)
+			        : null;
+			    const pubdate = Array.isArray(pubdateRaw) ? pubdateRaw.map((x) => String(x || '').trim()).filter(Boolean) : [];
+			    const id =
+			      it && it.target && it.target.id != null
+			        ? String(it.target.id).trim()
+			        : it && it.target_id != null
+			          ? String(it.target_id).trim()
+			          : '';
+			    if (!id) return;
+			    items.push({
+			      doubanId: id,
+			      title,
+			      year,
+			      subtitle: subtitle ? subtitle.trim() : '',
+			      nullRatingReason: nullRatingReason ? nullRatingReason.trim() : '',
+			      isReleased,
+			      canRate,
+			      vendorCount,
+			      pubdate,
+			    });
+			  };
+		  subjects.forEach(push);
+		  smartBox.forEach(push);
+		  if (items.length < 1) return null;
 
-		  const uniqItems = (() => {
-		    const out = [];
-		    const seen = new Set();
-		    items.forEach((it) => {
+	  const uniqItems = (() => {
+	    const out = [];
+	    const seen = new Set();
+	    items.forEach((it) => {
 		      const id = it && it.doubanId != null ? String(it.doubanId).trim() : '';
 		      if (!id || seen.has(id)) return;
 		      seen.add(id);
-		      out.push({
-		        doubanId: id,
-		        title: it && it.title != null ? String(it.title) : '',
-		        year: it && it.year != null ? String(it.year).trim() : '',
-		        subtitle: it && it.subtitle != null ? String(it.subtitle) : '',
-		      });
-		    });
-		    return out;
-		  })();
-	  if (uniqItems.length < 2) return null;
+			      out.push({
+			        doubanId: id,
+			        title: it && it.title != null ? String(it.title) : '',
+			        year: it && it.year != null ? String(it.year).trim() : '',
+			        subtitle: it && it.subtitle != null ? String(it.subtitle) : '',
+			        nullRatingReason: it && it.nullRatingReason != null ? String(it.nullRatingReason) : '',
+			        isReleased: typeof it?.isReleased === 'boolean' ? it.isReleased : null,
+			        canRate: typeof it?.canRate === 'boolean' ? it.canRate : null,
+			        vendorCount: Number.isFinite(Number(it?.vendorCount)) ? Number(it.vendorCount) : 0,
+			        pubdate: Array.isArray(it?.pubdate) ? it.pubdate.map((x) => String(x || '').trim()).filter(Boolean) : [],
+			      });
+			    });
+			    return out;
+			  })();
+		  if (uniqItems.length < 1) return null;
 
 		  const extractYearFromText = (text) => {
 		    const s = typeof text === 'string' ? text : String(text || '');
@@ -2105,6 +2242,43 @@ const readPanMockEnabledFromRaw = (raw) => {
 	      .toLowerCase()
 	      .replace(/[\s\-_—–·|:：/\\()[\]{}<>【】（）「」『』《》、，,。.！!？?~～]+/g, '')
 	      .trim();
+	  };
+	  const keywordBase = (() => {
+	    const baseRaw = q
+	      .replace(/[(（]\s*(19|20)\d{2}\s*[)）]/g, '')
+	      .trim();
+	    const seg0 = baseRaw.split(/\s+/g)[0] || '';
+	    return seg0.trim() || q;
+	  })();
+	  const baseKey = (() => {
+	    const k = normalizeForPrefixCompare(keywordBase);
+	    return k.replace(/(19|20)\d{2}$/g, '');
+	  })();
+		  const isLikelyUnreleased = (it) => {
+		    const subtitle = it && typeof it.subtitle === 'string' ? it.subtitle : String((it && it.subtitle) || '');
+		    const s = subtitle.trim();
+		    if (s && /(尚未上映|尚未播出|即将上映|即将播出)/.test(s)) return true;
+		    const nrr = it && typeof it.nullRatingReason === 'string' ? it.nullRatingReason : String((it && it.nullRatingReason) || '');
+		    if (nrr && /(尚未上映|尚未播出)/.test(nrr)) return true;
+		    if (it && it.isReleased === false) return true;
+		    if (it && it.canRate === false && Number(it.vendorCount || 0) <= 0) return true;
+		    const pub = it && Array.isArray(it.pubdate) ? it.pubdate : [];
+		    if (pub.some((x) => /(尚未上映|尚未播出|即将上映|即将播出|未定)/.test(String(x || '')))) return true;
+		    return false;
+		  };
+	  const isStrictTitleMatch = (title) => {
+	    const t = typeof title === 'string' ? title.trim() : '';
+	    if (!t) return false;
+	    if (!baseKey || baseKey.length < 2) return true;
+	    let titleKey = normalizeForPrefixCompare(t);
+	    titleKey = titleKey.replace(/(19|20)\d{2}$/g, '');
+	    if (!titleKey.startsWith(baseKey)) return false;
+	    const tail = titleKey.slice(baseKey.length);
+	    if (!tail) return true;
+	    // Allow only explicit season markers after the base title.
+	    if (/^第(?:[0-9]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})季$/.test(tail)) return true;
+	    if (/^年番(?:[0-9]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})$/.test(tail)) return true;
+	    return false;
 	  };
 	  const stripLeadingByNormalizedPrefix = (text, prefix) => {
 	    const raw = typeof text === 'string' ? text : String(text || '');
@@ -2148,35 +2322,53 @@ const readPanMockEnabledFromRaw = (raw) => {
 	    const stripped = stripLeadingByNormalizedPrefix(t, base);
 	    return stripped || t;
 	  };
-		  const shouldSkipLikelyFuture = (it) => {
-		    const nowY = new Date().getFullYear();
-		    const y = Math.max(
-		      extractYearFromValue(it && it.year),
-		      extractYearFromText(it && it.title),
-		      extractYearFromText(it && it.subtitle)
-		    );
-		    // If the search card indicates a future year (> current year), skip detail request (likely unreleased/empty).
-		    return y > nowY;
-		  };
+			  const shouldSkipLikelyFuture = (it) => {
+			    const nowY = new Date().getFullYear();
+			    const pub = it && Array.isArray(it.pubdate) ? it.pubdate : [];
+			    const firstDate = (() => {
+			      for (let i = 0; i < pub.length; i += 1) {
+			        const s = String(pub[i] || '');
+			        const m = s.match(/\b(19|20)\d{2}-\d{2}-\d{2}\b/);
+			        if (!m) continue;
+			        const d = new Date(`${m[0]}T00:00:00Z`);
+			        if (!Number.isNaN(d.getTime())) return d;
+			      }
+			      return null;
+			    })();
+			    if (firstDate) {
+			      const now = new Date();
+			      if (firstDate.getTime() > now.getTime()) return true;
+			    }
+			    const y = Math.max(
+			      extractYearFromValue(it && it.year),
+			      extractYearFromText(it && it.title),
+			      extractYearFromText(it && it.subtitle),
+			      extractYearFromText(pub.join(' '))
+			    );
+			    // If the search card indicates a future year (> current year), skip detail request (likely unreleased/empty).
+			    return y > nowY;
+			  };
 
-	  const results = await Promise.all(uniqItems.slice(0, Math.max(2, Math.min(50, Number(maxSeasons) || 10))).map(async (it) => {
-	    if (shouldSkipLikelyFuture(it)) return null;
-	    const du = new URL(`${apiBase}/rexxar/api/v2/tv/${encodeURIComponent(it.doubanId)}`);
-	    const dTarget = du.toString();
-	    const dUrl = proxyBase ? toProxiedUrl(dTarget, proxyBase) : dTarget;
-	    const detail = await fetchJsonWithTimeout(dUrl, 12000);
+			  const results = await Promise.all(uniqItems.slice(0, Math.max(1, Math.min(50, Number(maxSeasons) || 10))).map(async (it) => {
+			    // Fast reject order: keyword/title mismatch -> unreleased -> future-year.
+			    if (!isStrictTitleMatch(it && it.title)) return null;
+			    if (isLikelyUnreleased(it)) return null;
+			    if (shouldSkipLikelyFuture(it)) return null;
+			    const du = new URL(`${apiBase}/rexxar/api/v2/tv/${encodeURIComponent(it.doubanId)}`);
+		    const dTarget = du.toString();
+		    const dUrl = proxyBase ? toProxiedUrl(dTarget, proxyBase) : dTarget;
+		    const detail = await fetchJsonWithTimeout(dUrl, 12000);
 
 	    const epCountRaw = detail?.episodes_count;
 	    let episodeCount = 0;
-	    if (typeof epCountRaw === 'number' && epCountRaw > 0) episodeCount = Math.floor(epCountRaw);
-	    else if (typeof epCountRaw === 'string') {
-	      const n = Number.parseInt(epCountRaw.trim(), 10);
-	      if (Number.isFinite(n) && n > 0) episodeCount = n;
-	    }
-	    if (!episodeCount) episodeCount = parseDoubanEpisodeCountFromInfo(detail?.episodes_info || '');
-	    if (!episodeCount) return null;
+		    if (typeof epCountRaw === 'number' && epCountRaw > 0) episodeCount = Math.floor(epCountRaw);
+		    else if (typeof epCountRaw === 'string') {
+		      const n = Number.parseInt(epCountRaw.trim(), 10);
+		      if (Number.isFinite(n) && n > 0) episodeCount = n;
+		    }
+		    if (!episodeCount) return null;
 
-	    const detailAliases = extractDoubanAliasesFromDetail(detail);
+		    const detailAliases = extractDoubanAliasesFromDetail(detail);
 	    const cleanedTitle = sanitizeDoubanDisplayTitle(it.title, q);
 	    const aliases = [it.title, cleanedTitle].concat(detailAliases).filter(Boolean);
 	    const range = (() => {
@@ -2203,8 +2395,8 @@ const readPanMockEnabledFromRaw = (raw) => {
 	    };
 	  }));
 
-	  const seasonsRaw = results.filter(Boolean);
-	  if (seasonsRaw.length < 2) return null;
+		  const seasonsRaw = results.filter(Boolean);
+		  if (seasonsRaw.length < 1) return null;
 
 	  const hasAnyDate = seasonsRaw.some((s) => s && typeof s.airDate === 'string' && s.airDate);
 	  const hasAnyMarker =
@@ -2246,34 +2438,42 @@ const readPanMockEnabledFromRaw = (raw) => {
 	    return 0;
 	  });
 
-	  // Re-number seasons sequentially by the best ordering we have.
-	  const seasons = seasonsSorted.map((s, idx) => ({
-	    season: idx + 1,
-	    episodeCount: Number.isFinite(Number(s && s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
-	    doubanId: s && s.doubanId != null ? String(s.doubanId) : '',
-	    title: s && s.title != null ? String(s.title) : '',
-	    aliases: Array.isArray(s && s.aliases) ? s.aliases : [],
-	    hints: s && typeof s.hints === 'object' && s.hints ? s.hints : null,
-	    airDate: s && typeof s.airDate === 'string' ? String(s.airDate).trim() : '',
-	    displayLabel: s && typeof s.displayLabel === 'string' ? String(s.displayLabel).trim() : '',
-	  }));
-	  if (seasons.length < 2) return null;
-	  return { seasons };
-	};
+		  // Re-number seasons sequentially by the best ordering we have.
+		  const seasons = seasonsSorted.map((s, idx) => ({
+		    season: idx + 1,
+		    episodeCount: Number.isFinite(Number(s && s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
+		    doubanId: s && s.doubanId != null ? String(s.doubanId) : '',
+		    title: s && s.title != null ? String(s.title) : '',
+		    aliases: Array.isArray(s && s.aliases) ? s.aliases : [],
+		    hints: s && typeof s.hints === 'object' && s.hints ? s.hints : null,
+		    airDate: s && typeof s.airDate === 'string' ? String(s.airDate).trim() : '',
+		    displayLabel: s && typeof s.displayLabel === 'string' ? String(s.displayLabel).trim() : '',
+		  }));
+		  if (seasons.length < 1) return null;
+		  return { seasons };
+		};
 
-	const ensureDoubanSeasonMetaFetchedIfNeeded = async () => {
-	  if (!tmdbMode.value) return;
-	  if (tmdbMovieMode.value) return;
-	  const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
-	  if (typRaw !== 'tv') return;
-	  const tmdbId = Number(props.tmdbId || 0);
-	  if (!(Number.isFinite(tmdbId) && tmdbId > 0)) return;
+		const ensureDoubanSeasonMetaFetchedIfNeeded = async () => {
+		  if (!tmdbMode.value) return;
+		  if (tmdbMovieMode.value) return;
+		  const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+		  if (typRaw !== 'tv') return;
+		  const tmdbId = Number(props.tmdbId || 0);
+		  if (!(Number.isFinite(tmdbId) && tmdbId > 0)) return;
 
-	  // If we already have a fresh cache, skip.
-	  try {
-	    const existing = readDoubanSeasonMetaFromSession(tmdbId);
-	    if (existing && existing.updatedAt && Date.now() - Number(existing.updatedAt) <= DOUBAN_SEASON_META_TTL_MS) return;
-	  } catch (_e) {}
+		  // If we already have a fresh cache, skip.
+		  try {
+		    const existing = readDoubanSeasonMetaFromSession(tmdbId);
+		    const sigNow = computeTMDBSeasonsSignatureForCache();
+		    if (
+		      existing &&
+		      existing.updatedAt &&
+		      Date.now() - Number(existing.updatedAt) <= DOUBAN_SEASON_META_TTL_MS &&
+		      (!sigNow || String(existing.tmdbSig) === String(sigNow))
+		    ) {
+		      return;
+		    }
+		  } catch (_e) {}
 
 	  const meta = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
 	  const keyword = (meta && meta.title ? String(meta.title) : (props.videoTitle || '')).trim();
@@ -2284,22 +2484,47 @@ const readPanMockEnabledFromRaw = (raw) => {
 	    await doubanSeasonFetchState.inFlight;
 	    return;
 	  }
-	  doubanSeasonFetchState.seq += 1;
-	  const seqAtCall = doubanSeasonFetchState.seq;
-	  doubanSeasonFetchState.key = k;
-	  doubanSeasonFetchState.inFlight = (async () => {
-	    try {
-	      const res = await fetchDoubanSeasonMetaFromDouban({ keyword });
-	      if (seqAtCall !== doubanSeasonFetchState.seq) return;
-	      const seasons = Array.isArray(res && res.seasons) ? res.seasons : [];
-	      if (seasons.length < 2) return;
-		      const payload = {
-		        tmdbId: Math.floor(tmdbId),
-		        seasonCount: seasons.length,
-		        seasons: seasons.map((s) => ({
-		          season: Number.isFinite(Number(s.season)) ? Math.floor(Number(s.season)) : 0,
-		          episodeCount: Number.isFinite(Number(s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
-		          doubanId: s && s.doubanId != null ? String(s.doubanId) : '',
+		  doubanSeasonFetchState.seq += 1;
+		  const seqAtCall = doubanSeasonFetchState.seq;
+		  doubanSeasonFetchState.key = k;
+			  const task = (async () => {
+			    try {
+			      const buildSeasonsFromTMDB = () => {
+			        const base = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+			        const normalized = base
+			          .map((s) => ({
+			            season: Number.isFinite(Number(s && s.season)) ? Math.floor(Number(s.season)) : 0,
+			            episodeCount: Number.isFinite(Number(s && s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
+			            airDate: s && typeof s.airDate === 'string' ? String(s.airDate).trim() : '',
+			          }))
+			          .filter((s) => s.season > 0 && s.episodeCount > 0)
+			          .sort((a, b) => a.season - b.season);
+			        return normalized.map((s) => ({
+			          season: s.season,
+			          episodeCount: s.episodeCount,
+			          doubanId: '',
+			          title: '',
+			          aliases: [],
+			          hints: { source: 'tmdb_synth' },
+			          airDate: s.airDate,
+			          displayLabel: '',
+			        }));
+			      };
+
+				      const res = await fetchDoubanSeasonMetaFromDouban({ keyword });
+				      if (seqAtCall !== doubanSeasonFetchState.seq) return;
+					      let seasons = Array.isArray(res && res.seasons) ? res.seasons : [];
+					      if (seasons.length < 1) seasons = buildSeasonsFromTMDB();
+					      if (seasons.length < 1) return;
+				      const tmdbSig = computeTMDBSeasonsSignatureForCache();
+				      const payload = {
+				        tmdbId: Math.floor(tmdbId),
+				        tmdbSig,
+				        seasonCount: seasons.length,
+				        seasons: seasons.map((s) => ({
+				          season: Number.isFinite(Number(s.season)) ? Math.floor(Number(s.season)) : 0,
+			          episodeCount: Number.isFinite(Number(s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0,
+			          doubanId: s && s.doubanId != null ? String(s.doubanId) : '',
 		          title: s && s.title != null ? String(s.title) : '',
 		          aliases: Array.isArray(s && s.aliases) ? s.aliases : [],
 		          hints: s && typeof s.hints === 'object' && s.hints ? s.hints : null,
@@ -2309,17 +2534,20 @@ const readPanMockEnabledFromRaw = (raw) => {
 		        updatedAt: Date.now(),
 		      };
 	      sessionStorage.setItem(`tv:douban:tmdbSeasons:${Math.floor(tmdbId)}`, JSON.stringify(payload));
-	    } catch (_e) {
-	      // ignore
-	    }
-	  })();
-	  try {
-	    await doubanSeasonFetchState.inFlight;
-	  } finally {
-	    if (doubanSeasonFetchState.key === k && doubanSeasonFetchState.seq === seqAtCall) doubanSeasonFetchState.inFlight = null;
-	  }
-	  refreshDoubanSeasonMeta();
-	};
+		    } catch (_e) {
+		      // ignore
+		    }
+		  })();
+		  doubanSeasonFetchState.inFlight = task;
+		  // Ensure `inFlight` is cleared even if callers don't await this function (navigation/unmount etc).
+		  task.finally(() => {
+		    if (doubanSeasonFetchState.key === k && doubanSeasonFetchState.seq === seqAtCall && doubanSeasonFetchState.inFlight === task) {
+		      doubanSeasonFetchState.inFlight = null;
+		    }
+		    refreshDoubanSeasonMeta();
+		  });
+		  await task;
+		};
 
 const resolvedSpiderApi = computed(() => {
   const direct = (props.spiderApi || '').trim();
@@ -3541,11 +3769,42 @@ const tmdbPrimarySmartEpisodes = computed(() => {
 const doubanSmartListAvailable = computed(() => {
   const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
   const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
-  return !!(tmdbMode.value && !tmdbMovieMode.value && doubanSeasonOverrideActive.value && seasons.length >= 2);
+  if (!(tmdbMode.value && !tmdbMovieMode.value)) return false;
+  return seasons.some((s) => {
+    const sn = Number.isFinite(Number(s && s.season)) ? Math.floor(Number(s.season)) : 0;
+    const cnt = Number.isFinite(Number(s && s.episodeCount)) ? Math.floor(Number(s.episodeCount)) : 0;
+    return sn > 0 && cnt > 0;
+  });
 });
 
 const doubanSmartEpisodes = computed(() => {
   if (!doubanSmartListAvailable.value) return [];
+  const tm = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
+  const tmdbLatestGlobal = (() => {
+    try {
+      if (!tm || String(tm.mediaType || '').trim().toLowerCase() !== 'tv') return 0;
+      const status = typeof tm.status === 'string' ? tm.status.trim() : '';
+      if (status === 'Ended') return 0;
+      const latestSeason = Number.isFinite(Number(tm.latestSeason)) ? Math.floor(Number(tm.latestSeason)) : 0;
+      const latestEpisode = Number.isFinite(Number(tm.latestEpisode)) ? Math.floor(Number(tm.latestEpisode)) : 0;
+      if (latestSeason <= 0 || latestEpisode <= 0) return 0;
+      const seasons = Array.isArray(tm.seasons) ? tm.seasons : [];
+      let sum = 0;
+      for (let i = 0; i < seasons.length; i += 1) {
+        const it = seasons[i];
+        if (!it || typeof it !== 'object') continue;
+        const s = Number.isFinite(Number(it.season)) ? Math.floor(Number(it.season)) : 0;
+        const cntRaw = it.episodes != null ? it.episodes : it.episodeCount;
+        const cnt = Number.isFinite(Number(cntRaw)) ? Math.floor(Number(cntRaw)) : 0;
+        if (s <= 0 || cnt <= 0) continue;
+        if (s < latestSeason) sum += cnt;
+        else if (s === latestSeason) return sum + latestEpisode;
+      }
+      return 0;
+    } catch (_e) {
+      return 0;
+    }
+  })();
   const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
   const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
   const sorted = seasons
@@ -3555,13 +3814,14 @@ const doubanSmartEpisodes = computed(() => {
     }))
     .filter((s) => s.season > 0 && s.episodeCount > 0)
     .sort((a, b) => a.season - b.season);
-  if (sorted.length < 2) return [];
+  if (sorted.length < 1) return [];
   const out = [];
   let globalIdx = 0;
   for (let i = 0; i < sorted.length; i += 1) {
     const it = sorted[i];
     for (let ep = 1; ep <= it.episodeCount; ep += 1) {
       globalIdx += 1;
+      if (tmdbLatestGlobal > 0 && globalIdx > tmdbLatestGlobal) return out;
       out.push({
         name: `第${ep}集`,
         url: `tmdb_ep:${globalIdx}`,
@@ -3590,13 +3850,19 @@ const legacySmartListAvailable = computed(() => {
 const smartPanEntries = computed(() => {
   if (tmdbMode.value) {
     const out = [];
-	  // TMDB mode only exposes TMDB/Douban lists. Keep TMDB entry visible even while episodes are still resolving,
-	  // so the UI won't auto-fallthrough to the first site pan option.
-	  out.push({ key: SMART_PAN_KEY, label: TMDB_SMART_PAN_LABEL, episodes: tmdbPrimarySmartEpisodes.value || [] });
-    if (doubanSmartListAvailable.value) {
-      out.push({ key: DOUBAN_SMART_PAN_KEY, label: DOUBAN_SMART_PAN_LABEL, episodes: doubanSmartEpisodes.value || [] });
-    }
-    return out;
+		  // TMDB mode only exposes TMDB/Douban lists. Keep TMDB entry visible even while episodes are still resolving,
+		  // so the UI won't auto-fallthrough to the first site pan option.
+		  out.push({ key: SMART_PAN_KEY, label: TMDB_SMART_PAN_LABEL, episodes: tmdbPrimarySmartEpisodes.value || [] });
+	    // Always keep the "豆瓣" entry visible for TV so users can switch at any time.
+	    // The episode list may be empty until douban meta is fetched / becomes applicable.
+	    if (!tmdbMovieMode.value) {
+	      out.push({
+	        key: DOUBAN_SMART_PAN_KEY,
+	        label: DOUBAN_SMART_PAN_LABEL,
+	        episodes: doubanSmartListAvailable.value ? (doubanSmartEpisodes.value || []) : [],
+	      });
+	    }
+	    return out;
   }
   // Site mode: always keep the "智能列表" entry visible so the page doesn't auto-select the first parsed pan source.
   // Episodes may be empty until detail resolves / smart list is computed.
@@ -3613,7 +3879,14 @@ const selectedPanKey = computed(() => {
   return panDropdownOptions.value[0]?.key || '';
 });
 
-const isSmartPanActive = computed(() => smartListAvailable.value && isSmartPanKey(selectedPanKey.value));
+	const isSmartPanActive = computed(() => smartListAvailable.value && isSmartPanKey(selectedPanKey.value));
+
+	const doubanEpisodesLoading = computed(() => {
+	  if (!tmdbMode.value) return false;
+	  if (tmdbMovieMode.value) return false;
+	  if (selectedPanKey.value !== DOUBAN_SMART_PAN_KEY) return false;
+	  return !!(doubanSeasonFetchState && doubanSeasonFetchState.inFlight);
+	});
 
 const maxPanEpisodeCount = computed(() => {
   const list = sitePanOptions.value;
@@ -3944,16 +4217,74 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
 	    return out.trim();
 	  };
 
-	  const pickSuffix = () => {
-	    if (raw.includes('***')) return raw.split('***').pop() || '';
-	    if (raw.includes('|||')) return raw.split('|||').pop() || '';
-	    const pipeParts = raw.split('|');
-	    if (pipeParts.length >= 4) return pipeParts[pipeParts.length - 1] || '';
-	    return '';
+	  const looksInformative = (s) => {
+	    const t = typeof s === 'string' ? s.trim() : '';
+	    if (!t) return false;
+	    const lower = t.toLowerCase();
+	    if (/\bS\s*0*\d{1,2}\s*E\s*0*\d{1,5}\b/i.test(t)) return true;
+	    if (/\bE\s*0*\d{1,5}\b/i.test(t)) return true;
+	    if (/(2160p|2160|4k|1080p|1080|720p|720)/i.test(lower)) return true;
+	    if (/(web-?dl|bluray|bdrip|hdr|dv|dolby|ddp|x265|h\.?265|hevc)/i.test(lower)) return true;
+	    return false;
 	  };
 
-	  const suffix = pickSuffix();
-	  if (!suffix) {
+	  const collectFromTriplePipes = () => {
+	    if (!raw.includes('|||')) return [];
+	    const parts = raw.split('|||');
+	    if (parts.length < 2) return [];
+	    const suffixJoined = stripMeta(parts.slice(1).join('|||'));
+	    const suffixSegs = parts
+	      .slice(1)
+	      .map((s) => stripMeta(String(s || '')))
+	      .filter(Boolean);
+	    const merged = [];
+	    if (suffixJoined) merged.push(suffixJoined);
+	    suffixSegs.forEach((s) => {
+	      if (!merged.includes(s)) merged.push(s);
+	    });
+	    const informative = merged.filter((s) => looksInformative(s));
+	    if (informative.length) return informative.slice(0, 6);
+	    return merged.length ? [merged[merged.length - 1]] : [];
+	  };
+
+	  const collectFromStarStarStar = () => {
+	    if (!raw.includes('***')) return [];
+	    const parts = raw.split('***');
+	    if (parts.length < 2) return [];
+	    // For providers like quark/uc/189/139, the raw filename is appended after the first "***".
+	    // Some backends may append multiple suffix fragments; treat the full suffix as the raw filename source.
+	    const suffixJoined = stripMeta(parts.slice(1).join('***'));
+	    const suffixSegs = parts
+	      .slice(1)
+	      .map((s) => stripMeta(String(s || '')))
+	      .filter(Boolean);
+	    const merged = [];
+	    if (suffixJoined) merged.push(suffixJoined);
+	    suffixSegs.forEach((s) => {
+	      if (!merged.includes(s)) merged.push(s);
+	    });
+	    const informative = merged.filter((s) => looksInformative(s));
+	    if (informative.length) return informative.slice(0, 6);
+	    return merged.length ? [merged[merged.length - 1]] : [];
+	  };
+
+	  const collectFromPipes = () => {
+	    const pipeParts = raw.split('|').map((s) => stripMeta(String(s || ''))).filter(Boolean);
+	    if (pipeParts.length >= 4) {
+	      const tail = pipeParts[pipeParts.length - 1] || '';
+	      return tail ? [tail] : [];
+	    }
+	    return [];
+	  };
+
+	  const picked =
+	    collectFromStarStarStar().length
+	      ? collectFromStarStarStar()
+	      : collectFromTriplePipes().length
+	        ? collectFromTriplePipes()
+	        : collectFromPipes();
+
+	  if (!picked.length) {
 	    // Fallback for ids that embed filename as the last "*" segment (e.g. Tianyi: "<fileId>*<shareId>*<name>").
 	    if (raw.includes('*')) {
 	      const starParts = raw
@@ -3965,12 +4296,18 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
 	    return [];
 	  }
 
-	  const parts = String(suffix || '')
-	    .split('#')
-	    .map((s) => stripMeta(String(s || '')))
-	    .filter(Boolean);
+	  const out = [];
+	  picked.forEach((seg) => {
+	    String(seg || '')
+	      .split('#')
+	      .map((s) => stripMeta(String(s || '')))
+	      .filter(Boolean)
+	      .forEach((s) => {
+	        if (!out.includes(s)) out.push(s);
+	      });
+	  });
 
-  return parts;
+  return out;
 };
 
 const panMockProviderFromFlag = (flag) => {
@@ -4161,10 +4498,11 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
       } catch (_e) {}
     };
 
-	    const callList = async (req) => {
-	      const provider = req && req.provider ? String(req.provider).trim() : '';
-	      const label = req && req.label ? String(req.label).trim() : '';
-	      if (!provider || !label) return;
+		    const callList = async (req) => {
+		      const provider = req && req.provider ? String(req.provider).trim() : '';
+		      const label = req && req.label ? String(req.label).trim() : '';
+		      if (!provider || !label) return;
+		      const startedAt = Date.now();
 
       const call = async (path, body) => {
         const resp = await fetch(path, {
@@ -4192,22 +4530,43 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
 	        else if (provider === 'baidu') data = await call('/api/pan/baidu/list', { flag: flag || label, pwd: passcode });
 	        else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label, passcode: passcode || '' });
 	        else if (provider === '189') data = await call('/api/pan/189/list', { flag: flag || label, accessCode });
-      } catch (e) {
-        const msg = e && e.message ? String(e.message) : '请求失败';
-        errorByKey.set(`${provider}::${label}`, msg);
-        emitPartial();
-        return;
-      }
+	      } catch (e) {
+	        const msg = e && e.message ? String(e.message) : '请求失败';
+	        smartDebugLog('pan_list_err', { provider, label, flag, ms: Math.max(0, Date.now() - startedAt), err: msg });
+	        errorByKey.set(`${provider}::${label}`, msg);
+	        emitPartial();
+	        return;
+	      }
 	      if (!data) return;
 
-		      const vod = typeof data.vod_play_url === 'string' ? String(data.vod_play_url || '').trim() : '';
-		      if (!vod) {
-		        errorByKey.set(`${provider}::${label}`, PAN_MOCK_EMPTY_VOD_MARK);
-		        emitPartial();
-		        return;
-		      }
+			      const vod = typeof data.vod_play_url === 'string' ? String(data.vod_play_url || '').trim() : '';
+			      if (!vod) {
+	            smartDebugLog('pan_list_empty', { provider, label, flag, ms: Math.max(0, Date.now() - startedAt) });
+			        errorByKey.set(`${provider}::${label}`, PAN_MOCK_EMPTY_VOD_MARK);
+			        emitPartial();
+			        return;
+			      }
 	      resolvedVodByKey.set(`${provider}::${label}`, vod);
 	      resolvedKeys.add(`${provider}::${label}`);
+        try {
+          const segs = vod
+            .split('#')
+            .map((s) => String(s || '').trim())
+            .filter(Boolean);
+          const sample = [];
+          for (let i = 0; i < Math.min(3, segs.length); i += 1) {
+            const seg = segs[i];
+            const dollarIdx = seg.indexOf('$');
+            const name = dollarIdx > 0 ? seg.slice(0, dollarIdx).trim() : seg;
+            const id = dollarIdx >= 0 ? seg.slice(dollarIdx + 1).trim() : '';
+            const rawNames = id ? extractRawNamesFromEpisodeUrl(id) : [];
+            sample.push({
+              name: name || '',
+              rawNames: rawNames.slice(0, 3),
+            });
+          }
+	          smartDebugLog('pan_list_ok', { provider, label, flag, ms: Math.max(0, Date.now() - startedAt), episodes: segs.length, sample });
+	        } catch (_e) {}
 
       if (provider === '189' && accessCode) {
         try {
@@ -4546,7 +4905,7 @@ const playDebugText = computed(() => {
     .join(',');
   const smartEntries = Array.isArray(smartPanEntries.value) ? smartPanEntries.value : [];
   const tmdbPanOpts = Array.isArray(tmdbSitePanOptions.value) ? tmdbSitePanOptions.value : [];
-	  const lines = [
+  const lines = [
 	    `debug=1`,
 	    `tmdbId=${Number(p.tmdbId || 0)}`,
 	    `tmdbType=${String(p.tmdbType || '')}`,
@@ -4592,6 +4951,18 @@ const playDebugText = computed(() => {
     `sourcesQueue=${sourcesSearchRuntime && Array.isArray(sourcesSearchRuntime.queue) ? sourcesSearchRuntime.queue.length : 0}`,
     `smartPick=${pickDbg ? JSON.stringify(pickDbg) : ''}`,
   ];
+  try {
+    const events = Array.isArray(smartDebugEvents.value) ? smartDebugEvents.value : [];
+    if (events.length) {
+      lines.push('');
+      lines.push('smartEvents=');
+      events.slice(-40).forEach((e) => {
+        try {
+          lines.push(JSON.stringify(e));
+        } catch (_e) {}
+      });
+    }
+  } catch (_e) {}
   return lines.join('\n');
 });
 
@@ -4989,8 +5360,38 @@ const parseChineseNumeralToInt = (text) => {
 };
 
 	const extractSeasonEpisodeFromText = (text, rules, cleanRules) => {
-	  const s = cleanMagicEpisodeText(text, cleanRules);
-	  if (!s || !Array.isArray(rules) || !rules.length) return { season: 0, episode: 0 };
+	  const raw0 = typeof text === 'string' ? text.trim() : String(text || '').trim();
+	  const s = cleanMagicEpisodeText(raw0, cleanRules);
+	  if (!raw0 && !s) return { season: 0, episode: 0 };
+
+	  // Backend may already normalize episode markers into filenames (e.g. "S01E001" / "E001").
+	  // Accept these directly without relying on `magicEpisodeRules`.
+	  // IMPORTANT: try the raw text first (clean rules may remove markers).
+	  const parseNormalized = (input) => {
+	    const t = typeof input === 'string' ? input : '';
+	    if (!t) return null;
+	    const mm = t.match(/S\s*0*(\d{1,2})\s*E\s*0*(\d{1,5})/i);
+	    if (mm && mm[1] && mm[2]) {
+	      const seasonRaw = Number.parseInt(String(mm[1]), 10);
+	      const episodeRaw = Number.parseInt(String(mm[2]), 10);
+	      const season = Number.isFinite(seasonRaw) && seasonRaw >= 0 && seasonRaw <= 99 ? seasonRaw : 0;
+	      const episode = Number.isFinite(episodeRaw) && episodeRaw >= 1 && episodeRaw <= 99999 ? episodeRaw : 0;
+	      if (episode) return { season, episode };
+	    }
+	    const me = t.match(/\bE\s*0*(\d{1,5})\b/i);
+	    if (me && me[1]) {
+	      const episodeRaw = Number.parseInt(String(me[1]), 10);
+	      const episode = Number.isFinite(episodeRaw) && episodeRaw >= 1 && episodeRaw <= 99999 ? episodeRaw : 0;
+	      if (episode) return { season: 0, episode };
+	    }
+	    return null;
+	  };
+	  try {
+	    const direct = parseNormalized(raw0) || parseNormalized(s);
+	    if (direct) return direct;
+	  } catch (_e) {}
+
+	  if (!Array.isArray(rules) || !rules.length) return { season: 0, episode: 0 };
 	  for (let i = 0; i < rules.length; i += 1) {
 	    const rule = rules[i];
 	    const re = rule && rule.re ? rule.re : null;
@@ -5467,20 +5868,36 @@ const doubanSeasonOverrideActive = computed(() => {
   return cnt >= 2 && seasons.length >= 2;
 });
 
-const tmdbSeasons = computed(() => {
-  const m = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
-  const list = m && Array.isArray(m.seasons) ? m.seasons : [];
-  const out = [];
-  list.forEach((it) => {
-    if (!it || typeof it !== 'object') return;
-    const s = Number.isFinite(Number(it.season)) ? Math.floor(Number(it.season)) : 0;
-    const n = Number.isFinite(Number(it.episodeCount)) ? Math.floor(Number(it.episodeCount)) : 0;
-    if (s < 0 || n < 0) return;
-    out.push({ season: s, episodeCount: n, airDate: typeof it.airDate === 'string' ? it.airDate.trim() : '' });
-  });
-  out.sort((a, b) => a.season - b.season);
-  return out;
-});
+	const tmdbSeasons = computed(() => {
+	  const m = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
+	  const list = m && Array.isArray(m.seasons) ? m.seasons : [];
+	  const out = [];
+	  const toInt = (v) => {
+	    const n = Number.isFinite(Number(v)) ? Math.floor(Number(v)) : 0;
+	    return Number.isFinite(n) ? n : 0;
+	  };
+	  const pick = (obj, keys) => {
+	    if (!obj || typeof obj !== 'object') return undefined;
+	    for (let i = 0; i < keys.length; i += 1) {
+	      const k = keys[i];
+	      if (k in obj) return obj[k];
+	    }
+	    return undefined;
+	  };
+	  list.forEach((it) => {
+	    if (!it || typeof it !== 'object') return;
+	    // Backend normalized TMDB payload uses:
+	    //   { season, episodes, airDate, poster }
+	    // but be tolerant of other shapes (e.g. raw TMDB fields).
+	    const s = toInt(pick(it, ['season', 'seasonNumber', 'season_number', 'SeasonNumber']));
+	    const n = toInt(pick(it, ['episodeCount', 'episodes', 'episode_count', 'EpisodeCount']));
+	    if (s < 0 || n < 0) return;
+	    const airDateRaw = pick(it, ['airDate', 'air_date', 'AirDate']);
+	    out.push({ season: s, episodeCount: n, airDate: typeof airDateRaw === 'string' ? airDateRaw.trim() : '' });
+	  });
+	  out.sort((a, b) => a.season - b.season);
+	  return out;
+	});
 
 const tmdbGlobalEpisodeNoOf = (seasonNo, episodeNo) => {
   const s = Number.isFinite(Number(seasonNo)) ? Math.floor(Number(seasonNo)) : 0;
@@ -6109,6 +6526,57 @@ const selectSeason = (season) => {
   selectedSeason.value = n;
   selectedEpisodeGroup.value = '';
 };
+
+const autoSelectSeasonForPlayingEpisode = () => {
+  const panKey = String(selectedPanKey.value || '');
+  const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+  if (!g) return;
+  if (!isSmartPanKey(panKey)) return;
+  if (!seasonTabs.value.length) return;
+  let wantSeason = 0;
+  if (panKey === DOUBAN_SMART_PAN_KEY) {
+    const mapped = doubanSeasonEpisodeOfGlobal(g, doubanSeasonMeta.value);
+    wantSeason = mapped && Number.isFinite(Number(mapped.season)) ? Math.floor(Number(mapped.season)) : 0;
+  } else if (panKey === SMART_PAN_KEY) {
+    const mapped = tmdbSeasonEpisodeOfGlobal(g);
+    wantSeason = mapped && Number.isFinite(Number(mapped.season)) ? Math.floor(Number(mapped.season)) : 0;
+  }
+  if (wantSeason <= 0) return;
+  const exists = seasonTabs.value.some((t) => t && Number(t.season) === wantSeason);
+  if (!exists) return;
+  if (Number(selectedSeason.value) === wantSeason) return;
+  selectSeason(wantSeason);
+};
+
+const lastAutoSeasonCtx = ref({ panKey: '', episodeNo: 0, stamp: '' });
+watch(
+  () => {
+    const panKey = String(selectedPanKey.value || '');
+    const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+    const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+    const stamp =
+      panKey === DOUBAN_SMART_PAN_KEY
+        ? `d:${dm && dm.updatedAt ? String(dm.updatedAt) : String((dm && Array.isArray(dm.seasons) ? dm.seasons.length : 0) || 0)}`
+        : `t:${seasonTabs.value.length}`;
+    return `${panKey}::${g}::${stamp}`;
+  },
+  () => {
+    const panKey = String(selectedPanKey.value || '');
+    const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+    if (!g) return;
+    if (!(panKey === SMART_PAN_KEY || panKey === DOUBAN_SMART_PAN_KEY)) return;
+    const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+    const stamp =
+      panKey === DOUBAN_SMART_PAN_KEY
+        ? `d:${dm && dm.updatedAt ? String(dm.updatedAt) : String((dm && Array.isArray(dm.seasons) ? dm.seasons.length : 0) || 0)}`
+        : `t:${seasonTabs.value.length}`;
+    const last = lastAutoSeasonCtx.value || {};
+    if (last.panKey === panKey && Number(last.episodeNo) === g && String(last.stamp || '') === stamp) return;
+    lastAutoSeasonCtx.value = { panKey, episodeNo: g, stamp };
+    autoSelectSeasonForPlayingEpisode();
+  },
+  { immediate: true }
+);
 
 const displayedEpisodes = computed(() => {
   const list = allDisplayedEpisodes.value;
@@ -6961,10 +7429,10 @@ const fetchTMDBCandidatesFromServer = async ({ tmdbId, type = 'tv', season = 0, 
   }
 };
 
-const resolveSmartEpisodeNo = (ep) => {
-  if (!ep) return 0;
-  const direct = ep && Number.isFinite(Number(ep.__tmdbEpisode)) ? Math.floor(Number(ep.__tmdbEpisode)) : 0;
-  if (direct > 0) return direct;
+	const resolveSmartEpisodeNo = (ep) => {
+	  if (!ep) return 0;
+	  const direct = ep && Number.isFinite(Number(ep.__tmdbEpisode)) ? Math.floor(Number(ep.__tmdbEpisode)) : 0;
+	  if (direct > 0) return direct;
   const url = ep && ep.url != null ? String(ep.url) : '';
   const m = String(url || '').match(/tmdb_ep:(\d{1,5})/i);
   if (m && m[1]) {
@@ -6977,8 +7445,21 @@ const resolveSmartEpisodeNo = (ep) => {
     const n = Number.parseInt(String(mm[1]), 10);
     if (Number.isFinite(n) && n > 0) return n;
   }
-  return 0;
-};
+	  return 0;
+	};
+
+	const episodeGlobalNoOf = (ep) => {
+	  if (!ep) return 0;
+	  const direct = ep && Number.isFinite(Number(ep.__tmdbEpisode)) ? Math.floor(Number(ep.__tmdbEpisode)) : 0;
+	  if (direct > 0) return direct;
+	  const url = ep && ep.url != null ? String(ep.url) : '';
+	  const m = String(url || '').match(/tmdb_ep:(\d{1,5})/i);
+	  if (m && m[1]) {
+	    const n = Number.parseInt(String(m[1]), 10);
+	    if (Number.isFinite(n) && n > 0) return n;
+	  }
+	  return 0;
+	};
 
 	const tmdbSmartPickCache = new Map();
 	const tmdbSmartPickInFlight = new Map();
@@ -7107,6 +7588,22 @@ const ensureSmartMetaReadyForMapping = (() => {
   };
 })();
 
+const isSmartMetaReadyNow = () => {
+  try {
+    if (!tmdbMode.value) return true;
+    if (tmdbMovieMode.value) return true;
+    const typ = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+    if (typ !== 'tv') return true;
+    if (tmdbFetchState && tmdbFetchState.inFlight) return false;
+    if (doubanSeasonFetchState && doubanSeasonFetchState.inFlight) return false;
+    const tm = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
+    if (!tm || !tm.title) return false;
+    return true;
+  } catch (_e) {
+    return false;
+  }
+};
+
 const smartTMDBSeasonsSignature = () => {
   const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
   return seasons
@@ -7137,6 +7634,27 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
   entry.pans = Array.isArray(pans) ? pans : [];
   entry.episodeMap = new Map();
   entry.episodeMapLoose = new Map();
+
+  const finalizeUpdate = () => {
+    try {
+      entry.__updateSeq = (Number.isFinite(Number(entry.__updateSeq)) ? Number(entry.__updateSeq) : 0) + 1;
+      const waiters = entry.__waiters && entry.__waiters.size ? Array.from(entry.__waiters) : [];
+      waiters.forEach((fn) => {
+        try {
+          if (typeof fn === 'function') fn();
+        } catch (_e) {}
+      });
+    } catch (_e) {}
+  };
+
+  // To avoid mis-matches, defer all episode matching/mapping until BOTH TMDB and Douban meta are ready.
+  // Do NOT block detail/list API requests; they can keep filling `pans` and `lastPlay*`.
+  if (tmdbMode.value && contentKind.value === 'series' && !isSmartMetaReadyNow()) {
+    entry.__indexedTmdbSig = '';
+    entry.__indexedDoubanSig = 0;
+    finalizeUpdate();
+    return;
+  }
 
   const panTokenOrder = compiledSmartPanMatchTokens.value;
   const labelTokenIdxOf = (label) => {
@@ -7192,6 +7710,27 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
     const panLabel = pan && pan.label != null ? String(pan.label) : '';
     const panTokenIdx = labelTokenIdxOf(panLabel);
     const episodes = pan && Array.isArray(pan.episodes) ? pan.episodes : [];
+    const seasonlessSeemsGlobal = (() => {
+      if (tmdbHasMultiSeason) return false;
+      if (!doubanHasMultiSeason) return false;
+      if (!(doubanSeason1Count > 0)) return false;
+      try {
+        for (let i = 0; i < episodes.length; i += 1) {
+          const ep = episodes[i];
+          if (!ep || !ep.url) continue;
+          const texts = extractEpisodeCandidateTexts(ep);
+          const match =
+            Array.isArray(rules) && rules.length
+              ? extractSeasonEpisodeFromCandidates(texts, rules, cleanRules)
+              : { season: 0, episode: 0 };
+          const normalizedMatch = normalizeMaybeGlobalSeasonEpisode(match);
+          const seasonFromText = normalizedMatch && Number.isFinite(Number(normalizedMatch.season)) ? Math.floor(Number(normalizedMatch.season)) : 0;
+          const epNo = normalizedMatch && Number.isFinite(Number(normalizedMatch.episode)) ? Math.floor(Number(normalizedMatch.episode)) : 0;
+          if (seasonFromText <= 0 && epNo > doubanSeason1Count) return true; // e.g. E13 exists
+        }
+      } catch (_e) {}
+      return false;
+    })();
     episodes.forEach((ep) => {
       if (!ep || !ep.url) return;
       const texts = extractEpisodeCandidateTexts(ep);
@@ -7222,6 +7761,11 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
         if (hinted > 0) {
           seasonNo = hinted;
           seasonFromPath = true;
+        } else if (seasonlessSeemsGlobal) {
+          // TMDB single-season but Douban multi-season:
+          // if we can observe seasonless global numbering beyond Douban S1 (e.g. E13),
+          // treat seasonless E01/E02/... as S01 episodes too.
+          seasonNo = 1;
         } else if (allowSeasonlessAsS01) {
           seasonNo = 1;
         } else if (!tmdbHasMultiSeason && doubanHasMultiSeason && doubanSeason1Count > 0 && epNo > doubanSeason1Count) {
@@ -7289,15 +7833,7 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
 
   entry.__indexedTmdbSig = smartTMDBSeasonsSignature();
   entry.__indexedDoubanSig = smartDoubanMetaSignature();
-  try {
-    entry.__updateSeq = (Number.isFinite(Number(entry.__updateSeq)) ? Number(entry.__updateSeq) : 0) + 1;
-    const waiters = entry.__waiters && entry.__waiters.size ? Array.from(entry.__waiters) : [];
-    waiters.forEach((fn) => {
-      try {
-        if (typeof fn === 'function') fn();
-      } catch (_e) {}
-    });
-  } catch (_e) {}
+  finalizeUpdate();
 };
 
 const smartWaitTMDBSmartEntryUpdate = (entry, { sinceSeq = 0, timeoutMs = 12000 } = {}) => {
@@ -7402,9 +7938,8 @@ const smartComputeCandidateFeatures = (cand) => {
   const fps60 = smartGuessFps60(hayLower) || idx.includes(0) || idx.includes(1);
   const tierRank = (() => {
     const qr = smartQualityRankOf(quality);
-    if (qr === 3 && hasHdr && fps60) return 65;
-    if (qr === 3 && hasHdr) return 60;
-    if (qr === 3 && fps60) return 55;
+    // Speed-first strategy: only treat 4K/2160p as the primary goal.
+    // HDR/DDP/60FPS are treated as bonus signals (UI/display/manual switch), not a stricter ranking requirement.
     if (qr === 3) return 50;
     if (qr === 2) return 40;
     if (qr === 1) return 30;
@@ -7660,6 +8195,27 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
       applyPlaySourcesToEntry(d.playFrom, d.playUrl, { fromPanMock: false });
       tmdbSmartDetailCache.set(sourceKey, entry);
       tmdbSmartDetailCacheVersion.value += 1;
+      try {
+        const episodeCount = (() => {
+          try {
+            return (entry.pans || []).reduce((acc, p) => acc + (Array.isArray(p && p.episodes) ? p.episodes.length : 0), 0);
+          } catch (_e) {
+            return 0;
+          }
+        })();
+        smartDebugLog('detail_ok', {
+          siteKey,
+          spiderApi,
+          videoId,
+          panMockEnabled: entry.panMockEnabled ? 1 : 0,
+          playFromLen: (d.playFrom || '').length,
+          playUrlLen: (d.playUrl || '').length,
+          pans: Array.isArray(entry.pans) ? entry.pans.length : 0,
+          episodes: episodeCount,
+          mapKeys: entry.episodeMap && entry.episodeMap.size != null ? entry.episodeMap.size : 0,
+          looseKeys: entry.episodeMapLoose && entry.episodeMapLoose.size != null ? entry.episodeMapLoose.size : 0,
+        });
+      } catch (_e) {}
 
       // Do NOT block on pan_mock list resolving: update cache incrementally via `onUpdate`.
       // Matching logic can use detail results immediately and retry when list responses arrive.
@@ -7681,14 +8237,60 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
                 entry.panMock189AccessByShareId = { ...(entry.panMock189AccessByShareId || {}), ...partial.panMock189AccessByShareId };
               }
               applyPlaySourcesToEntry(partial.playFrom, partial.playUrl, { fromPanMock: true });
+	              try {
+	                const episodeCount = (() => {
+	                  try {
+	                    return (entry.pans || []).reduce((acc, p) => acc + (Array.isArray(p && p.episodes) ? p.episodes.length : 0), 0);
+	                  } catch (_e) {
+	                    return 0;
+	                  }
+	                })();
+	                const want = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+	                const pickHitForWant = () => {
+	                  try {
+	                    if (!want || !entry.episodeMap || !entry.episodeMap.get) return { hit: 0, hit4k: 0, rawName: '' };
+	                    const list = entry.episodeMap.get(want) || [];
+	                    const cands = Array.isArray(list) ? list.filter(Boolean) : [];
+	                    if (!cands.length) return { hit: 0, hit4k: 0, rawName: '' };
+	                    let best = null;
+	                    for (let i = 0; i < cands.length; i += 1) {
+	                      const c = cands[i];
+	                      if (!c) continue;
+	                      if (!best || smartCompareCandidates(best, c) > 0) best = c;
+	                    }
+	                    if (!best) return { hit: cands.length, hit4k: 0, rawName: '' };
+	                    const feat = smartComputeCandidateFeatures(best);
+	                    const url = best && best.ep && best.ep.url != null ? String(best.ep.url) : '';
+	                    const rawNames = url ? extractRawNamesFromEpisodeUrl(url) : [];
+	                    const rawName = Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '').trim() : '';
+	                    const hit4k = feat && Number(feat.qualityRank) === 3 ? 1 : 0;
+	                    return { hit: cands.length, hit4k, rawName };
+	                  } catch (_e) {
+	                    return { hit: 0, hit4k: 0, rawName: '' };
+	                  }
+	                };
+	                const wantHit = pickHitForWant();
+	                smartDebugLog('pan_mock_update', {
+	                  siteKey,
+	                  videoId,
+	                  want,
+	                  hit: wantHit.hit,
+	                  hit4k: wantHit.hit4k,
+	                  rawName: wantHit.rawName,
+	                  pans: Array.isArray(entry.pans) ? entry.pans.length : 0,
+	                  episodes: episodeCount,
+	                  mapKeys: entry.episodeMap && entry.episodeMap.size != null ? entry.episodeMap.size : 0,
+	                  looseKeys: entry.episodeMapLoose && entry.episodeMapLoose.size != null ? entry.episodeMapLoose.size : 0,
+	                });
+	              } catch (_e) {}
               tmdbSmartDetailCache.set(sourceKey, entry);
               tmdbSmartDetailCacheVersion.value += 1;
             } catch (_e) {}
           },
         })
           .then((resolved) => {
-            try {
-              if (resolved && (resolved.playFrom || resolved.playUrl)) {
+	            try {
+	              if (resolved && (resolved.playFrom || resolved.playUrl)) {
                 if (resolved.panMockResolvedByKey && typeof resolved.panMockResolvedByKey === 'object') {
                   entry.panMockResolvedByKey = { ...(entry.panMockResolvedByKey || {}), ...resolved.panMockResolvedByKey };
                 }
@@ -7700,10 +8302,36 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
                 }
                 applyPlaySourcesToEntry(resolved.playFrom, resolved.playUrl, { fromPanMock: true });
               }
-              entry.panMockResolved = true;
-              tmdbSmartDetailCache.set(sourceKey, entry);
-              tmdbSmartDetailCacheVersion.value += 1;
-            } catch (_e) {}
+	              entry.panMockResolved = true;
+	              try {
+	                const want = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+	                let hit = 0;
+	                let hit4k = 0;
+	                let rawName = '';
+	                try {
+	                  if (want && entry.episodeMap && entry.episodeMap.get) {
+	                    const list = entry.episodeMap.get(want) || [];
+	                    const cands = Array.isArray(list) ? list.filter(Boolean) : [];
+	                    hit = cands.length;
+	                    for (let i = 0; i < cands.length; i += 1) {
+	                      const c = cands[i];
+	                      if (!c) continue;
+	                      const feat = smartComputeCandidateFeatures(c);
+	                      if (feat && Number(feat.qualityRank) === 3) {
+	                        hit4k = 1;
+	                        const url = c && c.ep && c.ep.url != null ? String(c.ep.url) : '';
+	                        const rawNames = url ? extractRawNamesFromEpisodeUrl(url) : [];
+	                        rawName = Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '').trim() : '';
+	                        break;
+	                      }
+	                    }
+	                  }
+	                } catch (_e2) {}
+	                smartDebugLog('pan_mock_done', { siteKey, videoId, want, hit, hit4k, rawName });
+	              } catch (_e) {}
+	              tmdbSmartDetailCache.set(sourceKey, entry);
+	              tmdbSmartDetailCacheVersion.value += 1;
+	            } catch (_e) {}
             return resolved;
           })
           .catch(() => null);
@@ -8478,18 +9106,53 @@ const onPlayerExtraAction = async (keyRaw) => {
   });
 };
 
-const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) => {
+const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeKeys } = {}) => {
   const want = Number.isFinite(Number(episodeNo)) ? Math.floor(Number(episodeNo)) : 0;
   if (want <= 0) return null;
 
   const preferSeasonNo = Number.isFinite(Number(seasonNo)) ? Math.floor(Number(seasonNo)) : 0;
 
-  const cachedPick = tmdbSmartPickCache.get(want) || null;
-  if (cachedPick && cachedPick.ep && cachedPick.ep.url) return cachedPick;
-  const existingFlight = tmdbSmartPickInFlight.get(want) || null;
+  const excludeList = Array.isArray(excludeKeys) ? excludeKeys.map((k) => (k != null ? String(k) : '')).filter(Boolean) : [];
+  excludeList.sort();
+  const excludeSig = excludeList.length ? excludeList.join('|') : '';
+  const excludeSet = excludeList.length ? new Set(excludeList) : new Set();
+  const shouldCachePick = !excludeSig;
+  const flightKey = excludeSig ? `${want}::ex:${excludeSig}` : want;
+
+  const isExcluded = (cand) => {
+    if (!cand || !excludeSet.size) return false;
+    const ck = cand && typeof cand.candidateKey === 'string' ? String(cand.candidateKey).trim() : '';
+    if (ck && excludeSet.has(ck)) return true;
+    const k = smartCandidateKey(cand);
+    return !!(k && excludeSet.has(k));
+  };
+  const is4kCandidate = (cand) => {
+    try {
+      if (!cand) return false;
+      const feat = smartComputeCandidateFeatures(cand);
+      return !!(feat && Number(feat.qualityRank) === 3);
+    } catch (_e) {
+      return false;
+    }
+  };
+  const maybeCache4kPick = (cand) => {
+    try {
+      if (!shouldCachePick) return;
+      if (!cand || !cand.ep || !cand.ep.url) return;
+      if (!is4kCandidate(cand)) return;
+      tmdbSmartPickCache.set(want, cand);
+      tmdbSmartPickCacheVersion.value += 1;
+    } catch (_e) {}
+  };
+
+  const cachedPick = shouldCachePick ? (tmdbSmartPickCache.get(want) || null) : null;
+  if (cachedPick && cachedPick.ep && cachedPick.ep.url && !isExcluded(cachedPick) && is4kCandidate(cachedPick)) return cachedPick;
+  const existingFlight = tmdbSmartPickInFlight.get(flightKey) || null;
   if (existingFlight) return await existingFlight;
 
 	  const run = (async () => {
+	  const startedAt = Date.now();
+	  const deadlineAt = startedAt + 18_000;
 	  const metaId = Number(props.tmdbId || 0);
 	  const metaType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : 'tv';
 	  const mappingReadyPromise = ensureSmartMetaReadyForMapping({ tmdbId: metaId, type: metaType });
@@ -8761,7 +9424,7 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
   };
 
   const pickBestMatch = (list) => {
-    const items = Array.isArray(list) ? list.filter(Boolean) : [];
+    const items = Array.isArray(list) ? list.filter((x) => x && !isExcluded(x)) : [];
     if (!items.length) return null;
     let best = items[0];
     for (let i = 1; i < items.length; i += 1) {
@@ -8791,7 +9454,9 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	      const cache = await loadOrBuildDetailCache(src);
 	      if (!cache || !cache.episodeMap) return null;
 	      if (cache.ok === false) return null;
+        const sinceSeq = Number.isFinite(Number(cache.__updateSeq)) ? Number(cache.__updateSeq) : 0;
 
+	      // Prevent mis-matches: only match after TMDB + Douban meta are ready.
 	      await mappingReadyPromise;
 	      smartMaybeReindexTMDBSmartEntry(cache);
 	      const tmdbHasMultiSeasonNow = (() => {
@@ -8805,69 +9470,52 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	      const wantSeasonNo = wantedInSeason && Number.isFinite(Number(wantedInSeason.season)) ? Math.floor(Number(wantedInSeason.season)) : 0;
 	      const wantSeasonEp = wantedInSeason && Number.isFinite(Number(wantedInSeason.episode)) ? Math.floor(Number(wantedInSeason.episode)) : 0;
 
-	      let candidatesForNo = (cache.episodeMap.get(want) || []).slice().map((c) => ({ ...c, searchSeasonHint }));
-	      if (requireSeasonedEffective) {
-	        const seasonedOnly = candidatesForNo.filter((c) => c && Number(c.matchSeason) > 0);
-	        candidatesForNo.length = 0;
-	        candidatesForNo.push(...seasonedOnly);
-	      } else if (tmdbHasMultiSeasonNow && wantSeasonEp > 0) {
-	        const loose = (cache.episodeMapLoose && cache.episodeMapLoose.get(wantSeasonEp) ? cache.episodeMapLoose.get(wantSeasonEp) : [])
-	          .slice()
-	          .map((c) => ({ ...c, searchSeasonHint }))
-	          .filter(Boolean);
-	        if (loose.length) {
-	          const looseFiltered =
-	            wantSeasonNo > 0
-	              ? loose.filter((c) => {
-	                  const hinted = c && Number.isFinite(Number(c.searchSeasonHint)) ? Math.floor(Number(c.searchSeasonHint)) : 0;
-	                  if (!hinted) return true;
-	                  return hinted === wantSeasonNo;
-	                })
-	              : loose;
-	          candidatesForNo.push(...(looseFiltered.length ? looseFiltered : loose));
-	        }
-	      }
+        const pickFromCache = () => {
+          let candidatesForNo = (cache.episodeMap.get(want) || []).slice().map((c) => ({ ...c, searchSeasonHint }));
+          if (requireSeasonedEffective) {
+            const seasonedOnly = candidatesForNo.filter((c) => c && Number(c.matchSeason) > 0);
+            candidatesForNo.length = 0;
+            candidatesForNo.push(...seasonedOnly);
+          } else if (tmdbHasMultiSeasonNow && wantSeasonEp > 0) {
+            const loose = (cache.episodeMapLoose && cache.episodeMapLoose.get(wantSeasonEp) ? cache.episodeMapLoose.get(wantSeasonEp) : [])
+              .slice()
+              .map((c) => ({ ...c, searchSeasonHint }))
+              .filter(Boolean);
+            if (loose.length) {
+              const looseFiltered =
+                wantSeasonNo > 0
+                  ? loose.filter((c) => {
+                      const hinted = c && Number.isFinite(Number(c.searchSeasonHint)) ? Math.floor(Number(c.searchSeasonHint)) : 0;
+                      if (!hinted) return true;
+                      return hinted === wantSeasonNo;
+                    })
+                  : loose;
+              candidatesForNo.push(...(looseFiltered.length ? looseFiltered : loose));
+            }
+          }
+          if (!candidatesForNo.length) return null;
+          const best = pickBestMatch(candidatesForNo);
+          return best && best.ep && best.ep.url ? best : null;
+        };
+	      // Do NOT block on pan_mock list resolving here:
+	      // - list requests are handled by backend and can resolve later
+	      // - we should keep fetching next details (per-site sequential) to improve throughput
+	      // Later rounds will retry picking from the updated cache when `onUpdate` arrives.
+        const bestNow = pickFromCache();
+        if (bestNow) return bestNow;
 
-	      if (!candidatesForNo.length && cache.panMockEnabled && !cache.panMockResolved) {
-	        const start = Date.now();
-	        let lastSeq = Number.isFinite(Number(cache.__updateSeq)) ? Number(cache.__updateSeq) : 0;
-	        while (Date.now() - start < 12000) {
-	          const left = 12000 - (Date.now() - start);
-	          if (left <= 0) break;
-	          await smartWaitTMDBSmartEntryUpdate(cache, { sinceSeq: lastSeq, timeoutMs: Math.min(1500, left) });
-	          smartMaybeReindexTMDBSmartEntry(cache);
-	          candidatesForNo = (cache.episodeMap.get(want) || []).slice().map((c) => ({ ...c, searchSeasonHint }));
-	          if (requireSeasonedEffective) {
-	            candidatesForNo = candidatesForNo.filter((c) => c && Number(c.matchSeason) > 0);
-	          } else if (tmdbHasMultiSeasonNow && wantSeasonEp > 0) {
-	            const loose = (cache.episodeMapLoose && cache.episodeMapLoose.get(wantSeasonEp) ? cache.episodeMapLoose.get(wantSeasonEp) : [])
-	              .slice()
-	              .map((c) => ({ ...c, searchSeasonHint }))
-	              .filter(Boolean);
-	            if (loose.length) {
-	              const looseFiltered =
-	                wantSeasonNo > 0
-	                  ? loose.filter((c) => {
-	                      const hinted = c && Number.isFinite(Number(c.searchSeasonHint)) ? Math.floor(Number(c.searchSeasonHint)) : 0;
-	                      if (!hinted) return true;
-	                      return hinted === wantSeasonNo;
-	                    })
-	                  : loose;
-	              candidatesForNo.push(...(looseFiltered.length ? looseFiltered : loose));
-	            }
-	          }
-	          if (candidatesForNo.length) break;
-	          const curSeq = Number.isFinite(Number(cache.__updateSeq)) ? Number(cache.__updateSeq) : lastSeq;
-	          lastSeq = Math.max(lastSeq, curSeq);
-	          if (cache.panMockResolved) break;
-	        }
-	      }
+        // In pan_mock mode, detail often contains placeholders and real episodes arrive via list.
+        // Treat "no candidates yet" as pending until list resolves (or a short timeout expires).
+        if (cache.panMockEnabled === true && cache.panMockResolved !== true) {
+          try {
+            const updated = await smartWaitTMDBSmartEntryUpdate(cache, { sinceSeq, timeoutMs: 1200 });
+            if (updated) smartMaybeReindexTMDBSmartEntry(cache);
+          } catch (_e) {}
+          const bestAfter = pickFromCache();
+          if (bestAfter) return bestAfter;
+        }
 
-	      if (!candidatesForNo.length) return null;
-
-      const best = pickBestMatch(candidatesForNo);
-      if (!best || !best.ep || !best.ep.url) return null;
-      return best;
+        return null;
     } catch (_e) {
       return null;
     }
@@ -8877,14 +9525,26 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	    const candidates = buildCandidates();
 	    if (!candidates.length) return null;
 	    let bestOverall = null;
+	    const siteCount = (() => {
+	      const uniqSites = new Set();
+	      candidates.forEach((c) => {
+	        const k = c && c.siteKey != null ? String(c.siteKey) : '';
+	        if (k) uniqSites.add(k);
+	      });
+	      return uniqSites.size;
+	    })();
+	    const desiredPoolSizeBase = Math.max(1, Math.min(50, siteCount || 1));
 	    const poolNum = Number(poolSizeOverride);
 	    const poolSize =
-	      Number.isFinite(poolNum) && poolNum > 0 ? Math.max(1, Math.min(concurrency, Math.floor(poolNum))) : Math.max(1, concurrency);
-	    let cursor = 0;
-		    const inFlight = new Map();
+	      Number.isFinite(poolNum) && poolNum > 0 ? Math.max(1, Math.min(desiredPoolSizeBase, Math.floor(poolNum))) : desiredPoolSizeBase;
+	    const inFlight = new Map();
+	    const busySites = new Set();
+	    const pending = candidates.map((_c, idx) => idx);
 
 	    const launch = (idx) => {
 	      const src = candidates[idx];
+	      const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
+	      if (sKey) busySites.add(sKey);
 	      const p = Promise.resolve()
 	        .then(() => fetchDetailAndPickEpisode(src, { requireSeasoned }))
 	        .then((value) => ({ idx, value: value || null }))
@@ -8892,37 +9552,48 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	      inFlight.set(idx, p);
 	    };
 
-		    while (cursor < candidates.length && inFlight.size < poolSize) {
-		      launch(cursor);
-		      cursor += 1;
-		    }
+	    const tryLaunchMore = () => {
+	      while (inFlight.size < poolSize) {
+	        let launched = false;
+	        for (let i = 0; i < pending.length; i += 1) {
+	          const idx = pending[i];
+	          const src = candidates[idx];
+	          const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
+	          if (sKey && busySites.has(sKey)) continue;
+	          pending.splice(i, 1);
+	          launch(idx);
+	          launched = true;
+	          break;
+	        }
+	        if (!launched) break;
+	      }
+	    };
 
-	    while (inFlight.size) {
+	    while (inFlight.size || pending.length) {
+	      tryLaunchMore();
+	      if (!inFlight.size) break;
 	      const settled = await Promise.race(Array.from(inFlight.values()));
 	      const idx = settled && Number.isFinite(Number(settled.idx)) ? Number(settled.idx) : -1;
-	      if (idx >= 0) inFlight.delete(idx);
+	      if (idx >= 0) {
+	        const src = candidates[idx];
+	        const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
+	        if (sKey) busySites.delete(sKey);
+	        inFlight.delete(idx);
+	      }
 
 	      const hit = settled && settled.value ? settled.value : null;
 	      if (hit) {
 	        if (!bestOverall || compareSmartMatch(bestOverall, hit) > 0) bestOverall = hit;
 	        const feat = smartComputeCandidateFeatures(hit);
 	        if (feat && Number(feat.qualityRank) === 3) {
-	          tmdbSmartPickCache.set(want, hit);
-	          tmdbSmartPickCacheVersion.value += 1;
+	          maybeCache4kPick(hit);
 	          return hit;
 	        }
 	      }
 
-		      if (cursor < candidates.length) {
-		        launch(cursor);
-		        cursor += 1;
-		      }
+	      tryLaunchMore();
 	    }
 
-    if (bestOverall) {
-      tmdbSmartPickCache.set(want, bestOverall);
-      tmdbSmartPickCacheVersion.value += 1;
-    }
     return bestOverall;
   };
 
@@ -8937,19 +9608,139 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
       };
       const best = await fetchDetailAndPickEpisode(src, { requireSeasoned });
       if (best && best.ep && best.ep.url) {
-        tmdbSmartPickCache.set(want, best);
-        tmdbSmartPickCacheVersion.value += 1;
+        maybeCache4kPick(best);
         return best;
       }
     } catch (_e) {}
     return null;
   };
 
+  const hasPendingPanMock = () => {
+    try {
+      const entries = Array.from(tmdbSmartDetailCache.values());
+      return entries.some((e) => e && e.ok !== false && e.panMockEnabled === true && e.panMockResolved !== true && !!e.panMockInFlight);
+    } catch (_e) {
+      return false;
+    }
+  };
+
+  const waitForAnyPanMockUpdate = async (timeoutMs = 320) => {
+    const to = Number.isFinite(Number(timeoutMs)) ? Math.max(0, Math.floor(Number(timeoutMs))) : 0;
+    if (!to) return false;
+    let entries = [];
+    try {
+      entries = Array.from(tmdbSmartDetailCache.values()).filter(
+        (e) => e && e.ok !== false && e.panMockEnabled === true && e.panMockResolved !== true && !!e.panMockInFlight
+      );
+    } catch (_e) {
+      entries = [];
+    }
+    if (!entries.length) {
+      await new Promise((r) => setTimeout(r, Math.min(260, to)));
+      return false;
+    }
+    const picked = entries.slice(0, 8).map((e) => {
+      const sinceSeq = Number.isFinite(Number(e.__updateSeq)) ? Number(e.__updateSeq) : 0;
+      return smartWaitTMDBSmartEntryUpdate(e, { sinceSeq, timeoutMs: to }).catch(() => false);
+    });
+    try {
+      const ok = await Promise.race(picked.concat([new Promise((r) => setTimeout(() => r(false), to))]));
+      return !!ok;
+    } catch (_e) {
+      return false;
+    }
+  };
+
+  const buildPickCandidateSnapshot = () => {
+    try {
+      if (!debugEnabled.value) return null;
+      const all = [];
+      const entries = Array.from(tmdbSmartDetailCache.values());
+      entries.forEach((e) => {
+        if (!e || e.ok === false) return;
+        const list = (e.episodeMap && e.episodeMap.get ? e.episodeMap.get(want) : null) || [];
+        (Array.isArray(list) ? list : []).forEach((c) => {
+          if (c && c.ep && c.ep.url) all.push(c);
+        });
+      });
+      if (!all.length) return { total: 0, top: [] };
+      const sorted = all.slice().sort((a, b) => compareSmartMatch(a, b));
+      const top = sorted.slice(0, 25).map((c) => {
+        const url = c && c.ep && c.ep.url != null ? String(c.ep.url) : '';
+        const rawNames = url ? extractRawNamesFromEpisodeUrl(url) : [];
+        const feat = smartComputeCandidateFeatures(c) || {};
+        const texts = (() => {
+          try {
+            return extractEpisodeCandidateTexts(c && c.ep ? c.ep : null).slice(0, 4);
+          } catch (_e) {
+            return [];
+          }
+        })();
+        return {
+          siteKey: c.siteKey || '',
+          siteName: c.siteName || '',
+          videoId: c.videoId || '',
+          panLabel: c.panLabel || '',
+          matchSeason: Number(c.matchSeason) || 0,
+          hasSeasonMarker: c.hasSeasonMarker ? 1 : 0,
+          seMarkRank: Number(c.__seMarkRank) || 0,
+          fromPanMock: c.__fromPanMock ? 1 : 0,
+          quality: feat.quality || '',
+          qualityRank: Number(feat.qualityRank) || 0,
+          fps60: feat.fps60 ? 1 : 0,
+          hasHdr: feat.hasHdr ? 1 : 0,
+          tierRank: Number(feat.tierRank) || 0,
+          texts,
+          rawNames: rawNames.slice(0, 4),
+        };
+      });
+      const counts = { '4k': 0, '1080p': 0, '720p': 0, other: 0 };
+      sorted.forEach((c) => {
+        const feat = smartComputeCandidateFeatures(c) || {};
+        const qr = Number(feat.qualityRank) || 0;
+        if (qr === 3) counts['4k'] += 1;
+        else if (qr === 2) counts['1080p'] += 1;
+        else if (qr === 1) counts['720p'] += 1;
+        else counts.other += 1;
+      });
+      return { total: sorted.length, counts, top };
+    } catch (_e) {
+      return null;
+    }
+  };
+
+  // Strict first round:
+  // - Only return 4K/2160p candidates.
+  // - Keep the best non-4K candidate as fallback.
+  // - Only allow downgrade when search is done AND all pending pan_mock lists have resolved (or deadline reached).
+  let bestFallback = null;
+  const considerFallback = (cand) => {
+    try {
+      if (!cand || !cand.ep || !cand.ep.url) return;
+      if (isExcluded(cand)) return;
+      if (is4kCandidate(cand)) return;
+      if (!bestFallback || compareSmartMatch(bestFallback, cand) > 0) bestFallback = cand;
+    } catch (_e) {}
+  };
+  const allowDowngradeNow = () => {
+    try {
+      const queueLen =
+        sourcesSearchRuntime && Array.isArray(sourcesSearchRuntime.queue) ? sourcesSearchRuntime.queue.length : 0;
+      return !!(sourcesSearchDone.value && queueLen <= 0 && !hasPendingPanMock());
+    } catch (_e) {
+      return false;
+    }
+  };
+
 	  if ((!aggregatedSources.value || !aggregatedSources.value.length) && !sourcesLoading.value && !sourcesSearchedOnce.value) {
 	    await fetchAggregatedSourcesExactMatches();
 	  }
 
-		  for (let round = 0; round < 200; round += 1) {
+		      for (let round = 0; round < 200; round += 1) {
+          if (Date.now() >= deadlineAt) {
+            if (bestFallback && bestFallback.ep && bestFallback.ep.url) return bestFallback;
+            return null;
+          }
 			    const requireSeasoned =
 			      contentKind.value === 'series' &&
 			      (() => {
@@ -8961,12 +9752,17 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 			      const hasHistoryCandidate = !!(currentSiteKey && currentSpider && currentVideoId);
 			      if (hasHistoryCandidate && concurrency > 1) {
 		        const poolPromise = tryPickOnce({ requireSeasoned, poolSize: Math.max(1, concurrency - 1) });
-		        const quick = await tryPickFromCurrentSiteOnly({ requireSeasoned });
-		        if (quick && quick.ep && quick.ep.url) {
+		        const quickPromise = tryPickFromCurrentSiteOnly({ requireSeasoned });
+		        const quick = await quickPromise;
+		        const quickFeat = quick ? smartComputeCandidateFeatures(quick) : null;
+		        const quickIs4k = !!(quickFeat && Number(quickFeat.qualityRank) === 3);
+		        if (quickIs4k && quick && quick.ep && quick.ep.url) {
 		          try {
 		            tmdbSmartLastPickDebug.value = {
 		              want,
 		              requireSeasoned,
+                  cands: buildPickCandidateSnapshot(),
+		              pickKind: 'quick_4k',
 		              siteKey: quick.siteKey || '',
 		              siteName: quick.siteName || '',
 		              spiderApi: quick.spiderApi || '',
@@ -8977,29 +9773,64 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 		              matchSeason: Number.isFinite(Number(quick.matchSeason)) ? Math.floor(Number(quick.matchSeason)) : 0,
 		              hasSeasonMarker: quick.hasSeasonMarker ? 1 : 0,
 		              searchSeasonHint: Number.isFinite(Number(quick.searchSeasonHint)) ? Math.floor(Number(quick.searchSeasonHint)) : 0,
+		              quality: quickFeat && quickFeat.quality ? String(quickFeat.quality) : '',
+		              tierRank: quickFeat && Number.isFinite(Number(quickFeat.tierRank)) ? Number(quickFeat.tierRank) : 0,
 		            };
 		          } catch (_e) {}
 		          return quick;
 		        }
 		        const pooled = await poolPromise;
 		        if (pooled && pooled.ep && pooled.ep.url) {
+		          // If the pooled result is better than the quick result, prefer it (fixes "fast but low-quality" picks).
+		          const preferPooled = !quick || compareSmartMatch(quick, pooled) > 0;
+		          const chosen = preferPooled ? pooled : quick;
+		          const chosenFeat = chosen ? smartComputeCandidateFeatures(chosen) : null;
 		          try {
 		            tmdbSmartLastPickDebug.value = {
 		              want,
 		              requireSeasoned,
-		              siteKey: pooled.siteKey || '',
-		              siteName: pooled.siteName || '',
-		              spiderApi: pooled.spiderApi || '',
-		              videoId: pooled.videoId || '',
-		              panLabel: pooled.panLabel || '',
-		              epName: pooled.ep && pooled.ep.name != null ? String(pooled.ep.name) : '',
-		              epUrl: pooled.ep && pooled.ep.url != null ? String(pooled.ep.url) : '',
-		              matchSeason: Number.isFinite(Number(pooled.matchSeason)) ? Math.floor(Number(pooled.matchSeason)) : 0,
-		              hasSeasonMarker: pooled.hasSeasonMarker ? 1 : 0,
-		              searchSeasonHint: Number.isFinite(Number(pooled.searchSeasonHint)) ? Math.floor(Number(pooled.searchSeasonHint)) : 0,
+                  cands: buildPickCandidateSnapshot(),
+		              pickKind: preferPooled ? 'pooled_over_quick' : 'quick_over_pooled',
+		              siteKey: chosen.siteKey || '',
+		              siteName: chosen.siteName || '',
+		              spiderApi: chosen.spiderApi || '',
+		              videoId: chosen.videoId || '',
+		              panLabel: chosen.panLabel || '',
+		              epName: chosen.ep && chosen.ep.name != null ? String(chosen.ep.name) : '',
+		              epUrl: chosen.ep && chosen.ep.url != null ? String(chosen.ep.url) : '',
+		              matchSeason: Number.isFinite(Number(chosen.matchSeason)) ? Math.floor(Number(chosen.matchSeason)) : 0,
+		              hasSeasonMarker: chosen.hasSeasonMarker ? 1 : 0,
+		              searchSeasonHint: Number.isFinite(Number(chosen.searchSeasonHint)) ? Math.floor(Number(chosen.searchSeasonHint)) : 0,
+		              quality: chosenFeat && chosenFeat.quality ? String(chosenFeat.quality) : '',
+		              tierRank: chosenFeat && Number.isFinite(Number(chosenFeat.tierRank)) ? Number(chosenFeat.tierRank) : 0,
 		            };
 		          } catch (_e) {}
-		          return pooled;
+		          if (is4kCandidate(chosen)) return chosen;
+		          considerFallback(chosen);
+		        }
+		        if (quick && quick.ep && quick.ep.url) {
+		          try {
+		            tmdbSmartLastPickDebug.value = {
+		              want,
+		              requireSeasoned,
+		              cands: buildPickCandidateSnapshot(),
+		              pickKind: 'quick_fallback',
+		              siteKey: quick.siteKey || '',
+		              siteName: quick.siteName || '',
+		              spiderApi: quick.spiderApi || '',
+		              videoId: quick.videoId || '',
+		              panLabel: quick.panLabel || '',
+		              epName: quick.ep && quick.ep.name != null ? String(quick.ep.name) : '',
+		              epUrl: quick.ep && quick.ep.url != null ? String(quick.ep.url) : '',
+		              matchSeason: Number.isFinite(Number(quick.matchSeason)) ? Math.floor(Number(quick.matchSeason)) : 0,
+		              hasSeasonMarker: quick.hasSeasonMarker ? 1 : 0,
+		              searchSeasonHint: Number.isFinite(Number(quick.searchSeasonHint)) ? Math.floor(Number(quick.searchSeasonHint)) : 0,
+		              quality: quickFeat && quickFeat.quality ? String(quickFeat.quality) : '',
+		              tierRank: quickFeat && Number.isFinite(Number(quickFeat.tierRank)) ? Number(quickFeat.tierRank) : 0,
+		            };
+		          } catch (_e) {}
+		          if (quickIs4k) return quick;
+		          considerFallback(quick);
 		        }
 		      } else {
 		        const quick = await tryPickFromCurrentSiteOnly({ requireSeasoned });
@@ -9008,6 +9839,8 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 		            tmdbSmartLastPickDebug.value = {
 		              want,
 		              requireSeasoned,
+                  cands: buildPickCandidateSnapshot(),
+		              pickKind: 'quick_only',
 		              siteKey: quick.siteKey || '',
 		              siteName: quick.siteName || '',
 		              spiderApi: quick.spiderApi || '',
@@ -9020,7 +9853,8 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 		              searchSeasonHint: Number.isFinite(Number(quick.searchSeasonHint)) ? Math.floor(Number(quick.searchSeasonHint)) : 0,
 		            };
 		          } catch (_e) {}
-		          return quick;
+		          if (is4kCandidate(quick)) return quick;
+		          considerFallback(quick);
 		        }
 		      }
 		    }
@@ -9030,6 +9864,7 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 		        tmdbSmartLastPickDebug.value = {
 	          want,
 	          requireSeasoned,
+            cands: buildPickCandidateSnapshot(),
 	          siteKey: best.siteKey || '',
 	          siteName: best.siteName || '',
 	          spiderApi: best.spiderApi || '',
@@ -9042,9 +9877,14 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	          searchSeasonHint: Number.isFinite(Number(best.searchSeasonHint)) ? Math.floor(Number(best.searchSeasonHint)) : 0,
 	        };
 	      } catch (_e) {}
-	      return best;
+	      if (is4kCandidate(best)) return best;
+	      considerFallback(best);
 	    }
 	    if (sourcesSearchDone.value) {
+	      if (hasPendingPanMock()) {
+	        await waitForAnyPanMockUpdate(320);
+	        continue;
+	      }
 	      if (requireSeasoned) {
 	        const relaxed = await tryPickOnce({ requireSeasoned: false });
 	        if (relaxed && relaxed.ep && relaxed.ep.url) {
@@ -9052,6 +9892,7 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	            tmdbSmartLastPickDebug.value = {
 	              want,
 	              requireSeasoned: false,
+                cands: buildPickCandidateSnapshot(),
 	              siteKey: relaxed.siteKey || '',
 	              siteName: relaxed.siteName || '',
 	              spiderApi: relaxed.spiderApi || '',
@@ -9064,35 +9905,46 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo } = {}) =
 	              searchSeasonHint: Number.isFinite(Number(relaxed.searchSeasonHint)) ? Math.floor(Number(relaxed.searchSeasonHint)) : 0,
 	            };
 	          } catch (_e) {}
-	          return relaxed;
+	          if (is4kCandidate(relaxed)) return relaxed;
+	          considerFallback(relaxed);
 	        }
 	      }
 	      releaseLowPriorityHold();
+	      if (allowDowngradeNow()) {
+	        if (bestFallback && bestFallback.ep && bestFallback.ep.url) return bestFallback;
+	        return null;
+	      }
 	      return null;
 	    }
     const beforeQueue = sourcesSearchRuntime.queue.length;
     const beforeCount = aggregatedSources.value.length;
     if (!sourcesLoading.value) await fetchAggregatedSourcesExactMatches();
-    if (sourcesSearchRuntime.queue.length === beforeQueue && aggregatedSources.value.length === beforeCount) {
-      releaseLowPriorityHold();
-      return null;
+    const progressed = !(sourcesSearchRuntime.queue.length === beforeQueue && aggregatedSources.value.length === beforeCount);
+    if (!progressed) {
+      // Search may not advance every tick; keep going.
+      // Also give pan_mock list updates some time to arrive.
+      const waited = await waitForAnyPanMockUpdate(320);
+      if (!waited) await new Promise((r) => setTimeout(r, 120));
     }
   }
 
   releaseLowPriorityHold();
+  if (bestFallback && bestFallback.ep && bestFallback.ep.url && (allowDowngradeNow() || Date.now() >= deadlineAt)) return bestFallback;
   return null;
   })();
 
-  tmdbSmartPickInFlight.set(want, run);
+  tmdbSmartPickInFlight.set(flightKey, run);
   try {
     return await run;
   } finally {
-    tmdbSmartPickInFlight.delete(want);
+    tmdbSmartPickInFlight.delete(flightKey);
   }
 };
 
 const requestPlay = async (opts = {}) => {
   const trigger = opts && typeof opts === 'object' && typeof opts.trigger === 'string' ? opts.trigger : 'auto';
+  const tmdbAttempt = opts && Number.isFinite(Number(opts.__tmdbAttempt)) ? Math.max(0, Math.floor(Number(opts.__tmdbAttempt))) : 0;
+  const tmdbExcludeKeys = opts && Array.isArray(opts.__tmdbExcludeKeys) ? opts.__tmdbExcludeKeys : [];
   if (trigger !== 'user' && autoPlaySuppressedByUser.value) return false;
   if (trigger === 'user') {
     initialAutoPlayTriggered.value = true;
@@ -9126,6 +9978,9 @@ const requestPlay = async (opts = {}) => {
 
   let statsEpName = ep && ep.name != null ? String(ep.name) : '';
   let statsEpUrl = ep && ep.url != null ? String(ep.url) : '';
+  let tmdbSmartPickedExcludeKey = '';
+  let tmdbSmartPickedEpisodeNo = 0;
+  let tmdbSmartPickedDebug = null;
 
   if (tmdbMovieMode.value && tmdbMovieSmartListAvailable.value && selectedPanKey.value === SMART_PAN_KEY) {
     const smartApi = ep && typeof ep.__tmdbMovieSpiderApi === 'string' ? ep.__tmdbMovieSpiderApi.trim() : '';
@@ -9160,6 +10015,7 @@ const requestPlay = async (opts = {}) => {
 
   if (tmdbSmartListAvailable.value && isSmartPanKey(selectedPanKey.value)) {
     const wantEpisode = resolveSmartEpisodeNo(ep);
+    tmdbSmartPickedEpisodeNo = wantEpisode > 0 ? wantEpisode : 0;
     const useDesiredSeasonHint = selectedPanKey.value !== DOUBAN_SMART_PAN_KEY;
     const desiredSeason = useDesiredSeasonHint && ep && Number.isFinite(Number(ep.__tmdbSeason)) ? Math.floor(Number(ep.__tmdbSeason)) : 0;
     const desiredEpisodeInSeason =
@@ -9176,16 +10032,16 @@ const requestPlay = async (opts = {}) => {
         ? desiredEpisodeInSeason
         : (seasonEp && seasonEp.episode ? Number(seasonEp.episode) : 0);
 
-    const picked = await resolveTMDBSmartPlaybackCandidate({ episodeNo: wantEpisode, seasonNo: desiredSeason });
+    const picked = await resolveTMDBSmartPlaybackCandidate({ episodeNo: wantEpisode, seasonNo: desiredSeason, excludeKeys: tmdbExcludeKeys });
     if (!picked) {
       playError.value = '获取视频失败，请通过手动搜索选择其他源';
       return false;
     }
 
-    if (picked.filename) {
-      api = picked.spiderApi;
-      historySpiderApi = picked.spiderApi;
-      historySiteKey = picked.siteId;
+	    if (picked.filename) {
+	      api = picked.spiderApi;
+	      historySpiderApi = picked.spiderApi;
+	      historySiteKey = picked.siteId;
       historyVideoId = picked.sitePanId || historyVideoId;
       flag = picked.playFlag;
       id = '';
@@ -9205,20 +10061,59 @@ const requestPlay = async (opts = {}) => {
         filename: picked.filename || '',
         playbackReported: false,
       };
-    } else {
-      api = picked.spiderApi;
-      historySpiderApi = picked.spiderApi;
-      historySiteKey = picked.siteKey;
+	      tmdbSmartPickedExcludeKey = picked.candidateKey ? String(picked.candidateKey) : '';
+	      try {
+	        const provider = panMockProviderFromFlag(flag) || guessPreferredPanFromFlag(flag) || '';
+	        const quality = smartGuessQuality(String(playFilename || '')) || '';
+	        tmdbSmartPickedDebug = {
+	          trigger,
+	          want: tmdbSmartPickedEpisodeNo,
+	          siteKey: historySiteKey,
+	          siteName: historySiteName || '',
+	          spiderApi: picked.spiderApi || '',
+	          videoId: historyVideoId || '',
+	          panFlag: String(flag || '').trim(),
+	          provider,
+	          quality,
+	          showName: String(playShareUrl || '').trim(),
+	          rawName: String(playFilename || '').trim(),
+	        };
+	      } catch (_e) {}
+	    } else {
+	      api = picked.spiderApi;
+	      historySpiderApi = picked.spiderApi;
+	      historySiteKey = picked.siteKey;
       historySiteName = picked.siteName || historySiteName;
       historyVideoId = picked.videoId || historyVideoId;
       const pickedEp = picked.ep || null;
       flag = pickedEp && pickedEp.flag ? String(pickedEp.flag) : picked.panLabel ? String(picked.panLabel) : flag;
       id = pickedEp && pickedEp.url ? String(pickedEp.url) : '';
       statsEpName = pickedEp && pickedEp.name != null ? String(pickedEp.name) : statsEpName;
-      statsEpUrl = pickedEp && pickedEp.url != null ? String(pickedEp.url) : statsEpUrl;
-      lastTMDBPlayReportCtx.value = null;
-    }
-  }
+	      statsEpUrl = pickedEp && pickedEp.url != null ? String(pickedEp.url) : statsEpUrl;
+	      lastTMDBPlayReportCtx.value = null;
+	      tmdbSmartPickedExcludeKey = smartCandidateKey(picked);
+	      try {
+	        const feat = smartComputeCandidateFeatures(picked);
+	        const rawNames = extractRawNamesFromEpisodeUrl(String(statsEpUrl || id || ''));
+	        const rawName = Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '').trim() : '';
+	        const showName =
+	          picked && Array.isArray(picked.texts) && picked.texts.length >= 2 && picked.texts[1] != null ? String(picked.texts[1] || '').trim() : '';
+	        tmdbSmartPickedDebug = {
+	          trigger,
+	          want: tmdbSmartPickedEpisodeNo,
+	          siteKey: historySiteKey,
+	          siteName: historySiteName || picked.siteName || '',
+	          spiderApi: picked.spiderApi || '',
+	          videoId: historyVideoId || picked.videoId || '',
+	          panFlag: String(flag || '').trim(),
+	          provider: panMockProviderFromFlag(flag) || guessPreferredPanFromFlag(flag) || '',
+	          quality: feat && feat.quality ? String(feat.quality) : '',
+	          showName,
+	          rawName,
+	        };
+	      } catch (_e) {}
+	    }
+	  }
 
   const pickRawFileNameForStats = (episodeName, episodeUrl) => {
     const url = typeof episodeUrl === 'string' ? episodeUrl.trim() : '';
@@ -9245,6 +10140,18 @@ const requestPlay = async (opts = {}) => {
   if (!api || !flag || (!hasId && !hasFilename)) return false;
   const playKey = `${api}::${selectedPanKey.value}::${idx}::${flag}::${hasFilename ? `file:${playFilename}` : `id:${id}`}`;
   // Only guard concurrent in-flight requests; do not dedupe by `playKey`.
+  const smartPlayCtx =
+    tmdbSmartListAvailable.value && isSmartPanKey(selectedPanKey.value) && tmdbSmartPickedEpisodeNo > 0
+      ? {
+          ...(tmdbSmartPickedDebug && typeof tmdbSmartPickedDebug === 'object' ? tmdbSmartPickedDebug : {}),
+          want: tmdbSmartPickedEpisodeNo,
+          siteKey: (tmdbSmartPickedDebug && tmdbSmartPickedDebug.siteKey) || historySiteKey || '',
+          siteName: (tmdbSmartPickedDebug && tmdbSmartPickedDebug.siteName) || historySiteName || '',
+          spiderApi: (tmdbSmartPickedDebug && tmdbSmartPickedDebug.spiderApi) || historySpiderApi || '',
+          videoId: (tmdbSmartPickedDebug && tmdbSmartPickedDebug.videoId) || historyVideoId || '',
+          panFlag: String(flag || '').trim(),
+        }
+      : null;
 
   const releaseLowPriority = pauseCatLowPriority();
   const panKeyAtCall = selectedPanKey.value;
@@ -9278,10 +10185,13 @@ const requestPlay = async (opts = {}) => {
       playerFirstFrameTimer = 0;
     }
     try {
-		    const apiBase = resolveCatApiBaseForPlay();
-		    const tvUser = props.bootstrap?.user?.username || '';
+			    const apiBase = resolveCatApiBaseForPlay();
+			    const tvUser = props.bootstrap?.user?.username || '';
+			    try {
+			      if (smartPlayCtx) smartDebugLog('play_try', { ...smartPlayCtx });
+			    } catch (_e) {}
 
-	        const fetchPlay = async () => {
+		        const fetchPlay = async () => {
 	          const siteApi = String(api || '').trim();
 	          const siteId = (() => {
 	            const m = /^\/([a-f0-9]{10})\/spider\//.exec(siteApi);
@@ -9361,10 +10271,10 @@ const requestPlay = async (opts = {}) => {
 	          return { raw, payload, url, rawHeaders };
 	        };
 
-        let playResult = null;
-        let finalUrl = '';
-        let finalHeaders = {};
-        let disableGoProxy = false;
+	        let playResult = null;
+	        let finalUrl = '';
+	        let finalHeaders = {};
+	        let disableGoProxy = false;
 
         if (!finalUrl) {
           try {
@@ -9433,24 +10343,28 @@ const requestPlay = async (opts = {}) => {
         // Keep direct URL as fallback (GoProxy is best-effort on the client).
         console.warn('[GoProxy] register failed:', e && e.message ? e.message : e);
       }
-        if (seqAtCall !== playRequestState.seq) return;
-		    playerMetaReady.value = false;
+	        if (seqAtCall !== playRequestState.seq) return;
+			    playerMetaReady.value = false;
         playerBuffering.value = false;
         playerPlaybackStarted.value = false;
-        playerFirstFrameReady.value = false;
+			    playerFirstFrameReady.value = false;
         if (playerFirstFrameTimer) {
           window.clearTimeout(playerFirstFrameTimer);
           playerFirstFrameTimer = 0;
         }
-		    playerUrl.value = finalUrl;
-			    playerHeaders.value = finalHeaders;
-			    playingPanKey.value = panKeyAtCall;
-			    playingEpisodeIndex.value = idxAtCall;
-			    playingTMDBSubPanKey.value = tmdbSubPanKeyAtCall;
-	        try {
-          await nextTick();
-          if (seqAtCall === playRequestState.seq && artPlayerRef.value && typeof artPlayerRef.value.tryAutoplay === 'function') {
-            await artPlayerRef.value.tryAutoplay();
+				    try {
+				      if (smartPlayCtx) smartDebugLog('play_ok', { ...smartPlayCtx, url: finalUrl, goProxyBase: String(goProxyInUseBase.value || '') });
+				    } catch (_e) {}
+				    playerUrl.value = finalUrl;
+					    playerHeaders.value = finalHeaders;
+				    playingPanKey.value = panKeyAtCall;
+				    playingEpisodeIndex.value = idxAtCall;
+				    playingSmartEpisodeNo.value = isSmartPanKey(panKeyAtCall) ? resolveSmartEpisodeNo(ep) : 0;
+				    playingTMDBSubPanKey.value = tmdbSubPanKeyAtCall;
+		        try {
+	          await nextTick();
+	          if (seqAtCall === playRequestState.seq && artPlayerRef.value && typeof artPlayerRef.value.tryAutoplay === 'function') {
+	            await artPlayerRef.value.tryAutoplay();
           }
         } catch (_e) {}
 
@@ -9509,13 +10423,16 @@ const requestPlay = async (opts = {}) => {
 			    } catch (_e) {
 		      // ignore (history not critical)
 		    }
-	  } catch (e) {
-	    const status = e && typeof e.status === 'number' ? e.status : 0;
-	    const msg = (e && e.message) || '请求失败';
-        if (seqAtCall === playRequestState.seq) playError.value = status ? `HTTP ${status}：${msg}` : msg;
-	  } finally {
-        if (seqAtCall === playRequestState.seq) playLoading.value = false;
-	  }
+		  } catch (e) {
+		    const status = e && typeof e.status === 'number' ? e.status : 0;
+		    const msg = (e && e.message) || '请求失败';
+		    try {
+		      if (smartPlayCtx) smartDebugLog('play_err', { ...smartPlayCtx, err: status ? `HTTP ${status}：${msg}` : String(msg || '') });
+		    } catch (_e) {}
+	        if (seqAtCall === playRequestState.seq) playError.value = status ? `HTTP ${status}：${msg}` : msg;
+		  } finally {
+	        if (seqAtCall === playRequestState.seq) playLoading.value = false;
+		  }
   })();
 
   playRequestState.inFlight = run;
@@ -9529,7 +10446,23 @@ const requestPlay = async (opts = {}) => {
     releaseLowPriority();
     if (tmdbSmartListAvailable.value && isSmartPanKey(selectedPanKey.value)) releaseLowPriorityHold();
   }
-  return true;
+  const success = !!(playerUrl.value && String(playerUrl.value || '').trim());
+  if (
+    !success &&
+    tmdbSmartListAvailable.value &&
+    isSmartPanKey(selectedPanKey.value) &&
+    tmdbSmartPickedEpisodeNo > 0 &&
+    tmdbSmartPickedExcludeKey &&
+    tmdbAttempt < 2
+  ) {
+    try {
+      tmdbSmartPickCache.delete(tmdbSmartPickedEpisodeNo);
+      tmdbSmartPickCacheVersion.value += 1;
+    } catch (_e) {}
+    const nextExclude = tmdbExcludeKeys.concat([tmdbSmartPickedExcludeKey]).map((k) => (k != null ? String(k) : '')).filter(Boolean);
+    return await requestPlay({ ...opts, __tmdbAttempt: tmdbAttempt + 1, __tmdbExcludeKeys: nextExclude });
+  }
+  return success;
 };
 
 const tryAutoStartPlayback = () => {
@@ -9975,13 +10908,13 @@ const loadResumeFromHistory = async () => {
             (wantedKey ? items.find((r) => r && normalizeForAggKey(r.contentKey || '') === wantedKey) : null) ||
             null;
           resumeHistory.value = match;
-          try {
-            const seasons = match && typeof match.tmdbSeasons === 'string' ? match.tmdbSeasons.trim() : '';
-            if (tmdbType === 'tv' && tmdbId > 0 && seasons) {
-              sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
-              refreshDoubanSeasonMeta();
-            }
-          } catch (_e) {}
+	          try {
+	            const seasons = match && typeof match.tmdbSeasons === 'string' ? match.tmdbSeasons.trim() : '';
+	            if (tmdbType === 'tv' && tmdbId > 0 && seasons) {
+	              sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
+	              refreshDoubanSeasonMeta();
+	            }
+	          } catch (_e) {}
         } catch (_e) {
           if (seqAtCall === resumeHistoryState.seq) resumeHistory.value = null;
         }
@@ -10015,15 +10948,15 @@ const loadResumeFromHistory = async () => {
             resumeHistory.value = item;
             try {
               if (tmdbMode.value) {
-                const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
-                const tmdbId = Number(props.tmdbId || 0);
-                const seasons = item && typeof item.tmdbSeasons === 'string' ? item.tmdbSeasons.trim() : '';
-                if (typRaw === 'tv' && tmdbId > 0 && seasons) {
-                  sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
-                  refreshDoubanSeasonMeta();
-                }
-              }
-            } catch (_e) {}
+	                const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+	                const tmdbId = Number(props.tmdbId || 0);
+	                const seasons = item && typeof item.tmdbSeasons === 'string' ? item.tmdbSeasons.trim() : '';
+	                if (typRaw === 'tv' && tmdbId > 0 && seasons) {
+	                  sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
+	                  refreshDoubanSeasonMeta();
+	                }
+	              }
+	            } catch (_e) {}
             return;
           }
           if (item == null) {
@@ -10063,15 +10996,15 @@ const loadResumeFromHistory = async () => {
         try {
           const found = resumeHistory.value;
           if (tmdbMode.value && found) {
-            const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
-            const tmdbId = Number(props.tmdbId || 0);
-            const seasons = found && typeof found.tmdbSeasons === 'string' ? found.tmdbSeasons.trim() : '';
-            if (typRaw === 'tv' && tmdbId > 0 && seasons) {
-              sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
-              refreshDoubanSeasonMeta();
-            }
-          }
-        } catch (_e) {}
+	            const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+	            const tmdbId = Number(props.tmdbId || 0);
+	            const seasons = found && typeof found.tmdbSeasons === 'string' ? found.tmdbSeasons.trim() : '';
+	            if (typRaw === 'tv' && tmdbId > 0 && seasons) {
+	              sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
+	              refreshDoubanSeasonMeta();
+	            }
+	          }
+	        } catch (_e) {}
       } catch (_e) {
         if (seqAtCall === resumeHistoryState.seq) resumeHistory.value = null;
       }
@@ -10586,6 +11519,17 @@ const selectEpisode = (idx) => {
   const n = Number(idx);
   if (!Number.isFinite(n) || n < 0) return;
   autoPlaySuppressedByUser.value = false;
+  // Smart pans (TMDB/豆瓣): if the user clicks the currently playing *logical* episode (same global no),
+  // don't re-run smart matching / request a new play url.
+  if (playerUrl.value && playingSmartEpisodeNo.value > 0 && isSmartPanKey(selectedPanKey.value)) {
+    const eps = selectedEpisodes.value;
+    const ep = Array.isArray(eps) && n < eps.length ? eps[n] : null;
+    const g = episodeGlobalNoOf(ep);
+    if (g > 0 && g === playingSmartEpisodeNo.value) {
+      selectedEpisodeIndex.value = n;
+      return;
+    }
+  }
   // If the user clicks the currently playing episode within the same pan, do nothing.
   // But if they switch pan (even same episode number), we must request a new play url.
   if (

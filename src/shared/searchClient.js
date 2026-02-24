@@ -466,14 +466,13 @@ export function initSearchPage() {
         const y = it && it.year != null ? Number(it.year) : 0;
         return Number.isFinite(y) && y > 0 ? String(Math.floor(y)) : '';
       })();
+      const titleText = it && it.title ? String(it.title) : '';
 	      const remarkText = (() => {
 	        const mt = mediaType && mediaType.trim().toLowerCase() === 'movie' ? 'movie' : mediaTypeNormalized;
 	        if (mt === 'movie') return yearText;
-	        if (mt === 'tv') return formatTMDBTVRemark({ badge: badgeText, status: badgeStatus, seasonCount: badgeSeasonCount, episodeCount: badgeEpisodeCount });
+	        if (mt === 'tv') return formatTMDBTVRemark({ badge: badgeText, status: badgeStatus, seasonCount: badgeSeasonCount, episodeCount: badgeEpisodeCount, title: titleText });
 	        return '';
 	      })();
-
-      const titleText = it && it.title ? String(it.title) : '';
       const fallbackTitleLen = titleText.replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '').length;
       const titleLen = Number.isFinite(Number(it && it.__titleLen)) ? Number(it.__titleLen) : fallbackTitleLen;
 
@@ -1047,6 +1046,7 @@ export function initSearchPage() {
 
 	              const apply = (data) => {
 	                if (!data || data.success !== true) return;
+	                const title = typeof data.title === 'string' ? data.title.trim() : '';
 	                const badgeText = typeof data.badge === 'string' ? data.badge.trim() : '';
 	                const status = data && typeof data.status === 'string' ? data.status.trim() : '';
 	                const seasonCount = Number.isFinite(Number(data.seasonCount)) ? Math.floor(Number(data.seasonCount)) : 0;
@@ -1088,7 +1088,7 @@ export function initSearchPage() {
                 } catch (_e) {}
                 if (!wrapper) return;
                 if (wrapper.dataset && normalizeTmdbMediaType(wrapper.dataset.tmdbType || '') === 'tv') {
-                  const remark = formatTMDBTVRemark({ badge: badgeText, status, seasonCount, episodeCount });
+                  const remark = formatTMDBTVRemark({ badge: badgeText, status, seasonCount, episodeCount, title });
                   applyTMDBRemarkBadge(wrapper, remark);
                 }
                 if (wrapper.dataset && wrapper.dataset.aggregate === '1') {
@@ -1154,6 +1154,19 @@ export function initSearchPage() {
 	        };
 	      }
 	      return { season: 0, episode: 0 };
+	    };
+
+	    const getTMDBTVEndedStatsForGroupKey = (groupKey) => {
+	      const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+	      if (!gk) return { ended: false, seasonCount: 0, episodeCount: 0 };
+	      const typed = tmdbByGroupKeyByType.get(gk) || null;
+	      const tv = typed && typed.tv ? typed.tv : null;
+	      if (!tv) return { ended: false, seasonCount: 0, episodeCount: 0 };
+	      const status = tv && typeof tv.status === 'string' ? tv.status.trim().toLowerCase() : '';
+	      const ended = status === 'ended';
+	      const seasonCount = tv && Number.isFinite(Number(tv.seasonCount)) ? Math.floor(Number(tv.seasonCount)) : 0;
+	      const episodeCount = tv && Number.isFinite(Number(tv.episodeCount)) ? Math.floor(Number(tv.episodeCount)) : 0;
+	      return { ended, seasonCount: seasonCount > 0 ? seasonCount : 0, episodeCount: episodeCount > 0 ? episodeCount : 0 };
 	    };
 
 	    const getTMDBTVSeasonCountForGroupKey = (groupKey) => {
@@ -1311,176 +1324,140 @@ export function initSearchPage() {
 	    const aggregateByGroup = new Map();
 	    const aggregateCardByGroup = new Map();
 
-	    const parseAggregateEpisodeBadgeInfo = (rawText) => {
+	    const parseSeasonedProgress = (rawText) => {
 	      const raw = typeof rawText === 'string' ? rawText : '';
 	      const text = raw.trim();
-	      if (!text) return { season: 0, episode: 0, totalEpisode: 0, seasonCount: 0, ended: false, updating: false };
-
+	      if (!text) return null;
 	      const cleaned = preCleanForRules(text) || text;
 
-	      const mSeasonEpCn = cleaned.match(/第\s*(\d{1,3})\s*季\s*第\s*(\d{1,5})\s*(?:集|话|回|期)/i);
-	      if (mSeasonEpCn && mSeasonEpCn[1] && mSeasonEpCn[2]) {
-	        return {
-	          season: Math.max(0, Number.parseInt(String(mSeasonEpCn[1]), 10) || 0),
-	          episode: Math.max(0, Number.parseInt(String(mSeasonEpCn[2]), 10) || 0),
-	          totalEpisode: 0,
-	          seasonCount: 0,
-	          ended: false,
-	          updating: true,
-	        };
+	      const mCn = cleaned.match(/第\s*(\d{1,3})\s*季\s*第\s*(\d{1,5})\s*(?:集|话|回|期)/i);
+	      if (mCn && mCn[1] && mCn[2]) {
+	        const season = Number.parseInt(String(mCn[1]), 10) || 0;
+	        const episode = Number.parseInt(String(mCn[2]), 10) || 0;
+	        if (season > 0 && episode > 0) return { season, episode };
 	      }
 
-	      const mSeasonEp = cleaned.match(/\bS\s*(\d{1,3})\s*E\s*(\d{1,5})\b/i);
-	      if (mSeasonEp && mSeasonEp[1] && mSeasonEp[2]) {
-	        return {
-	          season: Math.max(0, Number.parseInt(String(mSeasonEp[1]), 10) || 0),
-	          episode: Math.max(0, Number.parseInt(String(mSeasonEp[2]), 10) || 0),
-	          totalEpisode: 0,
-	          seasonCount: 0,
-	          ended: false,
-	          updating: true,
-	        };
+	      const mSe = cleaned.match(/\bS\s*(\d{1,3})\s*E\s*(\d{1,5})\b/i);
+	      if (mSe && mSe[1] && mSe[2]) {
+	        const season = Number.parseInt(String(mSe[1]), 10) || 0;
+	        const episode = Number.parseInt(String(mSe[2]), 10) || 0;
+	        if (season > 0 && episode > 0) return { season, episode };
 	      }
 
-	      const mSeasonCountTotal = cleaned.match(/共\s*(\d{1,3})\s*季\s*(\d{1,5})\s*(?:集|话|回|期)/i);
-	      if (mSeasonCountTotal && mSeasonCountTotal[1] && mSeasonCountTotal[2]) {
-	        return {
-	          season: 0,
-	          episode: 0,
-	          totalEpisode: Math.max(0, Number.parseInt(String(mSeasonCountTotal[2]), 10) || 0),
-	          seasonCount: Math.max(0, Number.parseInt(String(mSeasonCountTotal[1]), 10) || 0),
-	          ended: true,
-	          updating: false,
-	        };
+	      return null;
+	    };
+
+	    const hasAnySeasonMarker = (rawText) => {
+	      const raw = typeof rawText === 'string' ? rawText : '';
+	      const text = raw.trim();
+	      if (!text) return false;
+	      const cleaned = preCleanForRules(text) || text;
+	      return /(?:第\s*\d{1,3}\s*季|\bS\s*\d{1,3}\b|\bSeason\s*\d{1,3}\b)/i.test(cleaned);
+	    };
+
+	    const parseUnseasonedUpdateEpisode = (rawText) => {
+	      const raw = typeof rawText === 'string' ? rawText : '';
+	      const text = raw.trim();
+	      if (!text) return 0;
+	      const cleaned = preCleanForRules(text) || text;
+
+	      const mUp = cleaned.match(/(?:更新至|更至|更)\s*(\d{1,5})\s*(?:集|话|回|期)/i);
+	      if (mUp && mUp[1]) {
+	        const ep = Number.parseInt(String(mUp[1]), 10) || 0;
+	        if (ep > 0 && ep <= 2000) return ep;
 	      }
 
 	      const mRange = cleaned.match(/(\d{1,5})\s*\/\s*(\d{1,5})/i);
 	      if (mRange && mRange[1] && mRange[2]) {
-	        const left = Math.max(0, Number.parseInt(String(mRange[1]), 10) || 0);
-	        const right = Math.max(0, Number.parseInt(String(mRange[2]), 10) || 0);
-	        return { season: 0, episode: left, totalEpisode: right, seasonCount: 0, ended: false, updating: left > 0 };
+	        const left = Number.parseInt(String(mRange[1]), 10) || 0;
+	        const right = Number.parseInt(String(mRange[2]), 10) || 0;
+	        if (left > 0 && right > 0 && right >= left && left <= 2000 && right <= 2000) return left;
 	      }
 
-	      const isEndedText = /(?:已完结|完结|全集|全\s*\d{1,5}\s*(?:集|话|回|期)|\d{1,5}\s*(?:集|话|回|期)\s*全|共\s*\d{1,5}\s*(?:集|话|回|期))/i.test(cleaned);
-	      const mAll =
-	        cleaned.match(/全\s*(\d{1,5})\s*(?:集|话|回|期)/i) ||
-	        cleaned.match(/共\s*(\d{1,5})\s*(?:集|话|回|期)/i) ||
-	        cleaned.match(/(\d{1,5})\s*(?:集|话|回|期)\s*全/i);
-	      const total = mAll && mAll[1] ? Math.max(0, Number.parseInt(String(mAll[1]), 10) || 0) : 0;
-
-	      const hasUpdatingText = /(?:更新至|更至|更)\s*\d{1,5}/i.test(cleaned) || /\/\s*\d{1,5}/.test(cleaned);
-	      const ep = parseEpisodeNumber(cleaned);
-	      return {
-	        season: 0,
-	        episode: ep > 0 ? ep : 0,
-	        totalEpisode: total > 0 ? total : 0,
-	        seasonCount: 0,
-	        ended: Boolean(isEndedText && (total > 0 || !hasUpdatingText)),
-	        updating: Boolean(hasUpdatingText && ep > 0),
-	      };
+	      return 0;
 	    };
 
-      const isInvalidEpisodeLikeYear = (n) => {
-        const v = Number.isFinite(Number(n)) ? Math.floor(Number(n)) : 0;
-        if (v <= 0) return false;
-        // Disallow 4/5-digit "20xx"/"20xxx" which are commonly years mistakenly parsed as episode counts.
-        return /^20\d{2,3}$/.test(String(v));
-      };
-
-	    const pickAggregateEpisodeSummary = ({ sources, groupTitle } = {}) => {
-	      const list = Array.isArray(sources) ? sources : [];
-	      const title = typeof groupTitle === 'string' ? groupTitle.trim() : '';
-
-	      let anyUpdating = false;
-	      let anyEnded = false;
-	      let best = { season: 0, episode: 0 };
-	      let maxSeasonHint = 0;
-	      let maxTotalEpisode = 0;
-	      let seasonCountFromRemark = 0;
-
-	      const consider = (info, seasonHintFallback) => {
-	        const seasonHint = Number.isFinite(Number(seasonHintFallback)) ? Math.floor(Number(seasonHintFallback)) : 0;
-	        const season = info.season > 0 ? info.season : seasonHint > 0 ? seasonHint : 0;
-	        let episode = info.episode > 0 ? info.episode : 0;
-	        let totalEpisode = info.totalEpisode > 0 ? info.totalEpisode : 0;
-	        const seasonCount = info.seasonCount > 0 ? info.seasonCount : 0;
-
-          if (isInvalidEpisodeLikeYear(episode)) episode = 0;
-          if (isInvalidEpisodeLikeYear(totalEpisode)) totalEpisode = 0;
-
-	        if (seasonHint > maxSeasonHint) maxSeasonHint = seasonHint;
-	        if (season > maxSeasonHint) maxSeasonHint = season;
-	        if (totalEpisode > maxTotalEpisode) maxTotalEpisode = totalEpisode;
-	        if (seasonCount > seasonCountFromRemark) seasonCountFromRemark = seasonCount;
-          const hasValidCount = episode > 0 || totalEpisode > 0;
-	        if (hasValidCount && info.updating) anyUpdating = true;
-	        if (hasValidCount && info.ended) anyEnded = true;
-
-	        if (episode > 0) {
-	          const s = season > 0 ? season : 1;
-	          const prevS = best.season > 0 ? best.season : 1;
-	          if (s > prevS || (s === prevS && episode > best.episode)) best = { season: s, episode };
-	        }
-	      };
-
-	      list.forEach((src) => {
-	        const t = src && src.videoTitle != null ? String(src.videoTitle) : '';
-	        const r = src && src.videoRemark != null ? String(src.videoRemark) : '';
-	        const seasonHint =
-	          extractSeasonHintFromText(t) ||
-	          extractSeasonHintFromText(r) ||
-	          extractSeasonHintFromText(title) ||
-	          0;
-	        [r, t].filter(Boolean).forEach((raw) => consider(parseAggregateEpisodeBadgeInfo(raw), seasonHint));
-	      });
-
-	      return {
-	        bestSeason: best.season > 0 ? best.season : 0,
-	        bestEpisode: best.episode > 0 ? best.episode : 0,
-	        maxSeasonHint,
-	        maxTotalEpisode,
-	        seasonCountFromRemark,
-	        ended: Boolean(anyEnded && !anyUpdating),
-	      };
+	    const compareSeasonEpisode = (a, b) => {
+	      if (!a && !b) return 0;
+	      if (a && !b) return 1;
+	      if (!a && b) return -1;
+	      const as = Number(a.season || 0);
+	      const bs = Number(b.season || 0);
+	      if (as !== bs) return as > bs ? 1 : -1;
+	      const ae = Number(a.episode || 0);
+	      const be = Number(b.episode || 0);
+	      if (ae !== be) return ae > be ? 1 : -1;
+	      return 0;
 	    };
 
 		    const formatAggregateTVRemark = ({ groupKey, groupTitle, sources } = {}) => {
 		      const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
 		      const title = typeof groupTitle === 'string' ? groupTitle.trim() : '';
 
-		      const summary = pickAggregateEpisodeSummary({ sources, groupTitle: title });
-		      const seasonFromSources = summary.bestSeason > 0 ? summary.bestSeason : summary.maxSeasonHint > 0 ? summary.maxSeasonHint : 0;
-		      let episode = summary.bestEpisode > 0 ? summary.bestEpisode : 0;
+		      const hasTMDB = gk && hasTMDBTVForGroupKey(gk);
+		      const tmdbSeasonCount = hasTMDB ? getTMDBTVSeasonCountForGroupKey(gk) : 0;
+		      const tmdbEnded = hasTMDB ? getTMDBTVEndedStatsForGroupKey(gk) : { ended: false, seasonCount: 0, episodeCount: 0 };
+		      const tmdbLatest = hasTMDB ? getTMDBTVLatestForGroupKey(gk) : { season: 0, episode: 0 };
 
-		      if (gk && episode > 0 && hasTMDBTVForGroupKey(gk)) {
-		        const tmdbLatest = getTMDBTVLatestForGroupKey(gk);
-		        const tmdbSeason = tmdbLatest && tmdbLatest.season > 0 ? tmdbLatest.season : 0;
-		        const tmdbEpisode = tmdbLatest && tmdbLatest.episode > 0 ? tmdbLatest.episode : 0;
-		        const sForCap = seasonFromSources > 0 ? seasonFromSources : tmdbSeason;
-		        if (tmdbEpisode > 0 && (tmdbSeason <= 0 || sForCap === tmdbSeason) && episode > tmdbEpisode + 5) {
-		          episode = tmdbEpisode;
-		        }
-		      }
-
-	      const effectiveSeasonCount = Math.max(summary.seasonCountFromRemark > 0 ? summary.seasonCountFromRemark : 0, seasonFromSources > 1 ? seasonFromSources : 0);
-
-		      const isMultiSeason = effectiveSeasonCount >= 2 || seasonFromSources >= 2;
-
-		      if (summary.ended) {
-		        const totalEpisode = summary.maxTotalEpisode > 0 ? summary.maxTotalEpisode : 0;
-		        const seasonCount = effectiveSeasonCount > 0 ? effectiveSeasonCount : 0;
+		      if (tmdbEnded && tmdbEnded.ended) {
+		        const seasonCount = tmdbEnded.seasonCount;
+		        const totalEpisode = tmdbEnded.episodeCount;
 		        if (seasonCount >= 2 && totalEpisode > 0) return `共${seasonCount}季${totalEpisode}集`;
 		        if (totalEpisode > 0) return `共${totalEpisode}集`;
-            if (seasonCount >= 2) return `共${seasonCount}季`;
-            if (episode > 0) return `共${episode}集`;
-		        return '';
+		        return '已完结';
 		      }
 
-		      if (episode > 0) {
-		        const upd = isMultiSeason && seasonFromSources >= 2 ? `更新至第${seasonFromSources}季第${episode}集` : `更新至第${episode}集`;
-            return upd;
+		      // Search page does not fetch Douban; when TMDB exists, treat it as the ground truth baseline.
+		      const tmdbBaseRemark = (() => {
+		        if (!hasTMDB) return '';
+		        const typed = tmdbByGroupKeyByType.get(gk) || null;
+		        const tv = typed && typed.tv ? typed.tv : null;
+		        if (!tv) return '';
+		        const badge = typeof tv.badge === 'string' ? tv.badge : '';
+		        const status = typeof tv.status === 'string' ? tv.status : '';
+		        const sc = Number.isFinite(Number(tv.seasonCount)) ? Math.floor(Number(tv.seasonCount)) : 0;
+		        const ec = Number.isFinite(Number(tv.episodeCount)) ? Math.floor(Number(tv.episodeCount)) : 0;
+		        const t = typeof tv.__displayTitle === 'string' && tv.__displayTitle.trim() ? tv.__displayTitle : (typeof tv.title === 'string' ? tv.title : title);
+		        return formatTMDBTVRemark({ badge, status, seasonCount: sc, episodeCount: ec, title: t }) || '';
+		      })();
+
+		      const list = Array.isArray(sources) ? sources : [];
+		      const isMulti = hasTMDB ? (tmdbSeasonCount >= 2 || (tmdbLatest && tmdbLatest.season >= 2)) : false;
+
+		      if (!isMulti) {
+		        // Single-season + not ended: only accept unseasoned "update to xx" from sources,
+		        // and ignore any season-marked items/titles.
+		        let bestEp = 0;
+		        list.forEach((src) => {
+		          const t = src && src.videoTitle != null ? String(src.videoTitle) : '';
+		          const r = src && src.videoRemark != null ? String(src.videoRemark) : '';
+		          const joined = `${r} ${t}`.trim();
+		          if (!joined) return;
+		          if (hasAnySeasonMarker(joined)) return;
+		          const ep = parseUnseasonedUpdateEpisode(joined);
+		          if (ep > bestEp) bestEp = ep;
+		        });
+		        const baseSeason = tmdbLatest && tmdbLatest.season > 0 ? tmdbLatest.season : 1;
+		        const baseEp = tmdbLatest && tmdbLatest.episode > 0 ? tmdbLatest.episode : 0;
+		        if (bestEp > baseEp) return `更新至第${bestEp}集`;
+		        return tmdbBaseRemark || '';
 		      }
-		      return '';
+
+		      // Multi-season + not ended: only accept explicit season-marked progress from sources.
+		      let best = null;
+		      list.forEach((src) => {
+		        const t = src && src.videoTitle != null ? String(src.videoTitle) : '';
+		        const r = src && src.videoRemark != null ? String(src.videoRemark) : '';
+		        const joined = `${r} ${t}`.trim();
+		        if (!joined) return;
+		        const p = parseSeasonedProgress(joined);
+		        if (!p) return;
+		        if (tmdbSeasonCount >= 2 && p.season > tmdbSeasonCount) return;
+		        if (!best || compareSeasonEpisode(p, best) > 0) best = p;
+		      });
+		      const base = { season: Number(tmdbLatest.season || 0), episode: Number(tmdbLatest.episode || 0) };
+		      if (best && compareSeasonEpisode(best, base) > 0) return `更新至第${best.season}季第${best.episode}集`;
+		      return tmdbBaseRemark || '';
 		    };
 
     const removeExistingGroupCards = (groupKey) => {
@@ -1614,13 +1591,13 @@ export function initSearchPage() {
         return '剧集';
       };
       const aggregateTypeLabel = tmdbCoverTypeLabel || inferAggregateTypeLabel(title || cover.videoTitle || '');
-      let remark = cover.videoRemark || '';
+      let remark = '';
       if (tmdbCoverType === 'movie') {
         const y = tmdbCover && tmdbCover.year != null ? Number(tmdbCover.year) : 0;
         remark = Number.isFinite(y) && y > 0 ? String(Math.floor(y)) : '';
       } else {
 	        const aggRemark = formatAggregateTVRemark({ groupKey: gk, groupTitle: title || cover.videoTitle || '', sources });
-        if (aggRemark) remark = aggRemark;
+        remark = aggRemark || '';
       }
       const storageKey = normalizeAggStorageKey(gk) || normalizeAggStorageKey(title);
       if (!storageKey) return;
@@ -1666,7 +1643,8 @@ export function initSearchPage() {
           removeNonTmdbAggregateCardsForGroup();
           tmdbEl.dataset.aggregate = '1';
           applyAggregateSourceBadge(tmdbEl, sourceSiteCount);
-          applyAggregateRemarkBadge(tmdbEl, remark || '');
+          // Never clear TMDB's own remark badge; only apply when aggregate remark is non-empty.
+          if (remark) applyAggregateRemarkBadge(tmdbEl, remark);
           syncAggregateStorage(storageKey, sources);
           aggregateCardByGroup.set(gk, {
             el: tmdbEl,
@@ -1699,7 +1677,10 @@ export function initSearchPage() {
         if (sourceSiteCount !== existing.sourceSiteCount) {
           existing.sourceSiteCount = sourceSiteCount;
           applyAggregateSourceBadge(existing.el, sourceSiteCount);
-          applyAggregateRemarkBadge(existing.el, remark || '');
+          // Keep TMDB remark when aggregate remark is empty.
+          if (remark || (existing.el && (existing.el.dataset.siteKey || '') !== 'tmdb')) {
+            applyAggregateRemarkBadge(existing.el, remark || '');
+          }
           aggregateCardByGroup.set(gk, existing);
         }
         return;

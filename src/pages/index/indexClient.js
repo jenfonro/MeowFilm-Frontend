@@ -65,7 +65,8 @@ const patchPosterCardWithTmdb = (wrapper, tmdb) => {
   const siteBadge = wrapper.querySelector('.tv-site-badge');
   if (siteBadge) siteBadge.textContent = tmdbTypeLabel(typ) || siteBadge.textContent;
 
-  const desiredRemark = typ === 'movie' ? (year || badge) : (formatTMDBTVRemark({ badge, status, seasonCount, episodeCount }) || '');
+  const desiredRemark =
+    typ === 'movie' ? (year || badge) : (formatTMDBTVRemark({ badge, status, seasonCount, episodeCount, title }) || '');
   const posterWrap = wrapper.querySelector('.douban-poster');
   if (posterWrap) {
     let remarkEl = posterWrap.querySelector('.tv-card-badge');
