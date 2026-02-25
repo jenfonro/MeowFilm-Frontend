@@ -22,7 +22,10 @@ function isAllowedDoubanImageHost(hostname) {
   const host = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
   if (!host) return false;
   if (/^img\d+\.doubanio\.com$/.test(host)) return true;
+  if (/^img\d+\.douban\.com$/.test(host)) return true;
   if (host === 'img3.doubanio.com') return true;
+  if (host === 'img.doubanio.com') return true;
+  if (host === 'img.douban.com') return true;
   if (host === 'img.doubanio.cmliussss.net') return true;
   if (host === 'img.doubanio.cmliussss.com') return true;
   return false;
@@ -40,18 +43,18 @@ function swapDoubanImageHost(urlStr, nextHost) {
     return u.toString();
   } catch (_e) {
     return original.replace(
-      /(img\d+\.doubanio\.com|img3\.doubanio\.com|img\.doubanio\.cmliussss\.(net|com))/gi,
+      /(img\d+\.doubanio\.com|img\d+\.douban\.com|img\.doubanio\.com|img\.douban\.com|img3\.doubanio\.com|img\.doubanio\.cmliussss\.(net|com))/gi,
       target
     );
   }
 }
 
 function readDoubanImgConfigFromDom() {
-  if (typeof document === 'undefined') return { mode: 'direct-browser', custom: '' };
+  if (typeof document === 'undefined') return { mode: 'server-proxy', custom: '' };
   const el = document.getElementById('homeDoubanConfig');
-  if (!el) return { mode: 'direct-browser', custom: '' };
-  const rawMode = (el.getAttribute('data-douban-img-proxy') || 'direct-browser').trim();
-  const mode = rawMode.split(/[\\s,]+/g)[0] || 'direct-browser';
+  if (!el) return { mode: 'server-proxy', custom: '' };
+  const rawMode = (el.getAttribute('data-douban-img-proxy') || 'server-proxy').trim();
+  const mode = rawMode.split(/[\\s,]+/g)[0] || 'server-proxy';
   const custom = (el.getAttribute('data-douban-img-custom') || '').trim();
   return { mode, custom };
 }
@@ -60,22 +63,30 @@ export function processPosterUrl(posterUrl) {
   const original = normalizeImageUrl(posterUrl);
   if (!original) return '';
 
+  const cfg = readDoubanImgConfigFromDom();
+  const mode = cfg && typeof cfg.mode === 'string' ? cfg.mode.trim() : 'server-proxy';
+
+  const lowered = original.toLowerCase();
   let host = '';
   try {
     host = new URL(original).hostname || '';
   } catch (_e) {
     host = '';
   }
-  if (!isAllowedDoubanImageHost(host) && !original.includes('doubanio')) return original;
 
-  const cfg = readDoubanImgConfigFromDom();
-  const mode = cfg && typeof cfg.mode === 'string' ? cfg.mode.trim() : 'direct-browser';
+  // Single unified detection rule (same for server-proxy/CDN modes).
+  const isDoubanImage = isAllowedDoubanImageHost(host) || lowered.includes('doubanio') || lowered.includes('douban.com');
 
-  if (mode === 'server-proxy') return `/api/douban/image?url=${encodeURIComponent(original)}`;
+  if (mode === 'server-proxy') {
+    if (!isDoubanImage) return original;
+    return `/api/douban/image?url=${encodeURIComponent(original)}`;
+  }
   if (mode === 'custom') {
     const base = normalizeProxyBase(cfg && typeof cfg.custom === 'string' ? cfg.custom : '');
     return base ? `${base}${encodeURIComponent(original)}` : original;
   }
+
+  if (!isDoubanImage) return original;
 
   switch (mode) {
     case 'douban-cdn-ali':
@@ -133,7 +144,6 @@ export function appendLazyPosterImage(posterWrap, { poster, alt, io, placeholder
   const img = document.createElement('img');
   img.dataset.src = url;
   img.dataset.originalSrc = normalized;
-  img.dataset.posterFallback = '0';
   img.alt = typeof alt === 'string' ? alt : '';
   img.loading = 'lazy';
   img.decoding = 'async';
@@ -152,18 +162,6 @@ export function appendLazyPosterImage(posterWrap, { poster, alt, io, placeholder
   img.addEventListener(
     'error',
     () => {
-      const tried = img.dataset.posterFallback === '1';
-      const orig = img.dataset.originalSrc || '';
-      if (!tried && orig && orig.includes('doubanio')) {
-        img.dataset.posterFallback = '1';
-        const rewritten = processPosterUrl(orig);
-        const apiTarget =
-          rewritten && typeof rewritten === 'string' && !rewritten.startsWith('/api/')
-            ? rewritten
-            : orig;
-        img.setAttribute('src', `/api/douban/image?url=${encodeURIComponent(apiTarget)}`);
-        return;
-      }
       if (placeholderEl) placeholderEl.remove();
       img.remove();
     },

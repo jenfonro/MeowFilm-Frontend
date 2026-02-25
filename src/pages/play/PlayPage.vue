@@ -1892,50 +1892,6 @@ const readPanMockEnabledFromRaw = (raw) => {
 	const DOUBAN_SEASON_META_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 	const doubanSeasonFetchState = { key: '', seq: 0, inFlight: null };
 
-	const normalizeProxyBase = (base) => {
-	  const raw = typeof base === 'string' ? base.trim() : '';
-	  if (!raw) return '';
-	  if (/[?&=]$/.test(raw)) return raw;
-	  return raw.endsWith('/') ? raw : `${raw}/`;
-	};
-	const toProxiedUrl = (targetUrl, proxyBase) => {
-	  if (!proxyBase) return targetUrl;
-	  const normalized = normalizeProxyBase(proxyBase);
-	  if (normalized.includes('cors-anywhere.com/')) return `${normalized}${targetUrl}`;
-	  return `${normalized}${encodeURIComponent(targetUrl)}`;
-	};
-
-	const getDoubanDataApiBase = () => {
-	  const settings = effectiveBootstrapSettings.value || {};
-	  const rawProxy = settings.doubanDataProxy != null ? String(settings.doubanDataProxy).trim() : 'direct';
-	  const proxy = (rawProxy || '').split(/[\\s,]+/g)[0] || 'direct';
-	  const custom = settings.doubanDataCustom != null ? String(settings.doubanDataCustom).trim() : '';
-	  if (proxy === 'cdn-tx' || proxy === 'cmliussss-cdn-tencent') return { m: 'https://m.douban.cmliussss.net', proxyBase: '' };
-	  if (proxy === 'cdn-ali' || proxy === 'cmliussss-cdn-ali') return { m: 'https://m.douban.cmliussss.com', proxyBase: '' };
-	  if (proxy === 'cors' || proxy === 'cors-proxy-zwei') return { m: 'https://m.douban.com', proxyBase: 'https://ciao-cors.is-an.org/' };
-	  if (proxy === 'cors-anywhere') return { m: 'https://m.douban.com', proxyBase: 'https://cors-anywhere.com/' };
-	  if (proxy === 'custom') return { m: 'https://m.douban.com', proxyBase: custom ? normalizeProxyBase(custom) : '' };
-	  return { m: 'https://m.douban.com', proxyBase: '' };
-	};
-
-	const fetchJsonWithTimeout = async (url, timeoutMs = 12000) => {
-	  const controller = new AbortController();
-	  const id = setTimeout(() => controller.abort(), timeoutMs);
-	  try {
-	    const resp = await fetch(url, {
-	      signal: controller.signal,
-	      headers: {
-	        Accept: 'application/json, text/plain, */*',
-	      },
-	      credentials: 'omit',
-	    });
-	    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-	    return await resp.json();
-	  } finally {
-	    clearTimeout(id);
-	  }
-	};
-
 	const parseChineseNumberLoosely = (s) => {
 	  const raw = typeof s === 'string' ? s.trim() : '';
 	  if (!raw) return 0;
@@ -2093,17 +2049,10 @@ const readPanMockEnabledFromRaw = (raw) => {
 	const fetchDoubanSeasonMetaFromDouban = async ({ keyword = '', maxSeasons = 10 } = {}) => {
 	  const q = typeof keyword === 'string' ? keyword.trim() : '';
 	  if (!q) return null;
-	  const { m, proxyBase } = getDoubanDataApiBase();
-
-	  const apiBase = String(m || '').replace(/\/+$/g, '');
-	  const u = new URL(`${apiBase}/rexxar/api/v2/search`);
-	  u.searchParams.set('q', q);
-	  u.searchParams.set('type', 'tv');
-	  u.searchParams.set('start', '0');
-	  u.searchParams.set('count', '20');
-	  const target = u.toString();
-	  const url = proxyBase ? toProxiedUrl(target, proxyBase) : target;
-	  const data = await fetchJsonWithTimeout(url, 12000);
+	  const data = await apiGetJson(
+	    `/api/douban/rexxar/api/v2/search${buildQuery({ q, type: 'tv', start: 0, count: 20 })}`,
+	    { timeoutMs: 12000 }
+	  );
 
 		  const subjects = Array.isArray(data?.subjects?.items) ? data.subjects.items : [];
 			  const smartBox = Array.isArray(data?.smart_box) ? data.smart_box : [];
@@ -2354,10 +2303,7 @@ const readPanMockEnabledFromRaw = (raw) => {
 			    if (!isStrictTitleMatch(it && it.title)) return null;
 			    if (isLikelyUnreleased(it)) return null;
 			    if (shouldSkipLikelyFuture(it)) return null;
-			    const du = new URL(`${apiBase}/rexxar/api/v2/tv/${encodeURIComponent(it.doubanId)}`);
-		    const dTarget = du.toString();
-		    const dUrl = proxyBase ? toProxiedUrl(dTarget, proxyBase) : dTarget;
-		    const detail = await fetchJsonWithTimeout(dUrl, 12000);
+			    const detail = await apiGetJson(`/api/douban/rexxar/api/v2/tv/${encodeURIComponent(it.doubanId)}`, { timeoutMs: 12000 });
 
 	    const epCountRaw = detail?.episodes_count;
 	    let episodeCount = 0;

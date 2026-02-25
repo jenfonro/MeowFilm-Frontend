@@ -2103,14 +2103,11 @@ export function initIndexPage() {
         };
 
         const runtimeConfig = {
-          doubanDataProxy: (cfgEl.getAttribute('data-douban-data-proxy') || 'direct').trim(),
-          doubanDataCustom: (cfgEl.getAttribute('data-douban-data-custom') || '').trim(),
-          doubanImgProxy: (cfgEl.getAttribute('data-douban-img-proxy') || 'direct-browser').trim(),
+          doubanImgProxy: (cfgEl.getAttribute('data-douban-img-proxy') || 'server-proxy').trim(),
           doubanImgCustom: (cfgEl.getAttribute('data-douban-img-custom') || '').trim(),
         };
-        runtimeConfig.doubanDataProxy = (runtimeConfig.doubanDataProxy || '').split(/[\\s,]+/g)[0] || 'direct';
         runtimeConfig.doubanImgProxy =
-          (runtimeConfig.doubanImgProxy || '').split(/[\\s,]+/g)[0] || 'direct-browser';
+          (runtimeConfig.doubanImgProxy || '').split(/[\\s,]+/g)[0] || 'server-proxy';
 
         const movieRow = document.getElementById('homeHotMovieRow');
         const tvRow = document.getElementById('homeHotTvRow');
@@ -2146,33 +2143,6 @@ export function initIndexPage() {
           return raw.endsWith('/') ? raw : `${raw}/`;
         };
 
-        const toProxiedUrl = (targetUrl, proxyBase) => {
-          if (!proxyBase) return targetUrl;
-          const normalized = normalizeProxyBase(proxyBase);
-          if (normalized.includes('cors-anywhere.com/')) return `${normalized}${targetUrl}`;
-          return `${normalized}${encodeURIComponent(targetUrl)}`;
-        };
-
-        const getDataApiBase = () => {
-          const p = runtimeConfig.doubanDataProxy;
-          if (p === 'cdn-tx' || p === 'cmliussss-cdn-tencent') {
-            return { m: 'https://m.douban.cmliussss.net', proxyBase: '' };
-          }
-          if (p === 'cdn-ali' || p === 'cmliussss-cdn-ali') {
-            return { m: 'https://m.douban.cmliussss.com', proxyBase: '' };
-          }
-          if (p === 'cors' || p === 'cors-proxy-zwei') {
-            return { m: 'https://m.douban.com', proxyBase: 'https://ciao-cors.is-an.org/' };
-          }
-          if (p === 'cors-anywhere') {
-            return { m: 'https://m.douban.com', proxyBase: 'https://cors-anywhere.com/' };
-          }
-          if (p === 'custom') {
-            return { m: 'https://m.douban.com', proxyBase: runtimeConfig.doubanDataCustom };
-          }
-          return { m: 'https://m.douban.com', proxyBase: '' };
-        };
-
         const normalizeImageUrl = (u) => {
           const raw = typeof u === 'string' ? u.trim() : '';
           if (!raw) return '';
@@ -2185,7 +2155,10 @@ export function initIndexPage() {
           const host = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
           if (!host) return false;
           if (/^img\d+\.doubanio\.com$/.test(host)) return true;
+          if (/^img\d+\.douban\.com$/.test(host)) return true;
           if (host === 'img3.doubanio.com') return true;
+          if (host === 'img.doubanio.com') return true;
+          if (host === 'img.douban.com') return true;
           if (host === 'img.doubanio.cmliussss.net') return true;
           if (host === 'img.doubanio.cmliussss.com') return true;
           return false;
@@ -2203,7 +2176,7 @@ export function initIndexPage() {
             return u.toString();
           } catch (_e) {
             return original.replace(
-              /(img\d+\.doubanio\.com|img3\.doubanio\.com|img\.doubanio\.cmliussss\.(net|com))/gi,
+              /(img\d+\.doubanio\.com|img\d+\.douban\.com|img\.doubanio\.com|img\.douban\.com|img3\.doubanio\.com|img\.doubanio\.cmliussss\.(net|com))/gi,
               target
             );
           }
@@ -2211,33 +2184,42 @@ export function initIndexPage() {
 
         const buildImageCandidates = (originalUrl) => {
           const original = normalizeImageUrl(originalUrl);
+          if (!original) return [];
           const processed = processImageUrl(original);
           const candidates = [];
           if (processed) candidates.push(processed);
-          if (original && original.includes('doubanio')) {
-            const p = runtimeConfig.doubanImgProxy;
-            const isDirect = p === 'direct' || p === 'direct-browser' || !p;
-            if (isDirect) {
-              candidates.push(swapDoubanImageHost(original, 'img3.doubanio.com'));
-              candidates.push(original);
-            } else {
-              // Prefer configured CDN / mirrors; do not fall back to direct img1/img2...doubanio.com.
-              if (p === 'cdn-tx' || p === 'cmliussss-cdn-tencent') {
-                candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
-                candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
-              } else if (p === 'cdn-ali' || p === 'cmliussss-cdn-ali') {
-                candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
-                candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
-              }
-            }
-            if (p !== 'server-proxy') {
-              const apiTarget =
-                p === 'custom' || !processed || processed.startsWith('/api/')
-                  ? original
-                  : processed;
-              candidates.push(`/api/douban/image?url=${encodeURIComponent(apiTarget)}`);
-            }
+
+          const lowered = original.toLowerCase();
+          let host = '';
+          try {
+            host = new URL(original).hostname || '';
+          } catch (_e) {
+            host = '';
           }
+          const isDouban = isAllowedDoubanImageHost(host) || lowered.includes('doubanio') || lowered.includes('douban.com');
+          if (!isDouban) return candidates;
+
+          const p = runtimeConfig.doubanImgProxy || 'server-proxy';
+
+          if (p === 'server-proxy') {
+            candidates.length = 0;
+            candidates.push(`/api/douban/image?url=${encodeURIComponent(original)}`);
+            return candidates;
+          }
+
+          // CDN modes: keep legacy fallback candidates (same rule; only upstream host differs).
+          if (p === 'cdn-tx' || p === 'cmliussss-cdn-tencent') {
+            candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
+            candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
+          } else if (p === 'cdn-ali' || p === 'cmliussss-cdn-ali') {
+            candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
+            candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
+          } else if (p === 'douban-cdn-ali' || p === 'img3') {
+            candidates.push(swapDoubanImageHost(original, 'img3.doubanio.com'));
+          }
+
+          // Always include server image proxy as a last-resort fallback (still respects backend allowlist).
+          candidates.push(`/api/douban/image?url=${encodeURIComponent(original)}`);
           const uniq = [];
           const seen = new Set();
           candidates.forEach((c) => {
@@ -2253,23 +2235,26 @@ export function initIndexPage() {
           const original = normalizeImageUrl(originalUrl);
           if (!original) return original;
 
-          const p = runtimeConfig.doubanImgProxy;
-          if (p === 'server-proxy') {
-            return `/api/douban/image?url=${encodeURIComponent(original)}`;
-          }
+          const p = runtimeConfig.doubanImgProxy || 'server-proxy';
           if (p === 'custom') {
             return runtimeConfig.doubanImgCustom
               ? `${normalizeProxyBase(runtimeConfig.doubanImgCustom)}${encodeURIComponent(original)}`
               : original;
           }
 
+          const lowered = original.toLowerCase();
           let host = '';
           try {
             host = new URL(original).hostname || '';
           } catch (_e) {
             host = '';
           }
-          if (!isAllowedDoubanImageHost(host) && !original.includes('doubanio')) return original;
+          const isDouban = isAllowedDoubanImageHost(host) || lowered.includes('doubanio') || lowered.includes('douban.com');
+          if (!isDouban) return original;
+
+          if (p === 'server-proxy') {
+            return `/api/douban/image?url=${encodeURIComponent(original)}`;
+          }
 
           switch (p) {
             case 'douban-cdn-ali':
@@ -2281,8 +2266,6 @@ export function initIndexPage() {
             case 'cdn-ali':
             case 'cmliussss-cdn-ali':
               return swapDoubanImageHost(original, 'img.doubanio.cmliussss.com');
-            case 'direct-browser':
-            case 'direct':
             default:
               return original;
           }
@@ -2304,20 +2287,18 @@ export function initIndexPage() {
         };
 
         const fetchDoubanRecentHot = async ({ kind, category, hotType, start, limit }) => {
-          const { m, proxyBase } = getDataApiBase();
-          const u = new URL(`${m}/rexxar/api/v2/subject/recent_hot/${kind}`);
-          u.searchParams.set('start', String(start));
-          u.searchParams.set('limit', String(limit));
-          u.searchParams.set('category', category);
-          u.searchParams.set('type', hotType);
-          const target = u.toString();
-          const url = proxyBase ? toProxiedUrl(target, proxyBase) : target;
+          const q = new URLSearchParams();
+          q.set('start', String(start));
+          q.set('limit', String(limit));
+          q.set('category', category);
+          q.set('type', hotType);
+          const url = `/api/douban/rexxar/api/v2/subject/recent_hot/${encodeURIComponent(kind)}?${q.toString()}`;
           const data = await fetchJsonWithTimeout(url);
           const items = Array.isArray(data?.items) ? data.items : [];
           return items.map((item) => ({
             id: String(item?.id || ''),
             title: item?.title || '',
-            poster: processImageUrl(item?.pic?.normal || item?.pic?.large || ''),
+            poster: normalizeImageUrl(item?.pic?.normal || item?.pic?.large || ''),
             rate: item?.rating?.value ? Number(item.rating.value).toFixed(1) : '',
             year: (item?.card_subtitle || '').match(/(\\d{4})/)?.[1] || '',
             isBangumi: false,

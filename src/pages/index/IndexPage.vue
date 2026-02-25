@@ -148,8 +148,6 @@
 		              <div
 			                id="homeDoubanConfig"
 		                class="hidden"
-		                :data-douban-data-proxy="bootstrap.settings.doubanDataProxy"
-		                :data-douban-data-custom="bootstrap.settings.doubanDataCustom"
 		                :data-douban-img-proxy="bootstrap.settings.doubanImgProxy"
 		                :data-douban-img-custom="bootstrap.settings.doubanImgCustom"
 		                :data-cat-api-base="bootstrap.settings.catPawOpenApiBase || ''"

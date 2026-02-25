@@ -7443,8 +7443,8 @@ export function initDashboardPage(bootstrap = {}) {
 	  const renderMetadataPanel = (data) => {
 	    const s = data && typeof data === 'object' ? data : {};
 
-      syncCustomSelectValue('doubanDataSelect', s.doubanDataProxy || 'direct');
-      syncCustomSelectValue('doubanImgSelect', s.doubanImgProxy || 'direct-browser');
+      syncCustomSelectValue('doubanDataSelect', s.doubanDataProxy || 'server-proxy');
+      syncCustomSelectValue('doubanImgSelect', s.doubanImgProxy || 'server-proxy');
       if (doubanDataCustomInput) doubanDataCustomInput.value = typeof s.doubanDataCustom === 'string' ? s.doubanDataCustom : '';
       if (doubanImgCustomInput) doubanImgCustomInput.value = typeof s.doubanImgCustom === 'string' ? s.doubanImgCustom : '';
 

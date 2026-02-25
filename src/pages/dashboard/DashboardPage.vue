@@ -808,7 +808,7 @@
                     <div>
                       <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣数据代理</label>
                       <select id="doubanDataSelect" class="custom-select tv-field">
-                        <option value="direct">直连（浏览器直接请求豆瓣）</option>
+                        <option value="server-proxy">服务器代理</option>
                         <option value="cors">Cors Proxy By Zwei</option>
                         <option value="cdn-tx">豆瓣 CDN By CMLiussss（腾讯云）</option>
                         <option value="cdn-ali">豆瓣 CDN By CMLiussss（阿里云）</option>
@@ -817,14 +817,13 @@
                       <div id="doubanDataCustom" class="mt-2 hidden">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣代理地址</label>
                         <input id="doubanDataCustomInput" class="tv-field" autocomplete="off" />
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义代理服务器地址</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">自定义代理地址</p>
                       </div>
                     </div>
                     <div>
                       <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">豆瓣图片代理</label>
                       <select id="doubanImgSelect" class="custom-select tv-field">
-                        <option value="direct-browser">直连（浏览器直接请求豆瓣）</option>
-                        <option value="server-proxy">服务器代理（由服务器代理请求豆瓣）</option>
+                        <option value="server-proxy">服务器代理</option>
                         <option value="douban-cdn-ali">豆瓣官方精品 CDN（阿里云）</option>
                         <option value="cdn-tx">豆瓣 CDN By CMLiussss（腾讯云）</option>
                         <option value="cdn-ali">豆瓣 CDN By CMLiussss（阿里云）</option>
