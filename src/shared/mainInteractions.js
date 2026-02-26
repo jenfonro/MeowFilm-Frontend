@@ -1,5 +1,4 @@
 export function initMainInteractions() {
-  // Sidebar collapse (desktop)
   const sidebarToggle = document.getElementById('sidebarToggleBtn');
   const sidebar = document.getElementById('desktopSidebar');
   const sidebarOffset = document.getElementById('sidebarOffset');
@@ -9,18 +8,16 @@ export function initMainInteractions() {
     const logoImg = sidebar.querySelector('.logo-mark img');
     const brandBox = sidebar.querySelector('.brand-box');
     const navTextSpans = sidebar.querySelectorAll('.nav-label');
-    sidebarToggle.addEventListener('click', () => {
-      const collapsed = sidebar.classList.toggle('collapsed');
+    const syncCollapsed = (collapsed) => {
       sidebarOffset.classList.toggle('collapsed', collapsed);
-      if (logoRow) logoRow.style.display = collapsed ? 'none' : '';
-      if (logoText) logoText.style.display = collapsed ? 'none' : '';
-      if (logoImg) logoImg.style.display = collapsed ? 'none' : '';
-      if (brandBox) brandBox.style.display = collapsed ? 'none' : '';
+      [logoRow, logoText, logoImg, brandBox].forEach((el) => {
+        if (el) el.style.display = collapsed ? 'none' : '';
+      });
       navTextSpans.forEach((s) => (s.style.display = collapsed ? 'none' : ''));
-    });
+    };
+    sidebarToggle.addEventListener('click', () => syncCollapsed(sidebar.classList.toggle('collapsed')));
   }
 
-  // segment tabs (首页/收藏夹) active state mimic
   const segButtons = document.querySelectorAll('.seg-toggle .seg-btn');
   if (segButtons.length) {
     segButtons.forEach((btn) => {
@@ -30,7 +27,6 @@ export function initMainInteractions() {
     });
   }
 
-  // theme toggle (light/dark class on html/body)
   const themeBtn = document.getElementById('themeToggleBtn');
   const sunIcon = document.querySelector('#themeToggleBtn .sun');
   const moonIcon = document.querySelector('#themeToggleBtn .moon');
@@ -40,13 +36,12 @@ export function initMainInteractions() {
       document.documentElement.classList.toggle('dark', dark);
       document.body.classList.toggle('dark', dark);
       if (sunIcon && moonIcon) {
-        // Light 模式显示月亮，暗色模式显示太阳
         sunIcon.classList.toggle('hidden', !dark);
         moonIcon.classList.toggle('hidden', dark);
       }
       localStorage.setItem(STORAGE_KEY, dark ? 'dark' : 'light');
     };
-    const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('tvbox_theme');
+    const saved = localStorage.getItem(STORAGE_KEY);
     const initialDark = saved === 'dark';
     applyTheme(initialDark);
     themeBtn.addEventListener('click', () => {
@@ -55,7 +50,6 @@ export function initMainInteractions() {
     });
   }
 
-  // user menu
   const userBtn = document.getElementById('userMenuBtn');
   const userMenu = document.getElementById('userMenu');
   if (userBtn && userMenu) {

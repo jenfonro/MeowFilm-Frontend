@@ -44,6 +44,10 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-database h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
           <span class="nav-label">媒体数据设置</span>
         </a>
+        <a data-admin="thirdparty" class="admin-nav nav-item group flex items-center rounded-lg px-3 py-2 pl-4 text-gray-700 hover:bg-gray-100/30 hover:text-green-600 data-[active=true]:bg-green-500/20 data-[active=true]:text-green-700 dark:text-gray-100 dark:hover:bg-white/10 dark:data-[active=true]:text-green-300 gap-3 justify-start transition-colors duration-200 min-h-[40px]" href="#">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-panels-top-left h-5 w-5 text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          <span class="nav-label">三方客户端设置</span>
+        </a>
         </div>
       </nav>
     </aside>
@@ -889,6 +893,52 @@
                 </div>
               </form>
 		        </section>
+
+          <section v-if="bootstrap.user.role === 'admin'" id="adminThirdparty" class="admin-panel hidden space-y-6">
+            <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-panels-top-left h-5 w-5 text-gray-600 dark:text-gray-300"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+              三方客户端设置
+            </div>
+
+            <div class="admin-card space-y-4">
+              <div class="text-sm text-gray-600 dark:text-gray-300">配置 Emby/Jellyfin 等三方客户端首页栏目（Emby 目前支持豆瓣模块/站点数据/历史记录；部分客户端会自动在栏目名前加“最新”，建议显示名称不要再以“最新”开头）。</div>
+
+              <form id="thirdPartySettingsForm" method="post" action="/dashboard/thirdparty/save" class="space-y-3">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <button id="embyHomeSectionAdd" type="button" class="btn-green">添加栏目</button>
+                  <button id="embyHomeSectionRestoreDefaults" type="button" class="btn-ghost-blue">恢复默认</button>
+                  <div id="embyHomeSettingsStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
+                </div>
+
+                <input id="embyHomeSectionsJson" name="embyHomeSectionsJson" type="hidden" value="[]">
+
+                <div class="tv-panel overflow-x-auto">
+                  <table class="table-auto w-max max-w-full text-sm text-left text-gray-700 dark:text-gray-100">
+                    <thead class="table-head">
+                      <tr>
+                        <th class="px-3 py-2 whitespace-nowrap">显示名称</th>
+                        <th class="px-3 py-2 whitespace-nowrap">主模块</th>
+                        <th class="px-3 py-2 whitespace-nowrap">栏目类型</th>
+                        <th class="px-3 py-2 whitespace-nowrap">站点选择</th>
+                        <th class="px-3 py-2 whitespace-nowrap">分类选择</th>
+                        <th class="px-3 py-2 whitespace-nowrap">卡片属性</th>
+                        <th class="px-3 py-2 whitespace-nowrap">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="embyHomeSectionTableBody" class="divide-y divide-gray-100 dark:divide-gray-800">
+                      <tr>
+                        <td class="px-3 py-2 text-gray-500 dark:text-gray-400" colspan="7">加载中...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="pt-1 flex justify-start">
+                  <button type="submit" class="btn-green">保存</button>
+                </div>
+              </form>
+            </div>
+          </section>
 	        <section v-if="bootstrap.user.role === 'admin'" id="adminMagic" class="admin-panel hidden space-y-6">
 	          <div class="flex items-center gap-2 text-gray-800 dark:text-gray-100 text-base font-semibold">
 	            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2 h-5 w-5 text-gray-600 dark:text-gray-300"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 18.99V22h3.01L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>

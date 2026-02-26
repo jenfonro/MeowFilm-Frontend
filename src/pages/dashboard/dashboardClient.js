@@ -118,6 +118,13 @@ export function initDashboardPage(bootstrap = {}) {
   const doubanDataCustomInput = document.getElementById('doubanDataCustomInput');
   const doubanImgCustomInput = document.getElementById('doubanImgCustomInput');
 
+  const thirdPartySettingsForm = document.getElementById('thirdPartySettingsForm');
+  const embyHomeSectionAdd = document.getElementById('embyHomeSectionAdd');
+  const embyHomeSectionRestoreDefaults = document.getElementById('embyHomeSectionRestoreDefaults');
+  const embyHomeSectionsJson = document.getElementById('embyHomeSectionsJson');
+  const embyHomeSectionTableBody = document.getElementById('embyHomeSectionTableBody');
+  const embyHomeSettingsStatus = document.getElementById('embyHomeSettingsStatus');
+
   const tmdbApiTokenInput = document.getElementById('tmdbApiToken');
   const tmdbDataProxyBaseInput = document.getElementById('tmdbDataProxyBase');
   const tmdbImageProxyBaseInput = document.getElementById('tmdbImageProxyBase');
@@ -633,7 +640,7 @@ export function initDashboardPage(bootstrap = {}) {
     return list;
   };
   let initialPanelKey = null;
-  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic', 'smart', 'metadata']);
+  const allowedPanels = new Set(['site', 'user', 'video', 'pan', 'interface', 'magic', 'smart', 'metadata', 'thirdparty']);
   const normalizePanelKey = (key) => {
     const k = typeof key === 'string' ? key.trim().toLowerCase() : '';
     return allowedPanels.has(k) ? k : 'site';
@@ -889,8 +896,8 @@ export function initDashboardPage(bootstrap = {}) {
         Object.entries(obj).forEach(([k, v]) => {
           const url = normalizeHttpUrl(k);
           const val = v && typeof v === 'object' && !Array.isArray(v) ? v : null;
-          const sRaw = val ? val.s || val.status || '' : v;
-          const pRaw = val ? val.p || val.phase || '' : '';
+          const sRaw = val ? val.s : '';
+          const pRaw = val ? val.p : '';
           const check = normalizeConfigCheckStatus(sRaw);
           const phase = normalizeConfigCheckPhase(pRaw);
           if (url && check && check !== 'unchecked') out.set(url, { status: check, phase });
@@ -907,7 +914,7 @@ export function initDashboardPage(bootstrap = {}) {
         (map instanceof Map ? Array.from(map.entries()) : []).forEach(([k, v]) => {
           const url = normalizeHttpUrl(k);
           const val = v && typeof v === 'object' && !Array.isArray(v) ? v : null;
-          const status = normalizeConfigCheckStatus(val ? val.status : v);
+          const status = normalizeConfigCheckStatus(val ? val.status : '');
           const phase = normalizeConfigCheckPhase(val ? val.phase : '');
           if (url && status && status !== 'unchecked') obj[url] = { s: status, p: phase };
         });
@@ -919,7 +926,7 @@ export function initDashboardPage(bootstrap = {}) {
       if (!(checkCache instanceof Map) || !url) return { status: 'unchecked', phase: '' };
       const v = checkCache.get(url);
       const val = v && typeof v === 'object' && !Array.isArray(v) ? v : null;
-      const status = normalizeConfigCheckStatus(val ? val.status : v);
+      const status = normalizeConfigCheckStatus(val ? val.status : '');
       const phase = normalizeConfigCheckPhase(val ? val.phase : '');
       return { status: status || 'unchecked', phase };
     };
@@ -5605,6 +5612,395 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
+	  let thirdPartyLoaded = false;
+	  let thirdPartyLoading = false;
+	  let embyHomeSections = [];
+	  let embyHomeHandlersBound = false;
+	  let thirdPartyHomeSites = [];
+	  const thirdPartySiteCategoryCache = new Map(); // siteKey -> [{id,name}]
+	
+	  const DEFAULT_EMBY_HOME_SECTIONS = [
+	    { id: 'view_tmdb_tv', name: '最新剧集', module: 'douban_tv', mediaType: 'tv' },
+	    { id: 'view_tmdb_movies', name: '最新电影', module: 'douban_movie', mediaType: 'movie' },
+	    { id: 'view_tmdb_anime', name: '最新动漫', module: 'bangumi_anime', mediaType: 'tv' },
+	    { id: 'view_tmdb_show', name: '最新综艺', module: 'douban_variety', mediaType: 'tv' },
+	  ];
+	
+	  const EM_BY_MODULE_OPTIONS = [
+	    { value: 'douban_tv', label: '豆瓣剧集' },
+	    { value: 'douban_movie', label: '豆瓣电影' },
+	    { value: 'bangumi_anime', label: 'Bangumi动漫' },
+	    { value: 'douban_variety', label: '豆瓣综艺' },
+	    { value: 'history', label: '历史记录' },
+	    { value: 'site_data', label: '站点数据' },
+	  ];
+	
+	  const EM_BY_MEDIA_TYPE_OPTIONS = [
+	    { value: 'tv', label: '电视剧' },
+	    { value: 'movie', label: '电影' },
+	  ];
+
+	  const EM_BY_CARD_STYLE_OPTIONS = [
+	    { value: 'tmdb', label: 'TMDB' },
+	    { value: 'site', label: '站点数据' },
+	  ];
+
+	  const isModuleRequiringSite = (m) => String(m || '').trim().toLowerCase() === 'site_data';
+	
+	  const setEmbyHomeStatus = (kind, msg) => {
+	    if (!embyHomeSettingsStatus) return;
+	    const text = typeof msg === 'string' ? msg.trim() : '';
+	    const k = typeof kind === 'string' ? kind.trim() : '';
+	    embyHomeSettingsStatus.classList.toggle('hidden', !text);
+    embyHomeSettingsStatus.classList.toggle('text-green-600', k === 'success');
+    embyHomeSettingsStatus.classList.toggle('text-red-600', k === 'error');
+    embyHomeSettingsStatus.classList.toggle('text-gray-500', !k);
+    embyHomeSettingsStatus.textContent = text;
+	  };
+	
+	  const normalizeEmbyHomeSection = (s) => {
+	    const obj = s && typeof s === 'object' ? s : {};
+	    const id = typeof obj.id === 'string' ? obj.id.trim() : '';
+	    const name = typeof obj.name === 'string' ? obj.name.trim() : '';
+	    const moduleRaw = typeof obj.module === 'string' ? obj.module.trim().toLowerCase() : '';
+	    const mediaTypeRaw = typeof obj.mediaType === 'string' ? obj.mediaType.trim().toLowerCase() : '';
+	    const siteKey = typeof obj.siteKey === 'string' ? obj.siteKey.trim() : '';
+	    const categoryId = typeof obj.categoryId === 'string' ? obj.categoryId.trim() : '';
+	    const cardStyleRaw = typeof obj.cardStyle === 'string' ? obj.cardStyle.trim().toLowerCase() : '';
+	    if (!name) return null;
+	    const moduleAllowed = new Set(EM_BY_MODULE_OPTIONS.map((x) => x.value));
+	    const module = moduleAllowed.has(moduleRaw) ? moduleRaw : 'douban_tv';
+	    let mediaType = mediaTypeRaw === 'movie' || mediaTypeRaw === 'tv' ? mediaTypeRaw : '';
+	    if (!mediaType) {
+	      mediaType = module === 'douban_movie' ? 'movie' : 'tv';
+	    }
+	    const finalId = (id || `view_custom_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`).startsWith('view_')
+	      ? (id || `view_custom_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`)
+	      : `view_${id || `custom_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`}`;
+	    const out = { id: finalId, name, module, mediaType };
+	    if (isModuleRequiringSite(module)) {
+	      out.siteKey = siteKey;
+	      out.categoryId = categoryId;
+	      out.cardStyle = cardStyleRaw === 'site' || cardStyleRaw === 'tmdb' ? cardStyleRaw : 'tmdb';
+	    } else {
+	      out.siteKey = '';
+	      out.categoryId = '';
+	      out.cardStyle = '';
+	    }
+	    return out;
+	  };
+
+  const syncEmbyHomeJson = () => {
+    if (!embyHomeSectionsJson) return;
+    try {
+      embyHomeSectionsJson.value = JSON.stringify(embyHomeSections || []);
+    } catch (_e) {
+      embyHomeSectionsJson.value = '[]';
+    }
+  };
+
+	  const renderEmbyHomeSections = () => {
+	    if (!embyHomeSectionTableBody) return;
+	    const list = Array.isArray(embyHomeSections) ? embyHomeSections : [];
+	    if (!list.length) {
+	      embyHomeSectionTableBody.innerHTML = '<tr><td class="px-3 py-2 text-gray-500 dark:text-gray-400" colspan="7">无数据</td></tr>';
+	      syncEmbyHomeJson();
+	      return;
+	    }
+	    const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');
+	    const moduleOptionsHtml = EM_BY_MODULE_OPTIONS.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+	    const mediaTypeOptionsHtml = EM_BY_MEDIA_TYPE_OPTIONS.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+	    const cardStyleOptionsHtml = EM_BY_CARD_STYLE_OPTIONS.map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+	    const siteOptionsHtml = (thirdPartyHomeSites || [])
+	      .filter((s) => s && s.key && s.name)
+	      .map((s) => `<option value="${esc(s.key)}">${esc(s.name)}</option>`)
+	      .join('');
+	    embyHomeSectionTableBody.innerHTML = list
+	      .map((s, i) => {
+	        const upDisabled = i === 0 ? 'disabled' : '';
+	        const downDisabled = i === list.length - 1 ? 'disabled' : '';
+	        const module = String(s.module || '').trim().toLowerCase();
+	        const siteEnabled = isModuleRequiringSite(module);
+	        const siteKey = String(s.siteKey || '').trim();
+	        const categories = siteEnabled && siteKey ? (thirdPartySiteCategoryCache.get(siteKey) || []) : [];
+	        const categoryOptionsHtml = categories
+	          .filter((c) => c && c.id && c.name)
+	          .map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`)
+	          .join('');
+	        const siteDisabledAttr = siteEnabled ? '' : 'disabled';
+	        const categoryDisabledAttr = siteEnabled && siteKey ? '' : 'disabled';
+	        const cardStyleDisabledAttr = siteEnabled ? '' : 'disabled';
+	        return `
+	          <tr data-index="${i}">
+	            <td class="px-3 py-2">
+	              <input class="tv-field" data-field="name" data-index="${i}" value="${esc(s.name)}" autocomplete="off" />
+	            </td>
+	            <td class="px-3 py-2">
+	              <select class="custom-select tv-field" data-field="module" data-index="${i}">
+	                ${moduleOptionsHtml}
+	              </select>
+	            </td>
+	            <td class="px-3 py-2">
+	              <select class="custom-select tv-field" data-field="mediaType" data-index="${i}">
+	                ${mediaTypeOptionsHtml}
+	              </select>
+	            </td>
+	            <td class="px-3 py-2">
+	              <select class="custom-select tv-field" data-field="siteKey" data-index="${i}" ${siteDisabledAttr}>
+	                <option value="">选择站点</option>
+	                ${siteOptionsHtml}
+	              </select>
+	            </td>
+	            <td class="px-3 py-2">
+	              <select class="custom-select tv-field" data-field="categoryId" data-index="${i}" ${categoryDisabledAttr}>
+	                <option value="">选择分类</option>
+	                ${categoryOptionsHtml}
+	              </select>
+	            </td>
+	            <td class="px-3 py-2">
+	              <select class="custom-select tv-field" data-field="cardStyle" data-index="${i}" ${cardStyleDisabledAttr}>
+	                ${cardStyleOptionsHtml}
+	              </select>
+	            </td>
+	            <td class="px-3 py-2 whitespace-nowrap">
+	              <button type="button" class="btn-ghost-blue" data-action="up" data-index="${i}" ${upDisabled}>上移</button>
+	              <button type="button" class="btn-ghost-blue" data-action="down" data-index="${i}" ${downDisabled}>下移</button>
+	              <button type="button" class="btn-ghost-red" data-action="delete" data-index="${i}">删除</button>
+	            </td>
+	          </tr>
+	        `;
+	      })
+	      .join('');
+	    list.forEach((s, i) => {
+	      const row = embyHomeSectionTableBody.querySelector(`tr[data-index="${i}"]`);
+	      if (!row) return;
+	      const moduleEl = row.querySelector('select[data-field="module"]');
+	      const mediaTypeEl = row.querySelector('select[data-field="mediaType"]');
+	      const siteKeyEl = row.querySelector('select[data-field="siteKey"]');
+	      const categoryEl = row.querySelector('select[data-field="categoryId"]');
+	      const cardStyleEl = row.querySelector('select[data-field="cardStyle"]');
+	      if (moduleEl) moduleEl.value = String(s.module || '');
+	      if (mediaTypeEl) mediaTypeEl.value = String(s.mediaType || '');
+	      if (siteKeyEl) siteKeyEl.value = String(s.siteKey || '');
+	      if (categoryEl) categoryEl.value = String(s.categoryId || '');
+	      if (cardStyleEl) cardStyleEl.value = String(s.cardStyle || 'tmdb');
+	    });
+	    syncEmbyHomeJson();
+	  };
+	
+	  const loadThirdPartyHomeSites = async () => {
+	    try {
+	      const data = await getSuccessJson('/dashboard/video/source/sites');
+	      const sites = data && Array.isArray(data.sites) ? data.sites : [];
+	      thirdPartyHomeSites = sites
+	        .filter((s) => s && s.home && s.enabled && s.key && s.name && s.api)
+	        .map((s) => ({ key: String(s.key), name: String(s.name), api: String(s.api) }));
+	    } catch (_e) {
+	      thirdPartyHomeSites = [];
+	    }
+	  };
+	
+	  const ensureThirdPartySiteCategories = async (siteKey) => {
+	    const key = String(siteKey || '').trim();
+	    if (!key) return [];
+	    if (thirdPartySiteCategoryCache.has(key)) return thirdPartySiteCategoryCache.get(key) || [];
+	    try {
+	      const data = await getSuccessJson(`/dashboard/thirdparty/site/categories?siteKey=${encodeURIComponent(key)}`);
+	      const list = data && Array.isArray(data.categories) ? data.categories : [];
+	      const normalized = list
+	        .map((c) => ({
+	          id: c && typeof c.id === 'string' ? c.id.trim() : '',
+	          name: c && typeof c.name === 'string' ? c.name.trim() : '',
+	        }))
+	        .filter((c) => c.id && c.name)
+	        .slice(0, 200);
+	      thirdPartySiteCategoryCache.set(key, normalized);
+	      return normalized;
+	    } catch (_e) {
+	      thirdPartySiteCategoryCache.set(key, []);
+	      return [];
+	    }
+	  };
+	
+	  const validateEmbyHomeSections = (list) => {
+	    const rows = Array.isArray(list) ? list : [];
+	    for (let i = 0; i < rows.length; i++) {
+	      const r = rows[i] && typeof rows[i] === 'object' ? rows[i] : {};
+	      const name = typeof r.name === 'string' ? r.name.trim() : '';
+	      const module = typeof r.module === 'string' ? r.module.trim().toLowerCase() : '';
+	      const mediaType = typeof r.mediaType === 'string' ? r.mediaType.trim().toLowerCase() : '';
+	      if (!name) return `第 ${i + 1} 行：显示名称不能为空`;
+	      if (!module) return `第 ${i + 1} 行：主模块不能为空`;
+	      if (mediaType !== 'tv' && mediaType !== 'movie') return `第 ${i + 1} 行：栏目类型必须是 电视剧/电影`;
+	      if (isModuleRequiringSite(module)) {
+	        const siteKey = typeof r.siteKey === 'string' ? r.siteKey.trim() : '';
+	        const categoryId = typeof r.categoryId === 'string' ? r.categoryId.trim() : '';
+	        const cardStyle = typeof r.cardStyle === 'string' ? r.cardStyle.trim().toLowerCase() : '';
+	        if (!siteKey) return `第 ${i + 1} 行：请选择站点`;
+	        if (!categoryId) return `第 ${i + 1} 行：请选择分类`;
+	        if (cardStyle !== 'tmdb' && cardStyle !== 'site') return `第 ${i + 1} 行：请选择卡片属性`;
+	      }
+	    }
+	    return '';
+	  };
+	
+	  const bindEmbyHomeHandlers = () => {
+	    if (embyHomeHandlersBound) return;
+	    embyHomeHandlersBound = true;
+
+	    if (embyHomeSectionAdd) {
+	      embyHomeSectionAdd.addEventListener('click', () => {
+	        const base = { name: '新栏目', module: 'douban_tv', mediaType: 'tv', siteKey: '', categoryId: '' };
+	        const next = normalizeEmbyHomeSection(base);
+	        if (!next) return;
+	        embyHomeSections = (Array.isArray(embyHomeSections) ? embyHomeSections.slice() : []).concat([next]);
+	        renderEmbyHomeSections();
+        setEmbyHomeStatus('', '');
+      });
+    }
+
+    if (embyHomeSectionRestoreDefaults) {
+      embyHomeSectionRestoreDefaults.addEventListener('click', () => {
+        embyHomeSections = DEFAULT_EMBY_HOME_SECTIONS.map((s) => normalizeEmbyHomeSection(s)).filter(Boolean);
+        renderEmbyHomeSections();
+        setEmbyHomeStatus('', '');
+      });
+    }
+
+	    if (embyHomeSectionTableBody) {
+	      const onFieldUpdate = (e) => {
+	        const el = e && e.target ? e.target : null;
+	        const idx = el && el.dataset ? parseInt(el.dataset.index || '', 10) : -1;
+	        const field = el && el.dataset ? String(el.dataset.field || '') : '';
+	        if (!Number.isInteger(idx) || idx < 0) return;
+        if (!field) return;
+	        const list = Array.isArray(embyHomeSections) ? embyHomeSections.slice() : [];
+	        if (!list[idx]) return;
+	        const value = el && typeof el.value === 'string' ? el.value : '';
+	        list[idx] = { ...list[idx], [field]: value };
+	        if (field === 'module') {
+	          const m = String(value || '').trim().toLowerCase();
+	          if (!isModuleRequiringSite(m)) {
+	            list[idx].siteKey = '';
+	            list[idx].categoryId = '';
+	            list[idx].cardStyle = '';
+	          }
+	          if (!list[idx].mediaType) {
+	            list[idx].mediaType = m === 'douban_movie' ? 'movie' : 'tv';
+	          }
+	          if (isModuleRequiringSite(m) && !list[idx].cardStyle) {
+	            list[idx].cardStyle = 'tmdb';
+	          }
+	        }
+	        if (field === 'siteKey') {
+	          list[idx].categoryId = '';
+	          const sk = String(value || '').trim();
+	          embyHomeSections = list.map(normalizeEmbyHomeSection).filter(Boolean);
+	          renderEmbyHomeSections();
+	          setEmbyHomeStatus('', '');
+	          if (sk) {
+	            ensureThirdPartySiteCategories(sk).then((cats) => {
+	              const cur = Array.isArray(embyHomeSections) ? embyHomeSections.slice() : [];
+	              const row = cur[idx];
+	              if (!row || String(row.siteKey || '').trim() !== sk) return;
+	              if (!row.categoryId && cats && cats.length) {
+	                row.categoryId = cats[0].id;
+	                cur[idx] = row;
+	                embyHomeSections = cur.map(normalizeEmbyHomeSection).filter(Boolean);
+	                renderEmbyHomeSections();
+	              }
+	            });
+	          }
+	          return;
+	        }
+	        embyHomeSections = list.map(normalizeEmbyHomeSection).filter(Boolean);
+	        renderEmbyHomeSections();
+	        setEmbyHomeStatus('', '');
+	      };
+	      embyHomeSectionTableBody.addEventListener('input', onFieldUpdate);
+	      embyHomeSectionTableBody.addEventListener('change', onFieldUpdate);
+	
+	      embyHomeSectionTableBody.addEventListener('click', (e) => {
+	        const el = e && e.target ? e.target : null;
+	        const action = el && el.dataset ? String(el.dataset.action || '') : '';
+        const idx = el && el.dataset ? parseInt(el.dataset.index || '', 10) : -1;
+        if (!action || !Number.isInteger(idx) || idx < 0) return;
+        const list = Array.isArray(embyHomeSections) ? embyHomeSections.slice() : [];
+        if (action === 'delete') {
+          list.splice(idx, 1);
+        } else if (action === 'up' && idx > 0) {
+          const tmp = list[idx - 1];
+          list[idx - 1] = list[idx];
+          list[idx] = tmp;
+        } else if (action === 'down' && idx < list.length - 1) {
+          const tmp = list[idx + 1];
+          list[idx + 1] = list[idx];
+          list[idx] = tmp;
+        } else {
+          return;
+        }
+        embyHomeSections = list;
+        renderEmbyHomeSections();
+        setEmbyHomeStatus('', '');
+      });
+    }
+
+	    if (thirdPartySettingsForm) {
+	      thirdPartySettingsForm.addEventListener('submit', async (e) => {
+	        e.preventDefault();
+	        const errMsg = validateEmbyHomeSections(embyHomeSections);
+	        if (errMsg) {
+	          setEmbyHomeStatus('error', errMsg);
+	          return;
+	        }
+	        syncEmbyHomeJson();
+	        setEmbyHomeStatus('', '');
+	        setEmbyHomeStatus('info', '保存中...');
+        try {
+          const { resp, data } = await postForm('/dashboard/thirdparty/save', {
+            embyHomeSectionsJson: embyHomeSectionsJson ? embyHomeSectionsJson.value : '[]',
+          });
+          if (resp.ok && data && data.success) {
+            setEmbyHomeStatus('success', '保存成功');
+            clearStatusLater(setEmbyHomeStatus, 1500);
+            return;
+          }
+          setEmbyHomeStatus('error', (data && data.message) || '保存失败');
+        } catch (err) {
+          setEmbyHomeStatus('error', (err && err.message) || '保存失败');
+        }
+      });
+    }
+  };
+
+	  const loadThirdpartyPanel = async () => {
+	    if (thirdPartyLoaded || thirdPartyLoading) return;
+	    thirdPartyLoading = true;
+	    try {
+	      bindEmbyHomeHandlers();
+	      await loadThirdPartyHomeSites();
+	      const data = await getSuccessJson('/dashboard/thirdparty/settings');
+	      const list = data && Array.isArray(data.embyHomeSections) ? data.embyHomeSections : [];
+	      const normalized = list.map(normalizeEmbyHomeSection).filter(Boolean);
+	      embyHomeSections = normalized.length ? normalized : DEFAULT_EMBY_HOME_SECTIONS.map((s) => normalizeEmbyHomeSection(s)).filter(Boolean);
+	      const siteKeys = Array.from(
+	        new Set(
+	          embyHomeSections
+	            .filter((s) => s && isModuleRequiringSite(s.module))
+	            .map((s) => String(s.siteKey || '').trim())
+	            .filter(Boolean)
+	        )
+	      );
+	      for (const sk of siteKeys) {
+	        await ensureThirdPartySiteCategories(sk);
+	      }
+	      renderEmbyHomeSections();
+	      thirdPartyLoaded = true;
+	    } finally {
+	      thirdPartyLoading = false;
+	    }
+	  };
+
   const siteForm = document.getElementById('siteSettingsForm');
   const saveStatus = document.getElementById('saveStatus');
   const setSiteSaveStatus = bindInlineStatus(saveStatus);
@@ -6691,7 +7087,6 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
-  // 魔法匹配：剧集列表净化规则 + 集数匹配规则
   let magicEpisodeRules = [];
   let magicEpisodeCleanRegexRules = [];
   let episodeDefaultsConfirming = false;
@@ -6701,7 +7096,6 @@ export function initDashboardPage(bootstrap = {}) {
   let aggregateDefaultsConfirming = false;
   let magicSaving = false;
 
-  // 智能设置
   let smartSourceExtractPriority = '无';
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
@@ -8368,6 +8762,7 @@ export function initDashboardPage(bootstrap = {}) {
     if (key === 'magic') return loadMagicPanel();
     if (key === 'smart') return loadSmartPanel();
     if (key === 'metadata') return loadMetadataPanel();
+    if (key === 'thirdparty') return loadThirdpartyPanel();
     return null;
   }
 
