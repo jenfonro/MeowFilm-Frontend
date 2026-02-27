@@ -3787,18 +3787,27 @@ const legacySmartListEpisodes = computed(() => {
   return smartPanEpisodes.value;
 });
 
-const legacySmartListAvailable = computed(() => {
-  if (tmdbMode.value) return false;
-  if (contentKind.value === 'movie') return Array.isArray(smartMovieEpisodes.value) && smartMovieEpisodes.value.length > 0;
-  return smartSeriesListAvailable.value;
-});
+	const legacySmartListAvailable = computed(() => {
+	  if (tmdbMode.value) return false;
+	  if (contentKind.value === 'movie') return Array.isArray(smartMovieEpisodes.value) && smartMovieEpisodes.value.length > 0;
+	  return smartSeriesListAvailable.value;
+	});
 
-const smartPanEntries = computed(() => {
-  if (tmdbMode.value) {
-    const out = [];
-		  // TMDB mode only exposes TMDB/Douban lists. Keep TMDB entry visible even while episodes are still resolving,
-		  // so the UI won't auto-fallthrough to the first site pan option.
-		  out.push({ key: SMART_PAN_KEY, label: TMDB_SMART_PAN_LABEL, episodes: tmdbPrimarySmartEpisodes.value || [] });
+	const siteSmartListVisible = computed(() => {
+	  if (tmdbMode.value) return true;
+	  if (legacySmartListAvailable.value) return true;
+	  if (introLoading.value || siteDetailBooting.value) return true;
+	  const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+	  if (d && d.panMockEnabled === true && d.panMockResolving === true) return true;
+	  return false;
+	});
+
+	const smartPanEntries = computed(() => {
+	  if (tmdbMode.value) {
+	    const out = [];
+			  // TMDB mode only exposes TMDB/Douban lists. Keep TMDB entry visible even while episodes are still resolving,
+			  // so the UI won't auto-fallthrough to the first site pan option.
+			  out.push({ key: SMART_PAN_KEY, label: TMDB_SMART_PAN_LABEL, episodes: tmdbPrimarySmartEpisodes.value || [] });
 	    // Always keep the "豆瓣" entry visible for TV so users can switch at any time.
 	    // The episode list may be empty until douban meta is fetched / becomes applicable.
 	    if (!tmdbMovieMode.value) {
@@ -3808,16 +3817,17 @@ const smartPanEntries = computed(() => {
 	        episodes: doubanSmartListAvailable.value ? (doubanSmartEpisodes.value || []) : [],
 	      });
 	    }
-	    return out;
-  }
-  // Site mode: always keep the "智能列表" entry visible so the page doesn't auto-select the first parsed pan source.
-  // Episodes may be empty until detail resolves / smart list is computed.
-  const eps = legacySmartListAvailable.value ? (legacySmartListEpisodes.value || []) : [];
-  return [{ key: SMART_PAN_KEY, label: SITE_SMART_LIST_LABEL, episodes: eps }];
-});
+		    return out;
+	  }
+	  if (!siteSmartListVisible.value) return [];
+	  // Site mode: keep the "智能列表" entry visible while detail/pan_mock is still resolving.
+	  // If rules cannot extract any episodes after parsing completes, hide it and fall through to the first pan source.
+	  const eps = legacySmartListAvailable.value ? (legacySmartListEpisodes.value || []) : [];
+	  return [{ key: SMART_PAN_KEY, label: SITE_SMART_LIST_LABEL, episodes: eps }];
+	});
 
-const smartListAvailable = computed(() => smartPanEntries.value.length > 0);
-const defaultSmartPanKey = computed(() => (smartPanEntries.value[0] && smartPanEntries.value[0].key ? String(smartPanEntries.value[0].key) : ''));
+	const smartListAvailable = computed(() => smartPanEntries.value.length > 0);
+	const defaultSmartPanKey = computed(() => (smartPanEntries.value[0] && smartPanEntries.value[0].key ? String(smartPanEntries.value[0].key) : ''));
 
 const selectedPanKey = computed(() => {
   if (selectedPan.value) return selectedPan.value;
@@ -3951,8 +3961,12 @@ watch(
     } catch (_e) {}
     if (smartListAvailable.value) return;
     if (selectedPan.value) return;
-    const k = preferBaiduPanKey.value;
-    if (k) selectedPan.value = k;
+    const list = sitePanOptions.value;
+    const k = list && list[0] && list[0].key ? String(list[0].key) : '';
+    if (k) {
+      selectedPan.value = k;
+      selectedEpisodeIndex.value = 0;
+    }
   },
   { immediate: true }
 );
@@ -12193,7 +12207,10 @@ watch(
     if (isSmartPanKey(selectedPan.value)) {
       const ok = smartListAvailable.value && (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).some((s) => s && s.key === selectedPan.value);
       if (ok) return;
-      selectedPan.value = '';
+      const list = panDropdownOptions.value;
+      const k = list && list[0] && list[0].key ? String(list[0].key) : '';
+      selectedPan.value = k;
+      selectedEpisodeIndex.value = k ? 0 : -1;
       return;
     }
     const list = panDropdownOptions.value;
