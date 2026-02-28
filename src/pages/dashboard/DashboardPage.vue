@@ -82,6 +82,28 @@
                 </select>
                 <div id="searchDisplayModeError" class="text-xs hidden mt-1"></div>
               </div>
+
+              <div class="pt-2 border-t border-gray-200/50 dark:border-white/10"></div>
+
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">网盘接口代理设置</div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">仅影响天翼189/夸克/UC/移动云盘/百度等网盘接口请求。</div>
+              </div>
+
+              <div class="space-y-1">
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">启用代理</div>
+                <div>
+                  <label class="enable-switch" title="网盘接口代理启用">
+                    <input id="netdiskProxyEnabled" name="netdiskProxyEnabled" type="checkbox" value="1" />
+                    <span class="enable-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">代理地址</label>
+                <input id="netdiskProxyUrl" name="netdiskProxyUrl" class="tv-field" placeholder="http://127.0.0.1:7890" autocomplete="off" />
+              </div>
             </div>
           </form>
 

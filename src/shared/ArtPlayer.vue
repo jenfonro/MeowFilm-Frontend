@@ -2026,11 +2026,40 @@ const play = async () => {
   } catch (_e) {}
 };
 
-const tryAutoplay = async () => {
-  await play();
-};
+	const tryAutoplay = async () => {
+	  await play();
+	};
 
-defineExpose({ destroy: destroyNow, pause, play, tryAutoplay });
+	const seekTo = (seconds) => {
+	  const raw = Number(seconds);
+	  if (!Number.isFinite(raw)) return false;
+	  const target = Math.max(0, raw);
+	  try {
+	    if (art) {
+	      if (typeof art.seek === 'function') {
+	        art.seek(target);
+	        return true;
+	      }
+	      if (art.seek != null) {
+	        art.seek = target;
+	        return true;
+	      }
+	    }
+	    const v = art && art.video ? art.video : null;
+	    if (!v) return false;
+	    const dur = Number(v.duration);
+	    if (Number.isFinite(dur) && dur > 0) {
+	      v.currentTime = Math.max(0, Math.min(target, Math.max(0, dur - 0.2)));
+	    } else {
+	      v.currentTime = target;
+	    }
+	    return true;
+	  } catch (_e) {
+	    return false;
+	  }
+	};
+
+	defineExpose({ destroy: destroyNow, pause, play, tryAutoplay, seekTo });
 </script>
 
 <style scoped>

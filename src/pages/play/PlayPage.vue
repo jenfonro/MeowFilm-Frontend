@@ -1778,17 +1778,18 @@ const initialAutoPlayTriggered = ref(false);
 const selectedPan = ref('');
 const panDropdownOpen = ref(false);
 const panDropdownEl = ref(null);
-const tmdbPanDropdownOpen = ref(false);
-const tmdbPanDropdownEl = ref(null);
-const tmdbSelectedSitePanKey = ref('');
-const resumeHistory = ref(null);
-const resumeHistoryLoaded = ref(false);
-const resumeHistoryApplied = ref(false);
-const resumeHistoryState = { seq: 0, key: '', inFlight: null };
-const detail = ref({
-  title: '',
-  poster: '',
-  year: '',
+	const tmdbPanDropdownOpen = ref(false);
+	const tmdbPanDropdownEl = ref(null);
+	const tmdbSelectedSitePanKey = ref('');
+	const resumeHistory = ref(null);
+	const resumeHistoryLoaded = ref(false);
+	const resumeHistoryApplied = ref(false);
+  const resumeWanted = ref(null); // { season, episode, indexFallback, playbackItemId, updatedAt }
+	const resumeHistoryState = { seq: 0, key: '', inFlight: null };
+	const detail = ref({
+	  title: '',
+	  poster: '',
+	  year: '',
   type: '',
   remark: '',
   content: '',
@@ -3727,29 +3728,9 @@ const doubanSmartEpisodes = computed(() => {
   if (!doubanSmartListAvailable.value) return [];
   const tm = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
   const tmdbLatestGlobal = (() => {
-    try {
-      if (!tm || String(tm.mediaType || '').trim().toLowerCase() !== 'tv') return 0;
-      const status = typeof tm.status === 'string' ? tm.status.trim() : '';
-      if (status === 'Ended') return 0;
-      const latestSeason = Number.isFinite(Number(tm.latestSeason)) ? Math.floor(Number(tm.latestSeason)) : 0;
-      const latestEpisode = Number.isFinite(Number(tm.latestEpisode)) ? Math.floor(Number(tm.latestEpisode)) : 0;
-      if (latestSeason <= 0 || latestEpisode <= 0) return 0;
-      const seasons = Array.isArray(tm.seasons) ? tm.seasons : [];
-      let sum = 0;
-      for (let i = 0; i < seasons.length; i += 1) {
-        const it = seasons[i];
-        if (!it || typeof it !== 'object') continue;
-        const s = Number.isFinite(Number(it.season)) ? Math.floor(Number(it.season)) : 0;
-        const cntRaw = it.episodes != null ? it.episodes : it.episodeCount;
-        const cnt = Number.isFinite(Number(cntRaw)) ? Math.floor(Number(cntRaw)) : 0;
-        if (s <= 0 || cnt <= 0) continue;
-        if (s < latestSeason) sum += cnt;
-        else if (s === latestSeason) return sum + latestEpisode;
-      }
-      return 0;
-    } catch (_e) {
-      return 0;
-    }
+    if (!tm || String(tm.mediaType || '').trim().toLowerCase() !== 'tv') return 0;
+    const n = Number.isFinite(Number(tm.latestGlobal)) ? Math.floor(Number(tm.latestGlobal)) : 0;
+    return n > 0 ? n : 0;
   })();
   const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
   const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
@@ -3963,13 +3944,12 @@ watch(
     if (selectedPan.value) return;
     const list = sitePanOptions.value;
     const k = list && list[0] && list[0].key ? String(list[0].key) : '';
-    if (k) {
-      selectedPan.value = k;
-      selectedEpisodeIndex.value = 0;
-    }
-  },
-  { immediate: true }
-);
+	    if (k) {
+	      selectedPan.value = k;
+	    }
+	  },
+	  { immediate: true }
+	);
 
 const toggleRawList = (e) => {
   rawListMode.value = !rawListMode.value;
@@ -4726,7 +4706,13 @@ const compiledMagicMovieRules = computed(() => {
   return magicMovieRules.value.map(compileMagicRule).filter(Boolean);
 });
 
-const hasMagicEpisodeRules = computed(() => compiledMagicEpisodeRules.value.length > 0);
+const hasMagicEpisodeRules = computed(() => {
+  if (compiledMagicEpisodeRules.value.length > 0) return true;
+  // TMDB/Douban smart lists already have authoritative season/episode metadata; don't depend on user rules.
+  if (tmdbMode.value && !tmdbMovieMode.value && tmdbSmartListAvailable.value && isSmartPanKey(selectedPanKey.value)) return true;
+  if (tmdbMode.value && !tmdbMovieMode.value && selectedPanKey.value === DOUBAN_SMART_PAN_KEY && doubanSmartListAvailable.value) return true;
+  return false;
+});
 
 const smartSourceExtractPrioritySetting = computed(() => {
   const raw = effectiveBootstrapSettings.value.smartSourceExtractPriority;
@@ -5169,6 +5155,14 @@ function computeHistoryContentKey(title) {
       } catch (_e) {}
     });
   }
+  // Strip season markers and any trailing subtitles after them so "xxx 第1季 雪域" collapses to "xxx".
+  try {
+    out = String(out || '')
+      .replace(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季.*$/gi, '')
+      .replace(/\bseason\s*\d{1,3}\b.*$/gi, '')
+      .replace(/\bS\d{1,2}\b.*$/gi, '')
+      .trim();
+  } catch (_e) {}
   return normalizeForAggKey(out);
 }
 
@@ -6203,7 +6197,14 @@ const episodeMatchByIndex = computed(() => {
   const eps = selectedEpisodes.value;
   if (!eps.length) return [];
   const rules = compiledMagicEpisodeRules.value;
-  if (!rules.length) return eps.map((_ep, idx) => ({ season: 0, episode: idx + 1 }));
+  if (!rules.length) {
+    return eps.map((ep, idx) => {
+      const tmdbSeason = ep && Number.isFinite(Number(ep.__tmdbSeason)) ? Math.floor(Number(ep.__tmdbSeason)) : 0;
+      const tmdbEp = ep && Number.isFinite(Number(ep.__tmdbSeasonEpisode)) ? Math.floor(Number(ep.__tmdbSeasonEpisode)) : 0;
+      if (tmdbSeason > 0 && tmdbEp > 0) return { season: tmdbSeason, episode: tmdbEp };
+      return { season: 0, episode: idx + 1 };
+    });
+  }
   const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
 
   return eps.map((ep, idx) => {
@@ -6475,7 +6476,18 @@ watch(
       return;
     }
     const exists = tabs.some((t) => Number(t.season) === Number(selectedSeason.value));
-    if (!exists) selectedSeason.value = Number(tabs[0].season) || 0;
+    if (!exists) {
+      const w = resumeWanted.value && typeof resumeWanted.value === 'object' ? resumeWanted.value : null;
+      const wantSeason = w && Number.isFinite(Number(w.season)) ? Math.floor(Number(w.season)) : 0;
+      if (wantSeason > 0) {
+        const hit = tabs.find((t) => t && Number(t.season) === wantSeason) || null;
+        if (hit) {
+          selectedSeason.value = wantSeason;
+          return;
+        }
+      }
+      selectedSeason.value = Number(tabs[0].season) || 0;
+    }
   },
   { immediate: true }
 );
@@ -9906,6 +9918,9 @@ const requestPlay = async (opts = {}) => {
   const tmdbAttempt = opts && Number.isFinite(Number(opts.__tmdbAttempt)) ? Math.max(0, Math.floor(Number(opts.__tmdbAttempt))) : 0;
   const tmdbExcludeKeys = opts && Array.isArray(opts.__tmdbExcludeKeys) ? opts.__tmdbExcludeKeys : [];
   if (trigger !== 'user' && autoPlaySuppressedByUser.value) return false;
+  // Clear stale error before starting a new attempt (prevents "获取视频失败" flashing on entry auto attempts).
+  playError.value = '';
+  playerRuntimeError.value = '';
   if (trigger === 'user') {
     initialAutoPlayTriggered.value = true;
     autoPlaySuppressedByUser.value = false;
@@ -9994,7 +10009,10 @@ const requestPlay = async (opts = {}) => {
 
     const picked = await resolveTMDBSmartPlaybackCandidate({ episodeNo: wantEpisode, seasonNo: desiredSeason, excludeKeys: tmdbExcludeKeys });
     if (!picked) {
-      playError.value = '获取视频失败，请通过手动搜索选择其他源';
+      // Only show a hard error for explicit user actions; auto-init will retry as sources/pans become available.
+      if (trigger === 'user' || trigger === 'auto_next') {
+        playError.value = '获取视频失败，请通过手动搜索选择其他源';
+      }
       return false;
     }
 
@@ -10332,57 +10350,67 @@ const requestPlay = async (opts = {}) => {
 				      const siteKey = historySiteKey;
 				      const spiderApi = (historySpiderApi || api || '').trim();
 				      const videoId = historyVideoId;
-			      const meta = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
-			      const videoTitle = (meta && meta.title ? String(meta.title) : displayTitle.value) || '';
-			      const isNetDisk = isWodePanVideoId(videoId);
-			      if (!isNetDisk && siteKey && spiderApi && videoId && videoTitle) {
-			        const payloadForHistory = {
-			          siteKey,
-			          siteName: historySiteName || resolvedSiteName.value || '',
-			          spiderApi,
-			          videoId,
-			          videoTitle,
-			          contentKey: computeHistoryContentKey(videoTitle) || '',
-			          videoPoster: (meta && meta.pic ? String(meta.pic) : '') || historyCoverPoster.value || pickHistoryPoster() || '',
-			          videoRemark: (tmdbMode.value ? tmdbHistoryRemark.value : displayRemark.value) || '',
-			          tmdbId: meta && Number.isFinite(Number(meta.tmdbId)) ? Number(meta.tmdbId) : (tmdbMode.value ? Number(props.tmdbId || 0) : 0),
-			          tmdbType: meta && typeof meta.mediaType === 'string' ? meta.mediaType : (tmdbMode.value ? String(props.tmdbType || '').trim().toLowerCase() : ''),
-			          tmdbSeasons:
-			            tmdbMode.value && doubanSeasonOverrideActive.value && doubanSeasonMeta.value
-			              ? JSON.stringify(doubanSeasonMeta.value)
-			              : '',
-			          tmdbSeason: (() => {
-			            const eps = selectedEpisodes.value;
-			            const map = computeEpisodeMatchByIndexForEpisodes(eps);
-			            const hit = idxAtCall >= 0 && idxAtCall < map.length ? map[idxAtCall] : null;
-			            return hit && Number.isFinite(Number(hit.season)) ? Number(hit.season) : 0;
-			          })(),
-			          tmdbEpisode: (() => {
-			            const eps = selectedEpisodes.value;
-			            const map = computeEpisodeMatchByIndexForEpisodes(eps);
-			            const hit = idxAtCall >= 0 && idxAtCall < map.length ? map[idxAtCall] : null;
-			            return hit && Number.isFinite(Number(hit.episode)) ? Number(hit.episode) : 0;
-			          })(),
-			          panLabel: (src && src.label ? String(src.label) : '').trim(),
-			          playFlag: flag,
-			          episodeIndex: idxAtCall >= 0 ? idxAtCall : 0,
-			          episodeName: tmdbMode.value ? '' : epNameAtCall,
-			        };
-			        // For multi-device resume syncing (Emby-compatible clients), store a stable item id when possible.
-			        try {
-			          const metaId = payloadForHistory.tmdbId ? Number(payloadForHistory.tmdbId) : 0;
-			          const metaType = payloadForHistory.tmdbType ? String(payloadForHistory.tmdbType) : '';
-			          const seasonNo = payloadForHistory.tmdbSeason ? Number(payloadForHistory.tmdbSeason) : 0;
-			          const episodeNo = payloadForHistory.tmdbEpisode ? Number(payloadForHistory.tmdbEpisode) : 0;
-			          payloadForHistory.playbackItemId = buildJellyfinPlaybackItemId({ tmdbType: metaType, tmdbId: metaId, seasonNo, episodeNo }) || '';
-			        } catch (_e) {}
-			        lastHistoryPayload.value = payloadForHistory;
-		        await apiPostJson('/api/playhistory', { ...payloadForHistory }, { dedupe: false });
-			        window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
-			      }
-			    } catch (_e) {
-		      // ignore (history not critical)
-		    }
+				      const meta = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
+				      const videoTitle = (meta && meta.title ? String(meta.title) : displayTitle.value) || '';
+				      if (siteKey && spiderApi && videoId && videoTitle) {
+				        const tmdbSeasonAtCall = (() => {
+				          if (!tmdbMode.value) return 0;
+				          // Smart lists carry explicit season/episode metadata.
+				          if (ep && Number.isFinite(Number(ep.__tmdbSeason))) {
+				            const s = Math.floor(Number(ep.__tmdbSeason));
+				            if (s > 0) return s;
+				          }
+				          const m = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[idxAtCall] : null;
+				          const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+				          return s > 0 ? s : 0;
+				        })();
+				        const tmdbEpisodeAtCall = (() => {
+				          if (!tmdbMode.value) return 0;
+				          if (ep && Number.isFinite(Number(ep.__tmdbSeasonEpisode))) {
+				            const n = Math.floor(Number(ep.__tmdbSeasonEpisode));
+				            if (n > 0) return n;
+				          }
+				          const m = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[idxAtCall] : null;
+				          const n = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+				          return n > 0 ? n : 0;
+				        })();
+				        const payloadForHistory = {
+				          siteKey,
+				          siteName: historySiteName || resolvedSiteName.value || '',
+				          spiderApi,
+				          videoId,
+				          videoTitle,
+				          contentKey: computeHistoryContentKey(videoTitle) || '',
+				          videoPoster: (meta && meta.pic ? String(meta.pic) : '') || historyCoverPoster.value || pickHistoryPoster() || '',
+				          videoRemark: (tmdbMode.value ? tmdbHistoryRemark.value : displayRemark.value) || '',
+				          tmdbId: meta && Number.isFinite(Number(meta.tmdbId)) ? Number(meta.tmdbId) : (tmdbMode.value ? Number(props.tmdbId || 0) : 0),
+				          tmdbType: meta && typeof meta.mediaType === 'string' ? meta.mediaType : (tmdbMode.value ? String(props.tmdbType || '').trim().toLowerCase() : ''),
+				          tmdbSeason: tmdbSeasonAtCall ? Number(tmdbSeasonAtCall) : 0,
+				          tmdbEpisode: tmdbEpisodeAtCall ? Number(tmdbEpisodeAtCall) : 0,
+				          panLabel: (src && src.label ? String(src.label) : '').trim(),
+				          playFlag: flag,
+				          episodeIndex: idxAtCall >= 0 ? idxAtCall : 0,
+				          episodeName: tmdbMode.value ? '' : epNameAtCall,
+				        };
+				        // For multi-device resume syncing (Emby-compatible clients), store a stable item id when possible.
+				        try {
+				          const metaId = payloadForHistory.tmdbId ? Number(payloadForHistory.tmdbId) : 0;
+				          const metaType = payloadForHistory.tmdbType ? String(payloadForHistory.tmdbType) : '';
+				          const seasonNo = tmdbSeasonAtCall ? Number(tmdbSeasonAtCall) : 0;
+				          const episodeNo = tmdbEpisodeAtCall ? Number(tmdbEpisodeAtCall) : 0;
+				          payloadForHistory.playbackItemId = buildJellyfinPlaybackItemId({ tmdbType: metaType, tmdbId: metaId, seasonNo, episodeNo }) || '';
+				        } catch (_e) {}
+				        lastHistoryPayload.value = payloadForHistory;
+                try {
+                  const eager = trigger === 'user' || trigger === 'auto_next';
+                  commitHistoryBaseIfNeeded(`play_url:${String(trigger || '')}`, { force: eager });
+                } catch (_e) {}
+				        // Defer committing history until playback actually starts (playing/firstframe/timeupdate),
+				        // otherwise a failed/aborted attempt may overwrite cross-device resume info.
+				      }
+				    } catch (_e) {
+			      // ignore (history not critical)
+			    }
 		  } catch (e) {
 		    const status = e && typeof e.status === 'number' ? e.status : 0;
 		    const msg = (e && e.message) || '请求失败';
@@ -10432,10 +10460,10 @@ const tryAutoStartPlayback = () => {
   if (introLoading.value) return;
   if (!resumeHistoryLoaded.value) return;
   if (!selectedEpisodes.value.length) return;
-	  if (!tmdbSmartListAvailable.value && !tmdbMovieMode.value) {
-	    void ensureResolvedSpiderApiFallback();
-	    if (!resolvedSpiderApiFinal.value) return;
-	  }
+			  if (!tmdbSmartListAvailable.value && !tmdbMovieMode.value) {
+			    void ensureResolvedSpiderApiFallback();
+			    if (!resolvedSpiderApiFinal.value) return;
+			  }
   if (selectedEpisodeIndex.value < 0) selectedEpisodeIndex.value = 0;
   initialAutoPlayInFlight.value = true;
   void requestPlay({ trigger: 'auto_init' })
@@ -10449,8 +10477,221 @@ const tryAutoStartPlayback = () => {
     });
 };
 
+const resumeSeekState = { key: '', applied: false, tryKey: '', tryAt: 0 };
+watch(
+  () => playerUrl.value,
+  () => {
+    resumeSeekState.key = '';
+    resumeSeekState.applied = false;
+  },
+  { immediate: true }
+);
+
+const fromTicks = (ticks) => {
+  const t = Number(ticks);
+  if (!Number.isFinite(t) || t <= 0) return 0;
+  return t / 10_000_000;
+};
+
+const computeResumeSeekSeconds = () => {
+  const h = resumeHistory.value && typeof resumeHistory.value === 'object' ? resumeHistory.value : null;
+  if (!h) return 0;
+  const posSec = fromTicks(h.playbackPositionTicks || 0);
+  if (!Number.isFinite(posSec) || posSec <= 0) return 0;
+  const sec = Math.floor(posSec);
+  if (sec < 3) return 0;
+
+  const runtimeSec = fromTicks(h.playbackRuntimeTicks || 0);
+  if (Number.isFinite(runtimeSec) && runtimeSec > 0) {
+    if (runtimeSec - sec < 25) return 0;
+  }
+
+	// Guard: only resume-seek when the current selected episode matches the history entry.
+		// - If `playbackItemId` looks like a TMDB item id, prefer it (episodeIndex is not reliable cross-device).
+		// - Otherwise, if panLabel is "TMDB/豆瓣", also prefer `playbackItemId`.
+		// - Otherwise (site/netdisk), use `episodeIndex`.
+		try {
+			const panLabelRaw =
+				(h.panLabel != null ? String(h.panLabel) : '') ||
+				(h.pan_label != null ? String(h.pan_label) : '');
+			const panLabel = String(panLabelRaw || '').trim().toLowerCase();
+			const isSmartLabel = panLabel === 'tmdb' || panLabel === 'douban' || panLabel === '豆瓣';
+
+			const pbRaw =
+				(h.playbackItemId != null ? String(h.playbackItemId) : '') ||
+				(h.playback_item_id != null ? String(h.playback_item_id) : '');
+			const wantedPb = String(pbRaw || '').trim();
+		const isTmdbPb = /^tmdb_(tv|movie)_/i.test(wantedPb);
+		if ((isTmdbPb || isSmartLabel) && wantedPb && tmdbMode.value) {
+			const typ = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+			const tmdbId = Number(props.tmdbId || 0);
+			const curIdxRaw = Number(selectedEpisodeIndex.value);
+			const curIdx = Number.isFinite(curIdxRaw) ? Math.floor(curIdxRaw) : -1;
+			if (tmdbId > 0 && curIdx >= 0) {
+				let curPb = '';
+				if (typ === 'movie') {
+					curPb = `tmdb_movie_${Math.floor(tmdbId)}`;
+				} else if (typ === 'tv') {
+					const m = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[curIdx] : null;
+					const sn = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+					const ep = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+					if (sn > 0 && ep > 0) {
+						const ss = String(sn).padStart(2, '0');
+						const ee = String(ep).padStart(3, '0');
+						curPb = `tmdb_tv_${Math.floor(tmdbId)}_s${ss}_e${ee}`;
+					}
+				}
+				if (curPb && curPb.toLowerCase() !== wantedPb.toLowerCase()) {
+					try {
+						if (debugEnabled.value) {
+							smartDebugLog('resume_seek_skip', {
+								reason: 'pb_mismatch',
+								panLabel,
+								wantedPb,
+								curPb,
+								selectedEpisodeIndex: curIdx,
+							});
+						}
+					} catch (_e) {}
+					return 0;
+				}
+				if (!curPb) {
+					try {
+						if (debugEnabled.value) {
+							smartDebugLog('resume_seek_skip', {
+								reason: 'pb_unavailable',
+								panLabel,
+								wantedPb,
+								selectedEpisodeIndex: curIdx,
+							});
+						}
+					} catch (_e) {}
+					return 0;
+				}
+			}
+		} else {
+			const curIdxRaw = Number(selectedEpisodeIndex.value);
+			const curIdx = Number.isFinite(curIdxRaw) ? Math.floor(curIdxRaw) : -1;
+			const wantedNameRaw =
+				(h.episodeName != null ? String(h.episodeName) : '') ||
+				(h.episode_name != null ? String(h.episode_name) : '');
+			const wantedName = String(wantedNameRaw || '').trim();
+			if (wantedName && curIdx >= 0) {
+				const eps = selectedEpisodes.value;
+				const curEp = Array.isArray(eps) && curIdx < eps.length ? eps[curIdx] : null;
+				const curName = curEp && curEp.name != null ? String(curEp.name).trim() : '';
+				if (curName) {
+					const a = normalizeEpisodeNameForExactMatch(wantedName);
+					const b = normalizeEpisodeNameForExactMatch(curName);
+					if (a && b && a !== b) {
+						try {
+							if (debugEnabled.value) {
+								smartDebugLog('resume_seek_skip', {
+									reason: 'episode_name_mismatch',
+									panLabel,
+									wantedName,
+									curName,
+									curIdx,
+								});
+							}
+						} catch (_e) {}
+						return 0;
+					}
+				}
+			}
+			const wantedIdxRaw = h.episodeIndex != null ? Number(h.episodeIndex) : NaN;
+			if (Number.isFinite(wantedIdxRaw) && wantedIdxRaw >= 0) {
+				const wantedIdx = Math.floor(wantedIdxRaw);
+				if (curIdx >= 0 && curIdx !== wantedIdx) {
+					try {
+						if (debugEnabled.value) {
+							smartDebugLog('resume_seek_skip', {
+								reason: 'episode_index_mismatch',
+								panLabel,
+								wantedIdx,
+								curIdx,
+							});
+						}
+					} catch (_e) {}
+					return 0;
+				}
+			}
+		}
+	} catch (_e) {}
+
+  return sec;
+};
+
+const maybeApplyResumeSeek = (trigger = '') => {
+  if (!resumeHistoryLoaded.value) return;
+  if (!playerUrl.value) return;
+  const sec = computeResumeSeekSeconds();
+  if (!sec) return;
+  const key = `${playerUrl.value}::${selectedEpisodeIndex.value}`;
+  if (resumeSeekState.applied && resumeSeekState.key === key) return;
+  const now = Date.now();
+  if (resumeSeekState.tryKey === key && now-resumeSeekState.tryAt < 800) return;
+  resumeSeekState.tryKey = key;
+  resumeSeekState.tryAt = now;
+
+  try {
+    const player = artPlayerRef.value;
+    if (!player || typeof player.seekTo !== 'function') return;
+    const ok = player.seekTo(sec);
+    if (!ok) return;
+    resumeSeekState.key = key;
+    resumeSeekState.applied = true;
+    try {
+      smartDebugLog('resume_seek', {
+        sec,
+        trigger: String(trigger || ''),
+        siteKey: typeof props.siteKey === 'string' ? props.siteKey : '',
+        siteName: '',
+        spiderApi: typeof props.spiderApi === 'string' ? props.spiderApi : '',
+        videoId: typeof props.videoId === 'string' ? props.videoId : '',
+        tmdbId: Number.isFinite(Number(props.tmdbId || 0)) ? Number(props.tmdbId || 0) : 0,
+        tmdbType: typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '',
+      });
+    } catch (_e) {}
+  } catch (_e) {}
+};
+
+// Re-attempt resume-seek when episode match metadata becomes available.
+// In TMDB smart flows, `episodeMatchByIndex` may be empty at the moment the player becomes ready.
+watch(
+  () => {
+    const h = resumeHistory.value && typeof resumeHistory.value === 'object' ? resumeHistory.value : null;
+    const pbRaw =
+      (h && (h.playbackItemId != null ? String(h.playbackItemId) : '')) ||
+      (h && (h.playback_item_id != null ? String(h.playback_item_id) : ''));
+    const wantedPb = String(pbRaw || '').trim();
+    const pos = h && Number.isFinite(Number(h.playbackPositionTicks)) ? Number(h.playbackPositionTicks) : 0;
+    const curIdxRaw = Number(selectedEpisodeIndex.value);
+    const curIdx = Number.isFinite(curIdxRaw) ? Math.floor(curIdxRaw) : -1;
+    const m = curIdx >= 0 && Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[curIdx] : null;
+    const se = m ? `${Number(m.season || 0)}:${Number(m.episode || 0)}` : '';
+    return [
+      resumeHistoryLoaded.value ? '1' : '0',
+      playerUrl.value ? '1' : '0',
+      playerMetaReady.value ? '1' : '0',
+      playerPlaybackStarted.value ? '1' : '0',
+      playerFirstFrameReady.value ? '1' : '0',
+      String(curIdx),
+      se,
+      wantedPb,
+      String(pos || 0),
+    ].join('|');
+  },
+  () => {
+    if (!playerUrl.value) return;
+    if (!playerMetaReady.value && !playerPlaybackStarted.value && !playerFirstFrameReady.value) return;
+    maybeApplyResumeSeek('watch');
+  }
+);
+
 const onPlayerLoadedMetadata = () => {
   playerMetaReady.value = true;
+  maybeApplyResumeSeek('loadedmetadata');
 };
 
 const playerVideoInfo = ref({ width: 0, height: 0 });
@@ -10484,10 +10725,60 @@ const onPlayerBuffering = (v) => {
 const onPlayerPlaying = () => {
   playerPlaybackStarted.value = true;
   playerBuffering.value = false;
+  maybeApplyResumeSeek('playing');
+  commitHistoryBaseIfNeeded('playing');
 };
 
 const playerTimeState = { at: 0, currentTime: 0, duration: 0 };
 const historyProgressState = { at: 0, inFlight: null };
+const historyCommitState = { key: '', inFlight: null };
+
+const computeHistoryCommitKey = (payload) => {
+  try {
+    const p = payload && typeof payload === 'object' ? payload : null;
+    if (!p) return '';
+    const sk = p.siteKey != null ? String(p.siteKey).trim() : '';
+    const vid = p.videoId != null ? String(p.videoId).trim() : '';
+    const flag = p.playFlag != null ? String(p.playFlag).trim() : '';
+    const idxRaw = p.episodeIndex != null ? Number(p.episodeIndex) : NaN;
+    const idx = Number.isFinite(idxRaw) && idxRaw >= 0 ? Math.floor(idxRaw) : 0;
+    const itemId = p.playbackItemId != null ? String(p.playbackItemId).trim() : '';
+    const tmdbId = Number.isFinite(Number(p.tmdbId)) ? Math.floor(Number(p.tmdbId)) : 0;
+    const tmdbType = p.tmdbType != null ? String(p.tmdbType).trim().toLowerCase() : '';
+    return [sk, vid, flag, String(idx), itemId, tmdbType, String(tmdbId)].join('::');
+  } catch (_e) {
+    return '';
+  }
+};
+
+const commitHistoryBaseIfNeeded = (reason = '', opts = {}) => {
+  try {
+    const force = !!(opts && typeof opts === 'object' && opts.force);
+    const base = lastHistoryPayload.value && typeof lastHistoryPayload.value === 'object' ? lastHistoryPayload.value : null;
+    if (!base) return;
+    if (!force && !playerPlaybackStarted.value && !playerFirstFrameReady.value) return;
+    const key = computeHistoryCommitKey(base);
+    if (!key) return;
+    if (historyCommitState.key === key) return;
+    if (historyCommitState.inFlight) return;
+
+    historyCommitState.key = key;
+    historyCommitState.inFlight = (async () => {
+      try {
+        await apiPostJson('/api/playhistory', { ...base }, { dedupe: false });
+        window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
+        try {
+          smartDebugLog('history_commit', { reason: String(reason || ''), key });
+        } catch (_e) {}
+      } catch (_e) {
+        // ignore
+      }
+    })();
+    historyCommitState.inFlight.finally(() => {
+      if (historyCommitState.key === key) historyCommitState.inFlight = null;
+    });
+  } catch (_e) {}
+};
 
 const toTicks = (seconds) => {
   const s = Number(seconds);
@@ -10527,6 +10818,7 @@ const syncHistoryProgressIfPossible = async (opts = {}) => {
   historyProgressState.at = now;
   historyProgressState.inFlight = (async () => {
     try {
+      commitHistoryBaseIfNeeded('timeupdate');
       await apiPostJson(
         '/api/playhistory',
         {
@@ -10547,6 +10839,33 @@ const syncHistoryProgressIfPossible = async (opts = {}) => {
     historyProgressState.inFlight = null;
   }
 };
+
+const flushHistoryProgressBestEffort = () => {
+  try {
+    void syncHistoryProgressIfPossible({ force: true });
+  } catch (_e) {}
+};
+
+onMounted(() => {
+  try {
+    if (typeof document === 'undefined') return;
+    const onVis = () => {
+      try {
+        if (document.visibilityState !== 'hidden') return;
+        flushHistoryProgressBestEffort();
+      } catch (_e) {}
+    };
+    const onHide = () => flushHistoryProgressBestEffort();
+    document.addEventListener('visibilitychange', onVis, { passive: true });
+    window.addEventListener('pagehide', onHide, { passive: true });
+    window.addEventListener('beforeunload', onHide);
+    cleanupFns.push(() => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('beforeunload', onHide);
+    });
+  } catch (_e) {}
+});
 
 const onPlayerTimeUpdate = (info) => {
   try {
@@ -10707,13 +11026,15 @@ const onPlayerFirstFrame = () => {
   if (playerFirstFrameReady.value) return;
   if (playerFirstFrameTimer) return;
   // Delay unmasking slightly to avoid 1-frame compositor flashes on some browsers/devices.
-  playerFirstFrameTimer = window.setTimeout(() => {
-    playerFirstFrameTimer = 0;
-    playerFirstFrameReady.value = true;
-    try {
-      const ctx = lastTMDBPlayReportCtx.value;
-      if (ctx && !ctx.playbackReported) {
-        ctx.playbackReported = true;
+		  playerFirstFrameTimer = window.setTimeout(() => {
+		    playerFirstFrameTimer = 0;
+		    playerFirstFrameReady.value = true;
+      maybeApplyResumeSeek('firstframe');
+      commitHistoryBaseIfNeeded('firstframe');
+		    try {
+		      const ctx = lastTMDBPlayReportCtx.value;
+	      if (ctx && !ctx.playbackReported) {
+	        ctx.playbackReported = true;
         void reportTMDBPlay({ ctx, stage: 'playback', result: 'success', error: '' });
       }
     } catch (_e) {}
@@ -10839,14 +11160,117 @@ const loadResumeFromHistory = async () => {
   resumeHistoryLoaded.value = false;
   resumeHistoryApplied.value = false;
   resumeHistory.value = null;
+  resumeWanted.value = null;
   const siteKey = (props.siteKey || '').trim();
   const videoId = (props.videoId || '').trim();
   const tmdbId = Number(props.tmdbId || 0);
   const tmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
 
-	  if (!siteKey || !videoId) {
-	    if (!(tmdbMode.value && tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie'))) {
-	      resumeHistoryLoaded.value = true;
+  const parseResumeWantedFromRow = (row) => {
+    try {
+      if (!row || typeof row !== 'object') return null;
+      const idxRaw = row.episodeIndex != null ? Number(row.episodeIndex) : NaN;
+      const indexFallback = Number.isFinite(idxRaw) && idxRaw >= 0 ? Math.floor(idxRaw) : 0;
+      const pb =
+        (row.playbackItemId != null ? String(row.playbackItemId) : '') ||
+        (row.playback_item_id != null ? String(row.playback_item_id) : '');
+      const playbackItemId = String(pb || '').trim();
+      const seasonFromField = row.tmdbSeason != null ? Number(row.tmdbSeason) : NaN;
+      const episodeFromField = row.tmdbEpisode != null ? Number(row.tmdbEpisode) : NaN;
+      const seasonField = Number.isFinite(seasonFromField) ? Math.max(0, Math.floor(seasonFromField)) : 0;
+      const episodeField = Number.isFinite(episodeFromField) ? Math.max(0, Math.floor(episodeFromField)) : 0;
+      const m = playbackItemId.match(/^tmdb_tv_\d+_s(\d{2})_e(\d{3})$/i);
+      const seasonPB = m ? Math.max(0, Number(m[1]) || 0) : 0;
+      const episodePB = m ? Math.max(0, Number(m[2]) || 0) : 0;
+      const season = seasonField || seasonPB || 0;
+      const episode = episodeField || episodePB || 0;
+      const updatedAtRaw = row.updatedAt != null ? Number(row.updatedAt) : NaN;
+      const updatedAt = Number.isFinite(updatedAtRaw) ? Math.floor(updatedAtRaw) : 0;
+      return { season, episode, indexFallback, playbackItemId, updatedAt };
+    } catch (_e) {
+      return null;
+    }
+  };
+
+	  const applyResumeWantedIfPossible = (reason = '') => {
+	    try {
+	      const w = resumeWanted.value && typeof resumeWanted.value === 'object' ? resumeWanted.value : null;
+	      if (!w) return false;
+	      if (resumeHistoryApplied.value) return true;
+	      if (initialAutoPlayTriggered.value) return false;
+
+	      const wantedSeason = Number.isFinite(Number(w.season)) ? Math.floor(Number(w.season)) : 0;
+	      const wantedEpisode = Number.isFinite(Number(w.episode)) ? Math.floor(Number(w.episode)) : 0;
+	      const wantedIndex = Number.isFinite(Number(w.indexFallback)) ? Math.floor(Number(w.indexFallback)) : 0;
+
+	      const total = selectedEpisodes.value.length;
+	      if (!total) return false;
+	      // If the episode list is not fully ready yet (e.g. TMDB/Douban season meta still loading),
+	      // do not clamp the resume index to a shorter list and accidentally lock resume to episode 1.
+	      if (wantedIndex >= total) return false;
+	      const idx = pickResumeEpisodeIndex({ wantedSeason, wantedEpisode, wantedIndex });
+	      selectedEpisodeIndex.value = idx;
+	      // Keep season tab consistent with the chosen episode index.
+	      if (seasonTabs.value.length) {
+	        const matches = episodeMatchByIndex.value;
+	        const m =
+	          Number.isFinite(idx) && idx >= 0 && matches && matches[idx] && typeof matches[idx] === 'object'
+	            ? matches[idx]
+	            : { season: 0, episode: 0 };
+	        const s = Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+	        if (s > 0) {
+	          const exists = seasonTabs.value.some((t) => t && Number(t.season) === s);
+	          if (exists && Number(selectedSeason.value) !== s) selectSeason(s);
+	        }
+	      }
+	      resumeHistoryApplied.value = true;
+	      try {
+	        smartDebugLog('resume_apply', { reason: String(reason || ''), idx, wantedSeason, wantedEpisode, wantedIndex });
+      } catch (_e) {}
+      return true;
+    } catch (_e) {
+      return false;
+    }
+  };
+
+  const applyEpisodeIndexEarlyIfPossible = (row) => {
+    try {
+      if (!row || typeof row !== 'object') return;
+      if (resumeHistoryApplied.value) return;
+      if (initialAutoPlayTriggered.value) return;
+      const wantedIdxRaw = row.episodeIndex != null ? Number(row.episodeIndex) : NaN;
+      if (!Number.isFinite(wantedIdxRaw) || wantedIdxRaw < 0) return;
+      const wantedIdx = Math.floor(wantedIdxRaw);
+      if (wantedIdx < 0) return;
+      const w = parseResumeWantedFromRow(row);
+      if (w) resumeWanted.value = w;
+      // Early preselect: pick a stable global index when we have season+episode.
+      let preIdx = wantedIdx;
+      try {
+        const ww = w && typeof w === 'object' ? w : null;
+        const total = selectedEpisodes.value.length;
+        if (ww && total) {
+          const wantedSeason = Number.isFinite(Number(ww.season)) ? Math.floor(Number(ww.season)) : 0;
+          const wantedEpisode = Number.isFinite(Number(ww.episode)) ? Math.floor(Number(ww.episode)) : 0;
+          const wantedIndex = Number.isFinite(Number(ww.indexFallback)) ? Math.floor(Number(ww.indexFallback)) : wantedIdx;
+          if (wantedSeason > 0 && wantedEpisode > 0) {
+            preIdx = pickResumeEpisodeIndex({ wantedSeason, wantedEpisode, wantedIndex });
+          }
+        }
+      } catch (_e) {}
+      const curRaw = Number(selectedEpisodeIndex.value);
+      const cur = Number.isFinite(curRaw) ? Math.floor(curRaw) : 0;
+      if (cur === preIdx) return;
+      // Early preselect: helps avoid auto-play starting at episode 1 and overwriting server history,
+      // especially in TMDB mode where episode lists may arrive later.
+      selectedEpisodeIndex.value = preIdx;
+      void applyResumeWantedIfPossible('early_idx');
+    } catch (_e) {}
+  };
+
+		  if (!siteKey || !videoId) {
+		    if (!(tmdbMode.value && tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie'))) {
+		      resumeHistoryLoaded.value = true;
       return;
     }
     const key = `tmdb::${tmdbType}::${tmdbId}`;
@@ -10860,18 +11284,21 @@ const loadResumeFromHistory = async () => {
     try {
       resumeHistoryState.inFlight = (async () => {
         try {
-          const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 2000 });
+          const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 0 });
           if (seqAtCall !== resumeHistoryState.seq) return;
           const items = Array.isArray(list) ? list : [];
           const wantedKey = normalizeForAggKey(props.contentKey || '') || normalizeForAggKey(computeHistoryContentKey(props.videoTitle || ''));
-          const match = items.find((r) => r && Number(r.tmdbId || 0) === tmdbId && String(r.tmdbType || '').trim().toLowerCase() === tmdbType) ||
-            (wantedKey ? items.find((r) => r && normalizeForAggKey(r.contentKey || '') === wantedKey) : null) ||
-            null;
-          resumeHistory.value = match;
-	          try {
-	            const seasons = match && typeof match.tmdbSeasons === 'string' ? match.tmdbSeasons.trim() : '';
-	            if (tmdbType === 'tv' && tmdbId > 0 && seasons) {
-	              sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
+	          const match = items.find((r) => r && Number(r.tmdbId || 0) === tmdbId && String(r.tmdbType || '').trim().toLowerCase() === tmdbType) ||
+	            (wantedKey ? items.find((r) => r && normalizeForAggKey(r.contentKey || '') === wantedKey) : null) ||
+	            null;
+	          resumeHistory.value = match;
+            resumeWanted.value = parseResumeWantedFromRow(match);
+            applyEpisodeIndexEarlyIfPossible(match);
+            void applyResumeWantedIfPossible('tmdb_list');
+		          try {
+		            const seasons = match && typeof match.tmdbSeasons === 'string' ? match.tmdbSeasons.trim() : '';
+		            if (tmdbType === 'tv' && tmdbId > 0 && seasons) {
+		              sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
 	              refreshDoubanSeasonMeta();
 	            }
 	          } catch (_e) {}
@@ -10886,9 +11313,8 @@ const loadResumeFromHistory = async () => {
       if (seqAtCall === resumeHistoryState.seq) resumeHistoryLoaded.value = true;
       if (resumeHistoryState.key === key && resumeHistoryState.seq === seqAtCall) resumeHistoryState.inFlight = null;
     }
-    tryAutoStartPlayback();
-    return;
-  }
+	    return;
+	  }
 
   const key = `${siteKey}::${videoId}`;
   if (resumeHistoryState.inFlight && resumeHistoryState.key === key) {
@@ -10902,14 +11328,17 @@ const loadResumeFromHistory = async () => {
     resumeHistoryState.inFlight = (async () => {
       try {
         try {
-          const item = await apiGetJson(`/api/playhistory/one${buildQuery({ siteKey, videoId })}`, { cacheMs: 2000 });
+          const item = await apiGetJson(`/api/playhistory/one${buildQuery({ siteKey, videoId })}`, { cacheMs: 0 });
           if (seqAtCall !== resumeHistoryState.seq) return;
-          if (item && item.siteKey === siteKey && item.videoId === videoId) {
-            resumeHistory.value = item;
-            try {
-              if (tmdbMode.value) {
-	                const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
-	                const tmdbId = Number(props.tmdbId || 0);
+	          if (item && item.siteKey === siteKey && item.videoId === videoId) {
+	            resumeHistory.value = item;
+              resumeWanted.value = parseResumeWantedFromRow(item);
+              applyEpisodeIndexEarlyIfPossible(item);
+              void applyResumeWantedIfPossible('site_one');
+	            try {
+	              if (tmdbMode.value) {
+		                const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+		                const tmdbId = Number(props.tmdbId || 0);
 	                const seasons = item && typeof item.tmdbSeasons === 'string' ? item.tmdbSeasons.trim() : '';
 	                if (typRaw === 'tv' && tmdbId > 0 && seasons) {
 	                  sessionStorage.setItem(`tv:douban:tmdbSeasons:${tmdbId}`, seasons);
@@ -10926,13 +11355,13 @@ const loadResumeFromHistory = async () => {
         } catch (_e) {
           // fallback
         }
-        const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 2000 });
+        const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 0 });
         if (seqAtCall !== resumeHistoryState.seq) return;
         const items = Array.isArray(list) ? list : [];
-        const foundExact = items.find((r) => r && r.siteKey === siteKey && r.videoId === videoId) || null;
-        if (foundExact) {
-          resumeHistory.value = foundExact;
-        } else {
+	        const foundExact = items.find((r) => r && r.siteKey === siteKey && r.videoId === videoId) || null;
+	        if (foundExact) {
+	          resumeHistory.value = foundExact;
+	        } else {
           const tmdbId = Number(props.tmdbId || 0);
           const tmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
           const wantedKey =
@@ -10951,12 +11380,15 @@ const loadResumeFromHistory = async () => {
             !foundByTmdb && wantedKey
               ? items.find((r) => r && normalizeForAggKey(r.contentKey || '') === wantedKey) || null
               : null;
-          resumeHistory.value = foundByTmdb || foundByKey || null;
-        }
-        try {
-          const found = resumeHistory.value;
-          if (tmdbMode.value && found) {
-	            const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+	          resumeHistory.value = foundByTmdb || foundByKey || null;
+	        }
+          resumeWanted.value = parseResumeWantedFromRow(resumeHistory.value);
+          applyEpisodeIndexEarlyIfPossible(resumeHistory.value);
+          void applyResumeWantedIfPossible('site_list');
+	        try {
+	          const found = resumeHistory.value;
+	          if (tmdbMode.value && found) {
+		            const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
 	            const tmdbId = Number(props.tmdbId || 0);
 	            const seasons = found && typeof found.tmdbSeasons === 'string' ? found.tmdbSeasons.trim() : '';
 	            if (typRaw === 'tv' && tmdbId > 0 && seasons) {
@@ -10976,7 +11408,6 @@ const loadResumeFromHistory = async () => {
     if (seqAtCall === resumeHistoryState.seq) resumeHistoryLoaded.value = true;
     if (resumeHistoryState.key === key && resumeHistoryState.seq === seqAtCall) resumeHistoryState.inFlight = null;
   }
-  tryAutoStartPlayback();
 };
 
 watch(
@@ -11009,7 +11440,9 @@ watch(
     [
       introLoading.value,
       resumeHistoryLoaded.value ? '1' : '0',
+      resumeWanted.value && typeof resumeWanted.value === 'object' ? `${resumeWanted.value.playbackItemId || ''}:${resumeWanted.value.indexFallback || 0}` : '',
       selectedPanKey.value,
+      String(selectedSeason.value),
       resolvedSpiderApiFinal.value,
       selectedEpisodes.value.length,
       selectedEpisodeIndex.value,
@@ -11033,17 +11466,22 @@ watch(
     }
 
     // Restore from history once (pan + episode), if available and already loaded.
-      if (!resumeHistoryApplied.value && resumeHistoryLoaded.value && resumeHistory.value) {
-      const prevPan = selectedPan.value;
-      const prevIdx = selectedEpisodeIndex.value;
-	      const wantedPanLabel = typeof resumeHistory.value.panLabel === 'string' ? resumeHistory.value.panLabel.trim() : '';
+	      if (!resumeHistoryApplied.value && resumeHistoryLoaded.value && resumeHistory.value) {
+	      const prevPan = selectedPan.value;
+	      const prevIdx = selectedEpisodeIndex.value;
+		      const wantedPanLabel = typeof resumeHistory.value.panLabel === 'string' ? resumeHistory.value.panLabel.trim() : '';
 	      const wantedIdxRaw = resumeHistory.value.episodeIndex != null ? Number(resumeHistory.value.episodeIndex) : 0;
 	      const wantedIdx = Number.isFinite(wantedIdxRaw) && wantedIdxRaw >= 0 ? Math.floor(wantedIdxRaw) : 0;
+	      const total = selectedEpisodes.value.length;
+	      if (wantedIdx >= total) return;
 	      const wantedEpName = typeof resumeHistory.value.episodeName === 'string' ? resumeHistory.value.episodeName.trim() : '';
-	      const normalize = (label) => String(label || '').trim().replace(/#\d{1,3}\s*$/i, '').trim().toLowerCase();
+	      const playbackItemIdRaw =
+	        (resumeHistory.value.playbackItemId != null ? String(resumeHistory.value.playbackItemId) : '') ||
+	        (resumeHistory.value.playback_item_id != null ? String(resumeHistory.value.playback_item_id) : '');
+		      const normalize = (label) => String(label || '').trim().replace(/#\d{1,3}\s*$/i, '').trim().toLowerCase();
 
-	      let target = null;
-	      if (wantedPanLabel) {
+		      let target = null;
+		      if (wantedPanLabel) {
 	        const want = normalize(wantedPanLabel);
           const smartHit =
             smartListAvailable.value
@@ -11057,31 +11495,64 @@ watch(
 	          }
 	      }
 
-	      const rules = compiledMagicEpisodeRules.value;
-	      const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
-	      const exactIdx = wantedEpName ? pickExactResumeEpisodeIndexFromName(wantedEpName, cleanRules) : null;
-	      if (exactIdx != null) {
-        selectedEpisodeIndex.value = exactIdx;
-      } else {
-		      let wanted = { season: 0, episode: 0 };
-		      if (wantedEpName) {
-		        wanted = extractSeasonEpisodeFromCandidates([wantedEpName], rules, cleanRules);
-	          if (!wanted.episode) wanted = parseLooseSeasonEpisodeFromText(wantedEpName);
+		      const rules = compiledMagicEpisodeRules.value;
+		      const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
+		      const pb = String(playbackItemIdRaw || '').trim();
+		      const pbMatch = pb.match(/^tmdb_tv_\d+_s(\d{2})_e(\d{3})$/i);
+		      const pbSeason = pbMatch ? Number(pbMatch[1]) : 0;
+		      const pbEpisode = pbMatch ? Number(pbMatch[2]) : 0;
+		      const wantedSeasonFieldRaw = resumeHistory.value.tmdbSeason != null ? Number(resumeHistory.value.tmdbSeason) : NaN;
+		      const wantedEpisodeFieldRaw = resumeHistory.value.tmdbEpisode != null ? Number(resumeHistory.value.tmdbEpisode) : NaN;
+		      const wantedSeasonField = Number.isFinite(wantedSeasonFieldRaw) ? Math.max(0, Math.floor(wantedSeasonFieldRaw)) : 0;
+		      const wantedEpisodeField = Number.isFinite(wantedEpisodeFieldRaw) ? Math.max(0, Math.floor(wantedEpisodeFieldRaw)) : 0;
+		      const exactIdx = wantedEpName ? pickExactResumeEpisodeIndexFromName(wantedEpName, cleanRules) : null;
+		      if (exactIdx != null) {
+	        selectedEpisodeIndex.value = exactIdx;
+	      } else {
+			      let wanted = { season: 0, episode: 0 };
+			      if (wantedSeasonField > 0 && wantedEpisodeField > 0) {
+			        wanted = { season: wantedSeasonField, episode: wantedEpisodeField };
+			      } else if (pbSeason > 0 && pbEpisode > 0) {
+			        wanted = { season: pbSeason, episode: pbEpisode };
+			      } else if (wantedEpName) {
+			        wanted = extractSeasonEpisodeFromCandidates([wantedEpName], rules, cleanRules);
+		          if (!wanted.episode) wanted = parseLooseSeasonEpisodeFromText(wantedEpName);
+			      }
+			      wanted = normalizeMaybeGlobalSeasonEpisode(wanted);
+			      if (!wanted.episode) wanted = { season: 0, episode: wantedIdx + 1 };
+
+	        selectedEpisodeIndex.value = pickResumeEpisodeIndex({
+	          wantedSeason: wanted.season,
+	          wantedEpisode: wanted.episode,
+	          wantedIndex: wantedIdx,
+	        });
+	        // Sync season tab with the chosen index (do not change the index after this).
+	        if (seasonTabs.value.length) {
+	          const chosenIdx = selectedEpisodeIndex.value;
+	          const matches = episodeMatchByIndex.value;
+	          const m =
+	            Number.isFinite(chosenIdx) && chosenIdx >= 0 && matches && matches[chosenIdx] && typeof matches[chosenIdx] === 'object'
+	              ? matches[chosenIdx]
+	              : { season: 0, episode: 0 };
+	          const s = Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+	          if (s > 0) {
+	            const exists = seasonTabs.value.some((t) => t && Number(t.season) === s);
+	            if (exists && Number(selectedSeason.value) !== s) selectSeason(s);
+	          }
+	        }
 		      }
-		      wanted = normalizeMaybeGlobalSeasonEpisode(wanted);
-		      if (!wanted.episode) wanted = { season: 0, episode: wantedIdx + 1 };
 
-        selectedEpisodeIndex.value = pickResumeEpisodeIndex({
-          wantedSeason: wanted.season,
-          wantedEpisode: wanted.episode,
-          wantedIndex: wantedIdx,
-        });
-	      }
+		      resumeHistoryApplied.value = true;
+		      if (prevPan !== selectedPan.value || prevIdx !== selectedEpisodeIndex.value) {
+		        // Pan/episode changed due to resume apply; wait for reactive updates to settle before auto-start.
+		        void nextTick().then(() => {
+		          tryAutoStartPlayback();
+		        });
+		        return;
+		      }
+		    }
 
-	      resumeHistoryApplied.value = true;
-	      if (prevPan !== selectedPan.value || prevIdx !== selectedEpisodeIndex.value) return;
-	    }
-
+    if (resumeHistory.value && !resumeHistoryApplied.value) return;
     tryAutoStartPlayback();
   }
 );
@@ -11479,6 +11950,21 @@ const selectEpisode = (idx) => {
   const n = Number(idx);
   if (!Number.isFinite(n) || n < 0) return;
   autoPlaySuppressedByUser.value = false;
+  // Keep season tab consistent with the clicked episode (important for TMDB multi-season lists).
+  if (seasonTabs.value.length) {
+    try {
+      const matches = episodeMatchByIndex.value;
+      const m =
+        Number.isFinite(n) && n >= 0 && matches && matches[n] && typeof matches[n] === 'object'
+          ? matches[n]
+          : { season: 0, episode: 0 };
+      const s = Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+      if (s > 0) {
+        const exists = seasonTabs.value.some((t) => t && Number(t.season) === s);
+        if (exists && Number(selectedSeason.value) !== s) selectSeason(s);
+      }
+    } catch (_e) {}
+  }
   // Smart pans (TMDB/豆瓣): if the user clicks the currently playing *logical* episode (same global no),
   // don't re-run smart matching / request a new play url.
   if (playerUrl.value && playingSmartEpisodeNo.value > 0 && isSmartPanKey(selectedPanKey.value)) {
@@ -11623,7 +12109,6 @@ const runEntryFlow = async ({ isNewContent, restoreEpisodeIndex } = {}) => {
 	        await fetchTMDBMovieSmartEpisodesIfNeeded();
 	        if (contentChanged) selectedEpisodeIndex.value = 0;
 	      }
-      tryAutoStartPlayback();
       return;
     }
 
@@ -11787,7 +12272,6 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
     }
   })();
   await detailFetchState.inFlight;
-  tryAutoStartPlayback();
 };
 
 const searchTypeLabel = computed(() => {
@@ -12183,6 +12667,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  flushHistoryProgressBestEffort();
   releaseLowPriorityHold();
   invalidateSourcesSearch();
   resumeHistoryState.seq += 1;
@@ -12204,15 +12689,15 @@ onBeforeUnmount(() => {
 watch(
   () => `${panDropdownOptions.value.map((o) => o.key).join(',')}|${smartListAvailable.value ? '1' : '0'}`,
   () => {
-    if (isSmartPanKey(selectedPan.value)) {
-      const ok = smartListAvailable.value && (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).some((s) => s && s.key === selectedPan.value);
-      if (ok) return;
-      const list = panDropdownOptions.value;
-      const k = list && list[0] && list[0].key ? String(list[0].key) : '';
-      selectedPan.value = k;
-      selectedEpisodeIndex.value = k ? 0 : -1;
-      return;
-    }
+	    if (isSmartPanKey(selectedPan.value)) {
+	      const ok = smartListAvailable.value && (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).some((s) => s && s.key === selectedPan.value);
+	      if (ok) return;
+	      const list = panDropdownOptions.value;
+	      const k = list && list[0] && list[0].key ? String(list[0].key) : '';
+	      selectedPan.value = k;
+        if (!k) selectedEpisodeIndex.value = -1;
+	      return;
+	    }
     const list = panDropdownOptions.value;
     if (!list.length) {
       selectedPan.value = '';

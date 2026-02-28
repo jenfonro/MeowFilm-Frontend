@@ -722,7 +722,7 @@ const syncMobileContextFromStorage = () => {
 		  const tmdbType = typeof input.tmdbType === 'string' ? input.tmdbType.trim().toLowerCase() : '';
 		  if (!(tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie'))) return input;
 		  try {
-		    const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 2000 });
+		    const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 0 });
 		    const items = Array.isArray(list) ? list : [];
 		    const match =
 		      items.find((r) => r && Number(r.tmdbId || 0) === tmdbId && String(r.tmdbType || '').trim().toLowerCase() === tmdbType) ||
@@ -747,70 +747,94 @@ const syncMobileContextFromStorage = () => {
 		  }
 		};
 
-		const onOpenPlay = (e) => {
-		  const seqAtCall = (openPlayState.seq += 1);
-		  const wasInPlay = isPlayView.value;
-		  if (!wasInPlay && typeof window !== 'undefined') {
-		    scrollBeforePlayY = window.scrollY || window.pageYOffset || 0;
-		    hasScrollBeforePlay = true;
-		  }
-		  const d0 = e && e.detail && typeof e.detail === 'object' ? e.detail : {};
-		  void (async () => {
-		    const d = await resolveOpenPlayDetail(d0);
-		    if (seqAtCall !== openPlayState.seq) return;
+			const onOpenPlay = (e) => {
+			  const seqAtCall = (openPlayState.seq += 1);
+			  const wasInPlay = isPlayView.value;
+			  if (!wasInPlay && typeof window !== 'undefined') {
+			    scrollBeforePlayY = window.scrollY || window.pageYOffset || 0;
+			    hasScrollBeforePlay = true;
+			  }
+			  const d0 = e && e.detail && typeof e.detail === 'object' ? e.detail : {};
+			  const prevParams = playParams.value && typeof playParams.value === 'object' ? playParams.value : {};
+			  const prevContentKey = typeof prevParams.contentKey === 'string' ? prevParams.contentKey.trim() : '';
+			  const nextContentKey0 = typeof d0.contentKey === 'string' ? d0.contentKey.trim() : '';
 
-		    const prevParams = playParams.value && typeof playParams.value === 'object' ? playParams.value : {};
-		    const prevContentKey = typeof prevParams.contentKey === 'string' ? prevParams.contentKey.trim() : '';
-		    const nextContentKey = typeof d.contentKey === 'string' ? d.contentKey.trim() : '';
+			  const prevTmdbId = Number.isFinite(Number(prevParams.tmdbId)) ? Number(prevParams.tmdbId) : 0;
+			  const prevTmdbType = typeof prevParams.tmdbType === 'string' ? prevParams.tmdbType.trim().toLowerCase() : '';
+			  const nextTmdbId0 = Number.isFinite(Number(d0.tmdbId)) ? Number(d0.tmdbId) : 0;
+			  const nextTmdbType0 = typeof d0.tmdbType === 'string' ? d0.tmdbType.trim().toLowerCase() : '';
 
-			    playParams.value = {
-			      videoTitle: typeof d.videoTitle === 'string' ? d.videoTitle : '',
-			      videoYear: typeof d.videoYear === 'string' ? d.videoYear : '',
-			      searchType: typeof d.searchType === 'string' ? d.searchType : '',
-			      siteKey: typeof d.siteKey === 'string' ? d.siteKey : '',
-			      spiderApi: typeof d.spiderApi === 'string' ? d.spiderApi : '',
-			      videoId: typeof d.videoId === 'string' ? d.videoId : '',
-			      videoIntro: typeof d.videoIntro === 'string' ? d.videoIntro : '',
-			      videoPoster: typeof d.videoPoster === 'string' ? d.videoPoster : '',
-			      videoRemark: typeof d.videoRemark === 'string' ? d.videoRemark : '',
-			      videoPanDir: typeof d.videoPanDir === 'string' ? d.videoPanDir : '',
-			      contentKey: typeof d.contentKey === 'string' ? d.contentKey : '',
-			      tmdbId: Number.isFinite(Number(d.tmdbId)) ? Number(d.tmdbId) : 0,
-			      tmdbType: typeof d.tmdbType === 'string' ? d.tmdbType.trim().toLowerCase() : '',
+			  const prevSiteKey = typeof prevParams.siteKey === 'string' ? prevParams.siteKey : '';
+			  const prevSpiderApi = typeof prevParams.spiderApi === 'string' ? prevParams.spiderApi : '';
+			  const prevVideoId = typeof prevParams.videoId === 'string' ? prevParams.videoId : '';
+			  const nextSiteKey0 = typeof d0.siteKey === 'string' ? d0.siteKey : '';
+			  const nextSpiderApi0 = typeof d0.spiderApi === 'string' ? d0.spiderApi : '';
+			  const nextVideoId0 = typeof d0.videoId === 'string' ? d0.videoId : '';
+
+			  const sameContentKey0 = !!(prevContentKey && nextContentKey0 && prevContentKey === nextContentKey0);
+			  const sameTMDB0 = !!(prevTmdbId > 0 && nextTmdbId0 > 0 && prevTmdbId === nextTmdbId0 && prevTmdbType && prevTmdbType === nextTmdbType0);
+			  const sameSite0 = !!(prevSiteKey && nextSiteKey0 && prevSiteKey === nextSiteKey0 && prevSpiderApi === nextSpiderApi0 && prevVideoId === nextVideoId0);
+
+			  const shouldReusePlayPage0 = !!(wasInPlay && sameContentKey0 && (sameTMDB0 || sameSite0));
+			  if (!shouldReusePlayPage0) playKey.value += 1;
+
+			  // Enter play view immediately (avoid "need to click twice" due to async resolve).
+			  playParams.value = {
+			    videoTitle: typeof d0.videoTitle === 'string' ? d0.videoTitle : '',
+			    videoYear: typeof d0.videoYear === 'string' ? d0.videoYear : '',
+			    searchType: typeof d0.searchType === 'string' ? d0.searchType : '',
+			    siteKey: typeof d0.siteKey === 'string' ? d0.siteKey : '',
+			    spiderApi: typeof d0.spiderApi === 'string' ? d0.spiderApi : '',
+			    videoId: typeof d0.videoId === 'string' ? d0.videoId : '',
+			    videoIntro: typeof d0.videoIntro === 'string' ? d0.videoIntro : '',
+			    videoPoster: typeof d0.videoPoster === 'string' ? d0.videoPoster : '',
+			    videoRemark: typeof d0.videoRemark === 'string' ? d0.videoRemark : '',
+			    videoPanDir: typeof d0.videoPanDir === 'string' ? d0.videoPanDir : '',
+			    contentKey: typeof d0.contentKey === 'string' ? d0.contentKey : '',
+			    tmdbId: Number.isFinite(Number(d0.tmdbId)) ? Number(d0.tmdbId) : 0,
+			    tmdbType: typeof d0.tmdbType === 'string' ? d0.tmdbType.trim().toLowerCase() : '',
+			  };
+			  isPlayView.value = true;
+			  if (!wasInPlay) {
+			    nextTick(() => {
+			      try {
+			        requestAnimationFrame(() => window.scrollTo(0, 0));
+			      } catch (_e) {
+			        try {
+			          window.scrollTo(0, 0);
+			        } catch (_e2) {}
+			      }
+			    });
+			  }
+
+			  void (async () => {
+			    const d = await resolveOpenPlayDetail(d0);
+			    if (seqAtCall !== openPlayState.seq) return;
+			    if (!d || typeof d !== 'object') return;
+
+			    const cur = playParams.value && typeof playParams.value === 'object' ? playParams.value : {};
+			    const next = { ...cur };
+			    let changed = false;
+			    const patch = (k, v) => {
+			      if (v == null) return;
+			      const s = typeof v === 'string' ? v : String(v);
+			      if (!s) return;
+			      if (next[k] !== s) {
+			        next[k] = s;
+			        changed = true;
+			      }
 			    };
+			    patch('siteKey', typeof d.siteKey === 'string' ? d.siteKey : '');
+			    patch('spiderApi', typeof d.spiderApi === 'string' ? d.spiderApi : '');
+			    patch('videoId', typeof d.videoId === 'string' ? d.videoId : '');
+			    patch('contentKey', typeof d.contentKey === 'string' ? d.contentKey : '');
+			    patch('videoTitle', typeof d.videoTitle === 'string' ? d.videoTitle : '');
+			    patch('videoPoster', typeof d.videoPoster === 'string' ? d.videoPoster : '');
+			    patch('videoRemark', typeof d.videoRemark === 'string' ? d.videoRemark : '');
 
-		    const prevTmdbId = Number.isFinite(Number(prevParams.tmdbId)) ? Number(prevParams.tmdbId) : 0;
-		    const prevTmdbType = typeof prevParams.tmdbType === 'string' ? prevParams.tmdbType.trim().toLowerCase() : '';
-		    const nextTmdbId = Number.isFinite(Number(d.tmdbId)) ? Number(d.tmdbId) : 0;
-		    const nextTmdbType = typeof d.tmdbType === 'string' ? d.tmdbType.trim().toLowerCase() : '';
-
-		    const prevSiteKey = typeof prevParams.siteKey === 'string' ? prevParams.siteKey : '';
-		    const prevSpiderApi = typeof prevParams.spiderApi === 'string' ? prevParams.spiderApi : '';
-		    const prevVideoId = typeof prevParams.videoId === 'string' ? prevParams.videoId : '';
-		    const nextSiteKey = typeof d.siteKey === 'string' ? d.siteKey : '';
-		    const nextSpiderApi = typeof d.spiderApi === 'string' ? d.spiderApi : '';
-		    const nextVideoId = typeof d.videoId === 'string' ? d.videoId : '';
-
-		    const sameContentKey = !!(prevContentKey && nextContentKey && prevContentKey === nextContentKey);
-		    const sameTMDB = !!(prevTmdbId > 0 && nextTmdbId > 0 && prevTmdbId === nextTmdbId && prevTmdbType && prevTmdbType === nextTmdbType);
-		    const sameSite = !!(prevSiteKey && nextSiteKey && prevSiteKey === nextSiteKey && prevSpiderApi === nextSpiderApi && prevVideoId === nextVideoId);
-
-		    const shouldReusePlayPage = !!(wasInPlay && sameContentKey && (sameTMDB || sameSite));
-		    if (!shouldReusePlayPage) playKey.value += 1;
-		    isPlayView.value = true;
-		    if (!wasInPlay) {
-		      nextTick(() => {
-		        try {
-		          requestAnimationFrame(() => window.scrollTo(0, 0));
-		        } catch (_e) {
-		          try {
-		            window.scrollTo(0, 0);
-		          } catch (_e2) {}
-		        }
-		      });
-		    }
-		  })();
-		};
+			    if (changed) playParams.value = next;
+			  })();
+			};
 
 onMounted(() => {
   if (!bootstrap || !bootstrap.authenticated) return;

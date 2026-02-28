@@ -94,6 +94,8 @@ export function initDashboardPage(bootstrap = {}) {
 
   const searchDisplayModeSelect = document.getElementById('searchDisplayModeSelect');
   const searchDisplayModeError = document.getElementById('searchDisplayModeError');
+  const netdiskProxyEnabledInput = document.getElementById('netdiskProxyEnabled');
+  const netdiskProxyUrlInput = document.getElementById('netdiskProxyUrl');
   const globalSettingsSave = document.getElementById('globalSettingsSave');
   const globalSettingsSaveStatus = document.getElementById('globalSettingsSaveStatus');
 
@@ -7069,6 +7071,17 @@ export function initDashboardPage(bootstrap = {}) {
     return false;
   };
 
+  const syncNetdiskProxyForm = () => {
+    const enabled = !!(netdiskProxyEnabledInput && netdiskProxyEnabledInput.checked);
+    if (netdiskProxyUrlInput) {
+      netdiskProxyUrlInput.readOnly = !enabled;
+      netdiskProxyUrlInput.classList.toggle('opacity-60', !enabled);
+    }
+  };
+  if (netdiskProxyEnabledInput) {
+    netdiskProxyEnabledInput.addEventListener('change', syncNetdiskProxyForm);
+  }
+
   const loadSitePanel = async () => {
     if (panelLoaded.site || panelLoading.site) return;
     panelLoading.site = true;
@@ -7078,6 +7091,9 @@ export function initDashboardPage(bootstrap = {}) {
 
       setInputValueByName('siteName', settings.siteName || '');
       syncCustomSelectValue('searchDisplayModeSelect', settings.searchDisplayMode || 'sites');
+      if (netdiskProxyEnabledInput) netdiskProxyEnabledInput.checked = !!settings.netdiskProxyEnabled;
+      if (netdiskProxyUrlInput) netdiskProxyUrlInput.value = settings.netdiskProxyUrl || '';
+      syncNetdiskProxyForm();
 
       await validateSearchDisplayModeToken({ toast: false });
 

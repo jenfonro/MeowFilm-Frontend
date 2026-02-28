@@ -439,6 +439,7 @@ function setupHomeSpiderBrowse() {
   let favoritesItems = [];
   let favoritesDirty = true;
 
+  let continueLastFetchAt = 0;
   const fetchHomeBundle = async ({
     includePlayHistory = true,
     includeFavorites = true,
@@ -453,7 +454,8 @@ function setupHomeSpiderBrowse() {
       playHistoryLimit,
       favoritesLimit,
     };
-    const data = await apiGetJson(`/api/home${buildQuery(params)}`, { cacheMs: 2000 });
+    const cacheMs = includePlayHistory ? 0 : 2000;
+    const data = await apiGetJson(`/api/home${buildQuery(params)}`, { cacheMs });
     return data && typeof data === 'object' ? data : {};
   };
 
@@ -510,7 +512,7 @@ function setupHomeSpiderBrowse() {
       const spiderApi = it && typeof it.spiderApi === 'string' ? it.spiderApi : '';
       const videoId = it && typeof it.videoId === 'string' ? it.videoId : '';
       const videoTitle = it && typeof it.videoTitle === 'string' ? it.videoTitle : '';
-      if (!siteKey || !spiderApi || !videoId || !videoTitle) return;
+      if (!videoTitle) return;
       const tmdbParsed = parseTmdbFromContentKey(contentKey);
       const tmdbId =
         it && Number.isFinite(Number(it.tmdbId)) && Number(it.tmdbId) > 0
@@ -520,15 +522,18 @@ function setupHomeSpiderBrowse() {
         const t = normalizeTmdbType(it && typeof it.tmdbType === 'string' ? it.tmdbType : '');
         return t || tmdbParsed.tmdbType;
       })();
+      const canDirectPlay = !!(siteKey && spiderApi && videoId);
+      const canTmdbPlay = !!(tmdbId > 0 && tmdbType);
+      if (!canDirectPlay && !canTmdbPlay) return;
       const displaySiteBadge = tmdbId > 0 && tmdbType ? tmdbTypeLabel(tmdbType) : (it && typeof it.siteName === 'string' ? it.siteName : '');
       const wrapper = createPosterCard({
         wrapperClass: 'min-w-[96px] w-24 sm:min-w-[180px] sm:w-44',
         io,
         detail: {
           contentKey,
-          siteKey,
-          spiderApi,
-          videoId,
+          siteKey: canDirectPlay ? siteKey : '',
+          spiderApi: canDirectPlay ? spiderApi : '',
+          videoId: canDirectPlay ? videoId : '',
           videoTitle,
           videoPoster: it && typeof it.videoPoster === 'string' ? it.videoPoster : '',
           videoRemark: it && typeof it.videoRemark === 'string' ? it.videoRemark : '',
@@ -558,32 +563,34 @@ function setupHomeSpiderBrowse() {
     } catch (_e) {}
   };
 
-	  const refreshContinue = async () => {
-	    if (continueLoading) return;
+		  const refreshContinue = async () => {
+		    if (continueLoading) return;
       if (!continueDirty) {
         applyContinueVisibility();
         if (continueAllowed) renderContinue();
         return;
       }
-	    continueLoading = true;
-	    try {
-	      const data = await fetchHomeBundle({
-          includePlayHistory: true,
-          includeFavorites: false,
-          includePanLoginSettings: false,
-          playHistoryLimit: 20,
-        });
-	      continueItems = Array.isArray(data && data.playHistory) ? data.playHistory : [];
+		    continueLoading = true;
+		    try {
+		      const data = await fetchHomeBundle({
+	          includePlayHistory: true,
+	          includeFavorites: false,
+	          includePanLoginSettings: false,
+	          playHistoryLimit: 20,
+	        });
+		      continueItems = Array.isArray(data && data.playHistory) ? data.playHistory : [];
+	        continueDirty = false;
+          continueLastFetchAt = Date.now();
+		    } catch (_e) {
+		      continueItems = [];
         continueDirty = false;
-	    } catch (_e) {
-	      continueItems = [];
-        continueDirty = false;
-	    } finally {
-      continueLoading = false;
-      applyContinueVisibility();
-      if (continueAllowed) renderContinue();
-    }
-  };
+        continueLastFetchAt = Date.now();
+		    } finally {
+	      continueLoading = false;
+	      applyContinueVisibility();
+	      if (continueAllowed) renderContinue();
+	    }
+	  };
 
   const renderFavorites = () => {
     if (!favoritesGrid || !favoritesEmpty) return;
@@ -2064,18 +2071,30 @@ function setupHomeSpiderBrowse() {
     showHomeFromStorage();
   }
 
-  const canFetchContinue = () => {
-    if (!continueAllowed) return false;
-    if (!homeMain) return false;
-    return !homeMain.classList.contains('hidden');
-  };
+	  const canFetchContinue = () => {
+	    if (!continueAllowed) return false;
+	    if (!homeMain) return false;
+	    return !homeMain.classList.contains('hidden');
+	  };
+
+    const markContinueDirtyAndRefresh = (reason = '') => {
+      continueDirty = true;
+      if (!canFetchContinue()) return;
+      const now = Date.now();
+      if (continueLoading) return;
+      if (now - continueLastFetchAt < 1200) return;
+      void refreshContinue();
+    };
 
   try {
     window.addEventListener('tv:play-history-updated', () => {
-      continueDirty = true;
-      if (canFetchContinue()) void refreshContinue();
+      markContinueDirtyAndRefresh('local_update');
     });
   } catch (_e) {}
+
+  // Note: do not auto-refresh history on focus/poll; it adds noise.
+  // "最近观看/历史" updates should be driven by explicit events (tv:play-history-updated) or user actions.
+
   applyContinueVisibility();
   if (continueDirty && canFetchContinue()) void refreshContinue();
 }
