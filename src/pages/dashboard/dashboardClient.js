@@ -5622,10 +5622,11 @@ export function initDashboardPage(bootstrap = {}) {
 	  const thirdPartySiteCategoryCache = new Map(); // siteKey -> [{id,name}]
 	
 	  const DEFAULT_EMBY_HOME_SECTIONS = [
-	    { id: 'view_tmdb_tv', name: '最新剧集', module: 'douban_tv', mediaType: 'tv' },
-	    { id: 'view_tmdb_movies', name: '最新电影', module: 'douban_movie', mediaType: 'movie' },
-	    { id: 'view_tmdb_anime', name: '最新动漫', module: 'bangumi_anime', mediaType: 'tv' },
-	    { id: 'view_tmdb_show', name: '最新综艺', module: 'douban_variety', mediaType: 'tv' },
+	    { id: 'view_history', name: '历史', module: 'history', mediaType: 'tv' },
+	    { id: 'view_tmdb_tv', name: '剧集', module: 'douban_tv', mediaType: 'tv' },
+	    { id: 'view_tmdb_movies', name: '电影', module: 'douban_movie', mediaType: 'movie' },
+	    { id: 'view_tmdb_anime', name: '动漫', module: 'bangumi_anime', mediaType: 'tv' },
+	    { id: 'view_tmdb_show', name: '综艺', module: 'douban_variety', mediaType: 'tv' },
 	  ];
 	
 	  const EM_BY_MODULE_OPTIONS = [
@@ -5869,22 +5870,33 @@ export function initDashboardPage(bootstrap = {}) {
       });
     }
 
-	    if (embyHomeSectionTableBody) {
-	      const onFieldUpdate = (e) => {
-	        const el = e && e.target ? e.target : null;
-	        const idx = el && el.dataset ? parseInt(el.dataset.index || '', 10) : -1;
-	        const field = el && el.dataset ? String(el.dataset.field || '') : '';
-	        if (!Number.isInteger(idx) || idx < 0) return;
-        if (!field) return;
-	        const list = Array.isArray(embyHomeSections) ? embyHomeSections.slice() : [];
-	        if (!list[idx]) return;
-	        const value = el && typeof el.value === 'string' ? el.value : '';
-	        list[idx] = { ...list[idx], [field]: value };
-	        if (field === 'module') {
-	          const m = String(value || '').trim().toLowerCase();
-	          if (!isModuleRequiringSite(m)) {
-	            list[idx].siteKey = '';
-	            list[idx].categoryId = '';
+		    if (embyHomeSectionTableBody) {
+		      const onFieldUpdate = (e) => {
+		        const el = e && e.target ? e.target : null;
+		        const idx = el && el.dataset ? parseInt(el.dataset.index || '', 10) : -1;
+		        const field = el && el.dataset ? String(el.dataset.field || '') : '';
+		        if (!Number.isInteger(idx) || idx < 0) return;
+	        if (!field) return;
+		        const list = Array.isArray(embyHomeSections) ? embyHomeSections.slice() : [];
+		        if (!list[idx]) return;
+		        const value = el && typeof el.value === 'string' ? el.value : '';
+		        // Avoid re-rendering the whole table on each keystroke.
+		        // The "显示名称" input is a plain <input>, and re-rendering on every `input`
+		        // event will replace the DOM node, causing focus loss and "cannot type" behavior.
+		        if (e && e.type === 'input' && field === 'name') {
+		          list[idx] = { ...list[idx], name: value };
+		          embyHomeSections = list;
+		          syncEmbyHomeJson();
+		          setEmbyHomeStatus('', '');
+		          return;
+		        }
+
+		        list[idx] = { ...list[idx], [field]: value };
+		        if (field === 'module') {
+		          const m = String(value || '').trim().toLowerCase();
+		          if (!isModuleRequiringSite(m)) {
+		            list[idx].siteKey = '';
+		            list[idx].categoryId = '';
 	            list[idx].cardStyle = '';
 	          }
 	          if (!list[idx].mediaType) {
@@ -5912,15 +5924,20 @@ export function initDashboardPage(bootstrap = {}) {
 	                renderEmbyHomeSections();
 	              }
 	            });
-	          }
-	          return;
-	        }
-	        embyHomeSections = list.map(normalizeEmbyHomeSection).filter(Boolean);
-	        renderEmbyHomeSections();
-	        setEmbyHomeStatus('', '');
-	      };
-	      embyHomeSectionTableBody.addEventListener('input', onFieldUpdate);
-	      embyHomeSectionTableBody.addEventListener('change', onFieldUpdate);
+		          }
+		          return;
+		        }
+		        embyHomeSections = list.map(normalizeEmbyHomeSection).filter(Boolean);
+		        // Only re-render when necessary; for simple select updates the DOM already reflects the value.
+		        if (field === 'module') {
+		          renderEmbyHomeSections();
+		        } else {
+		          syncEmbyHomeJson();
+		        }
+		        setEmbyHomeStatus('', '');
+		      };
+		      embyHomeSectionTableBody.addEventListener('input', onFieldUpdate);
+		      embyHomeSectionTableBody.addEventListener('change', onFieldUpdate);
 	
 	      embyHomeSectionTableBody.addEventListener('click', (e) => {
 	        const el = e && e.target ? e.target : null;
