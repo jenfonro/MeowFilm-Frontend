@@ -2,6 +2,7 @@ import { requestCatSpider } from '../../shared/catpawopen';
 import { initSearchPage } from '../../shared/searchClient';
 import { appendTvCardHoverOverlays, createPosterCard } from '../../shared/posterCard';
 import { apiDeleteJson, apiGetJson, apiInvalidateCache, buildQuery } from '../../shared/apiClient';
+import { buildDoubanImageCandidates, normalizeDoubanImageProxyMode, normalizeImageUrl, rewriteDoubanImageUrl } from '../../shared/doubanImage';
 import { formatTMDBTVRemark } from '../../shared/tmdbBadge';
 
 const TMDB_DETAIL_CACHE_MS = 10 * 60 * 1000;
@@ -2125,8 +2126,7 @@ export function initIndexPage() {
           doubanImgProxy: (cfgEl.getAttribute('data-douban-img-proxy') || 'server-proxy').trim(),
           doubanImgCustom: (cfgEl.getAttribute('data-douban-img-custom') || '').trim(),
         };
-        runtimeConfig.doubanImgProxy =
-          (runtimeConfig.doubanImgProxy || '').split(/[\\s,]+/g)[0] || 'server-proxy';
+        runtimeConfig.doubanImgProxy = normalizeDoubanImageProxyMode(runtimeConfig.doubanImgProxy, 'server-proxy');
 
         const movieRow = document.getElementById('homeHotMovieRow');
         const tvRow = document.getElementById('homeHotTvRow');
@@ -2155,139 +2155,21 @@ export function initIndexPage() {
 
         document.querySelectorAll('.tv-scroll-row').forEach((el) => attachScrollableRowControls(el));
 
-        const normalizeProxyBase = (base) => {
-          const raw = typeof base === 'string' ? base.trim() : '';
-          if (!raw) return '';
-          if (/[?&=]$/.test(raw)) return raw;
-          return raw.endsWith('/') ? raw : `${raw}/`;
-        };
-
-        const normalizeImageUrl = (u) => {
-          const raw = typeof u === 'string' ? u.trim() : '';
-          if (!raw) return '';
-          if (raw.startsWith('//')) return `https:${raw}`;
-          if (raw.startsWith('http://')) return `https://${raw.slice('http://'.length)}`;
-          return raw;
-        };
-
-        const isAllowedDoubanImageHost = (hostname) => {
-          const host = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
-          if (!host) return false;
-          if (/^img\d+\.doubanio\.com$/.test(host)) return true;
-          if (/^img\d+\.douban\.com$/.test(host)) return true;
-          if (host === 'img3.doubanio.com') return true;
-          if (host === 'img.doubanio.com') return true;
-          if (host === 'img.douban.com') return true;
-          if (host === 'img.doubanio.cmliussss.net') return true;
-          if (host === 'img.doubanio.cmliussss.com') return true;
-          return false;
-        };
-
-        const swapDoubanImageHost = (urlStr, nextHost) => {
-          const original = normalizeImageUrl(urlStr);
-          const target = typeof nextHost === 'string' ? nextHost.trim() : '';
-          if (!original || !target) return original;
-          try {
-            const u = new URL(original);
-            if (!isAllowedDoubanImageHost(u.hostname || '')) return original;
-            u.protocol = 'https:';
-            u.hostname = target;
-            return u.toString();
-          } catch (_e) {
-            return original.replace(
-              /(img\d+\.doubanio\.com|img\d+\.douban\.com|img\.doubanio\.com|img\.douban\.com|img3\.doubanio\.com|img\.doubanio\.cmliussss\.(net|com))/gi,
-              target
-            );
-          }
-        };
-
         const buildImageCandidates = (originalUrl) => {
-          const original = normalizeImageUrl(originalUrl);
-          if (!original) return [];
-          const processed = processImageUrl(original);
-          const candidates = [];
-          if (processed) candidates.push(processed);
-
-          const lowered = original.toLowerCase();
-          let host = '';
-          try {
-            host = new URL(original).hostname || '';
-          } catch (_e) {
-            host = '';
-          }
-          const isDouban = isAllowedDoubanImageHost(host) || lowered.includes('doubanio') || lowered.includes('douban.com');
-          if (!isDouban) return candidates;
-
-          const p = runtimeConfig.doubanImgProxy || 'server-proxy';
-
-          if (p === 'server-proxy') {
-            candidates.length = 0;
-            candidates.push(`/api/douban/image?url=${encodeURIComponent(original)}`);
-            return candidates;
-          }
-
-          // CDN modes: keep legacy fallback candidates (same rule; only upstream host differs).
-          if (p === 'cdn-tx' || p === 'cmliussss-cdn-tencent') {
-            candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
-            candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
-          } else if (p === 'cdn-ali' || p === 'cmliussss-cdn-ali') {
-            candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
-            candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
-          } else if (p === 'douban-cdn-ali' || p === 'img3') {
-            candidates.push(swapDoubanImageHost(original, 'img3.doubanio.com'));
-          }
-
-          // Always include server image proxy as a last-resort fallback (still respects backend allowlist).
-          candidates.push(`/api/douban/image?url=${encodeURIComponent(original)}`);
-          const uniq = [];
-          const seen = new Set();
-          candidates.forEach((c) => {
-            const v = typeof c === 'string' ? c.trim() : '';
-            if (!v || seen.has(v)) return;
-            seen.add(v);
-            uniq.push(v);
+          return buildDoubanImageCandidates(originalUrl, {
+            mode: runtimeConfig.doubanImgProxy || 'server-proxy',
+            custom: runtimeConfig.doubanImgCustom || '',
+            defaultMode: 'server-proxy',
+            includeServerProxyFallback: true,
           });
-          return uniq;
         };
 
         const processImageUrl = (originalUrl) => {
-          const original = normalizeImageUrl(originalUrl);
-          if (!original) return original;
-
-          const p = runtimeConfig.doubanImgProxy || 'server-proxy';
-          if (p === 'custom') {
-            return runtimeConfig.doubanImgCustom
-              ? `${normalizeProxyBase(runtimeConfig.doubanImgCustom)}${encodeURIComponent(original)}`
-              : original;
-          }
-
-          const lowered = original.toLowerCase();
-          let host = '';
-          try {
-            host = new URL(original).hostname || '';
-          } catch (_e) {
-            host = '';
-          }
-          const isDouban = isAllowedDoubanImageHost(host) || lowered.includes('doubanio') || lowered.includes('douban.com');
-          if (!isDouban) return original;
-
-          if (p === 'server-proxy') {
-            return `/api/douban/image?url=${encodeURIComponent(original)}`;
-          }
-
-          switch (p) {
-            case 'douban-cdn-ali':
-            case 'img3':
-              return swapDoubanImageHost(original, 'img3.doubanio.com');
-            case 'cdn-tx':
-            case 'cmliussss-cdn-tencent':
-              return swapDoubanImageHost(original, 'img.doubanio.cmliussss.net');
-            case 'cdn-ali':
-            case 'cmliussss-cdn-ali':
-              return swapDoubanImageHost(original, 'img.doubanio.cmliussss.com');
-            default:
-              return original;
-          }
+          return rewriteDoubanImageUrl(originalUrl, {
+            mode: runtimeConfig.doubanImgProxy || 'server-proxy',
+            custom: runtimeConfig.doubanImgCustom || '',
+            defaultMode: 'server-proxy',
+          });
         };
 
         const fetchJsonWithTimeout = async (url, timeoutMs = 10000) => {

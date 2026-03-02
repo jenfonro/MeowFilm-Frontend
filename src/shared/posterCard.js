@@ -1,60 +1,15 @@
 import { pauseCatLowPriority } from './catpawopen';
+import { normalizeDoubanImageProxyMode, normalizeImageUrl, rewriteDoubanImageUrl } from './doubanImage';
 
 export const TV_CARD_PLAY_ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" class="tv-card-play-icon"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>';
-
-function normalizeProxyBase(base) {
-  const raw = typeof base === 'string' ? base.trim() : '';
-  if (!raw) return '';
-  if (/[?&=]$/.test(raw)) return raw;
-  return raw.endsWith('/') ? raw : `${raw}/`;
-}
-
-function normalizeImageUrl(url) {
-  const raw = typeof url === 'string' ? url.trim() : '';
-  if (!raw) return '';
-  if (raw.startsWith('//')) return `https:${raw}`;
-  if (raw.startsWith('http://')) return `https://${raw.slice('http://'.length)}`;
-  return raw;
-}
-
-function isAllowedDoubanImageHost(hostname) {
-  const host = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
-  if (!host) return false;
-  if (/^img\d+\.doubanio\.com$/.test(host)) return true;
-  if (/^img\d+\.douban\.com$/.test(host)) return true;
-  if (host === 'img3.doubanio.com') return true;
-  if (host === 'img.doubanio.com') return true;
-  if (host === 'img.douban.com') return true;
-  if (host === 'img.doubanio.cmliussss.net') return true;
-  if (host === 'img.doubanio.cmliussss.com') return true;
-  return false;
-}
-
-function swapDoubanImageHost(urlStr, nextHost) {
-  const original = normalizeImageUrl(urlStr);
-  const target = typeof nextHost === 'string' ? nextHost.trim() : '';
-  if (!original || !target) return original;
-  try {
-    const u = new URL(original);
-    if (!isAllowedDoubanImageHost(u.hostname || '')) return original;
-    u.protocol = 'https:';
-    u.hostname = target;
-    return u.toString();
-  } catch (_e) {
-    return original.replace(
-      /(img\d+\.doubanio\.com|img\d+\.douban\.com|img\.doubanio\.com|img\.douban\.com|img3\.doubanio\.com|img\.doubanio\.cmliussss\.(net|com))/gi,
-      target
-    );
-  }
-}
 
 function readDoubanImgConfigFromDom() {
   if (typeof document === 'undefined') return { mode: 'server-proxy', custom: '' };
   const el = document.getElementById('homeDoubanConfig');
   if (!el) return { mode: 'server-proxy', custom: '' };
   const rawMode = (el.getAttribute('data-douban-img-proxy') || 'server-proxy').trim();
-  const mode = rawMode.split(/[\\s,]+/g)[0] || 'server-proxy';
+  const mode = normalizeDoubanImageProxyMode(rawMode, 'server-proxy');
   const custom = (el.getAttribute('data-douban-img-custom') || '').trim();
   return { mode, custom };
 }
@@ -64,43 +19,11 @@ export function processPosterUrl(posterUrl) {
   if (!original) return '';
 
   const cfg = readDoubanImgConfigFromDom();
-  const mode = cfg && typeof cfg.mode === 'string' ? cfg.mode.trim() : 'server-proxy';
-
-  const lowered = original.toLowerCase();
-  let host = '';
-  try {
-    host = new URL(original).hostname || '';
-  } catch (_e) {
-    host = '';
-  }
-
-  // Single unified detection rule (same for server-proxy/CDN modes).
-  const isDoubanImage = isAllowedDoubanImageHost(host) || lowered.includes('doubanio') || lowered.includes('douban.com');
-
-  if (mode === 'server-proxy') {
-    if (!isDoubanImage) return original;
-    return `/api/douban/image?url=${encodeURIComponent(original)}`;
-  }
-  if (mode === 'custom') {
-    const base = normalizeProxyBase(cfg && typeof cfg.custom === 'string' ? cfg.custom : '');
-    return base ? `${base}${encodeURIComponent(original)}` : original;
-  }
-
-  if (!isDoubanImage) return original;
-
-  switch (mode) {
-    case 'douban-cdn-ali':
-    case 'img3':
-      return swapDoubanImageHost(original, 'img3.doubanio.com');
-    case 'cdn-tx':
-    case 'cmliussss-cdn-tencent':
-      return swapDoubanImageHost(original, 'img.doubanio.cmliussss.net');
-    case 'cdn-ali':
-    case 'cmliussss-cdn-ali':
-      return swapDoubanImageHost(original, 'img.doubanio.cmliussss.com');
-    default:
-      return original;
-  }
+  return rewriteDoubanImageUrl(original, {
+    mode: cfg && typeof cfg.mode === 'string' ? cfg.mode : 'server-proxy',
+    custom: cfg && typeof cfg.custom === 'string' ? cfg.custom : '',
+    defaultMode: 'server-proxy',
+  });
 }
 
 export function bindActivate(el, activate) {

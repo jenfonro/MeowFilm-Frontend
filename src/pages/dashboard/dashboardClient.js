@@ -4281,10 +4281,10 @@ export function initDashboardPage(bootstrap = {}) {
     }
   };
 
-  const checkVideoSourceSites = async (keys) => {
-    const apiBase = await resolveCatPawOpenApiBase();
-    const normalizedBase = normalizeCatPawOpenAdminBase(apiBase);
-    if (!normalizedBase) return { ok: false, message: 'CatPawOpen 接口地址未设置' };
+	  const checkVideoSourceSites = async (keys) => {
+	    const apiBase = await resolveCatPawOpenApiBase();
+	    const normalizedBase = normalizeCatPawOpenAdminBase(apiBase);
+	    if (!normalizedBase) return { ok: false, message: 'CatPawOpen 接口地址未设置' };
 
     const uniq = (Array.isArray(keys) ? keys : [])
       .map((k) => (typeof k === 'string' ? k.trim() : ''))
@@ -4336,20 +4336,193 @@ export function initDashboardPage(bootstrap = {}) {
       return 0;
     };
 
-    const normalizeMessage = (resp) => {
-      if (resp && typeof resp.message === 'string') return resp.message;
-      if (resp && typeof resp.msg === 'string') return resp.msg;
-      if (resp && resp.data && typeof resp.data.message === 'string') return resp.data.message;
-      return '';
-    };
+	    const normalizeMessage = (resp) => {
+	      if (resp && typeof resp.message === 'string') return resp.message;
+	      if (resp && typeof resp.msg === 'string') return resp.msg;
+	      if (resp && resp.data && typeof resp.data.message === 'string') return resp.data.message;
+	      return '';
+	    };
 
-    const formatHttpError = (e) => {
-      const status = e && typeof e.status === 'number' ? e.status : 0;
-      const msg = e && e.message ? String(e.message) : '请求失败';
-      if (!status) return msg;
-      if (msg.startsWith(`HTTP ${status}`)) return msg;
-      return `HTTP ${status}：${msg}`;
-    };
+	    const readPanMockFlag = (resp) => {
+	      if (!resp || typeof resp !== 'object') return false;
+	      if (resp.pan_mock === true) return true;
+	      if (resp.data && typeof resp.data === 'object' && resp.data.pan_mock === true) return true;
+	      return false;
+	    };
+
+	    const formatHttpError = (e) => {
+	      const status = e && typeof e.status === 'number' ? e.status : 0;
+	      const msg = e && e.message ? String(e.message) : '请求失败';
+	      if (!status) return msg;
+	      if (msg.startsWith(`HTTP ${status}`)) return msg;
+	      return `HTTP ${status}：${msg}`;
+	    };
+
+	    const panMockProviderFromFlag = (flag) => {
+	      const s = typeof flag === 'string' ? flag.trim() : '';
+	      if (!s) return '';
+	      const head2 = Array.from(s).slice(0, 2).join('');
+	      const lowerHead2 = head2.toLowerCase();
+	      if (head2 === '天意' || head2 === '天翼') return '189';
+	      if (head2 === '逸动' || head2 === '和彩' || head2 === '移动') return '139';
+	      if (head2 === '夸父' || head2 === '夸克') return 'quark';
+	      if (head2 === '优夕' || lowerHead2 === 'uc') return 'uc';
+	      if (head2 === '百度') return 'baidu';
+	      return '';
+	    };
+
+	    const extractTianyiShareCodeLike = (flagOrURL) => {
+	      const s = typeof flagOrURL === 'string' ? flagOrURL.trim() : '';
+	      if (!s) return '';
+	      const m1 = s.match(/(?:天意|天翼)-([A-Za-z0-9]{6,64})/);
+	      if (m1 && m1[1]) return String(m1[1]).trim();
+	      const m2 = s.match(/^https?:\/\/cloud\.189\.cn\/t\/([A-Za-z0-9]{6,64})(?:\b|\/|$)/i);
+	      if (m2 && m2[1]) return String(m2[1]).trim();
+	      const m3 = s.match(/^[A-Za-z0-9]{6,64}$/);
+	      if (m3) return s;
+	      return '';
+	    };
+
+	    const deriveTianyiMockMeta = (flag, rawPasscode) => {
+	      const out = { shareCode: '', accessCode: '' };
+	      const fromFlag = extractTianyiShareCodeLike(flag);
+	      if (fromFlag) out.shareCode = fromFlag;
+	      const pass = normalizePanMockPasscode(rawPasscode);
+	      if (!pass) return out;
+	      if (pass.toLowerCase() === 'nopass') return out;
+	      const looksShare = (v) => /^[A-Za-z0-9]{6,64}$/.test(String(v || '').trim());
+	      if (pass.includes('-')) {
+	        const seg = pass.split('-', 2).map((x) => String(x || '').trim());
+	        const left = String(seg[0] || '').trim();
+	        const right = String(seg[1] || '').trim();
+	        if (!out.shareCode && looksShare(left)) out.shareCode = left;
+	        if (right && right.toLowerCase() !== 'nopass') out.accessCode = right;
+	        return out;
+	      }
+	      if (!out.shareCode && looksShare(pass)) {
+	        out.shareCode = pass;
+	        return out;
+	      }
+	      out.accessCode = pass;
+	      return out;
+	    };
+
+	    const callPanPlayResolver = async (provider, { flag = '', id = '', passcode = '' } = {}) => {
+	      const p = String(provider || '').trim();
+	      const panFlag = String(flag || '').trim();
+	      const panID = String(id || '').trim();
+	      const panPasscode = String(passcode || '').trim();
+	      if (!p || !panID) return '';
+	      const pathByProvider = {
+	        '189': '/api/pan/189/play',
+	        '139': '/api/pan/139/play',
+	        quark: '/api/pan/quark/play',
+	        uc: '/api/pan/uc/play',
+	        baidu: '/api/pan/baidu/play',
+	      };
+	      const target = pathByProvider[p] || '';
+	      if (!target) return '';
+	      const headers = { 'Content-Type': 'application/json', ...getTvUserHeaders() };
+	      const body = p === '189'
+	        ? (panPasscode ? { id: panID, accessCode: panPasscode } : { id: panID })
+	        : { flag: panFlag, id: panID };
+	      const { resp, data } = await fetchJsonSafe(
+	        target,
+	        { method: 'POST', headers, body: JSON.stringify(body) },
+	        {}
+	      );
+	      if (!resp.ok || !data || data.ok === false) {
+	        const msg = data && data.message ? String(data.message) : `HTTP ${resp.status}`;
+	        const err = new Error(msg);
+	        try {
+	          err.status = resp.status;
+	        } catch (_e) {}
+	        throw err;
+	      }
+	      const pick = (v) => (typeof v === 'string' ? v.trim() : '');
+	      const resolved = pick(data.url) || pick(data.playUrl) || (data.data && (pick(data.data.url) || pick(data.data.playUrl))) || '';
+	      return resolved;
+	    };
+
+	    const parseFirstPanEpisodeID = (vodPlayURL) => {
+	      const raw = typeof vodPlayURL === 'string' ? vodPlayURL.trim() : '';
+	      if (!raw) return '';
+	      const block = String(raw.split('$$$')[0] || '').trim();
+	      if (!block) return '';
+	      const firstLine = String(block.split('#')[0] || '').trim();
+	      if (!firstLine) return '';
+	      const idx = firstLine.indexOf('$');
+	      if (idx < 0) return firstLine;
+	      return String(firstLine.slice(idx + 1) || '').trim();
+	    };
+
+	    const callPanListResolver = async (provider, { flag = '', passcode = '' } = {}) => {
+	      const p = String(provider || '').trim();
+	      const panFlag = String(flag || '').trim();
+	      const rawPasscode = String(passcode || '').trim();
+	      const tianyiMeta = p === '189' ? deriveTianyiMockMeta(panFlag, rawPasscode) : null;
+	      const panPasscode = p === '189' ? String((tianyiMeta && tianyiMeta.accessCode) || '').trim() : rawPasscode;
+	      if (!p || !panFlag) return '';
+	      const pathByProvider = {
+	        '189': '/api/pan/189/list',
+	        '139': '/api/pan/139/list',
+	        quark: '/api/pan/quark/list',
+	        uc: '/api/pan/uc/list',
+	        baidu: '/api/pan/baidu/list',
+	      };
+	      const target = pathByProvider[p] || '';
+	      if (!target) return '';
+	      const headers = { 'Content-Type': 'application/json', ...getTvUserHeaders() };
+	      const listBody = { flag: panFlag };
+	      if (p === '189' && tianyiMeta && tianyiMeta.shareCode) {
+	        const sc = String(tianyiMeta.shareCode || '').trim();
+	        listBody.shareCode = sc;
+	        // Keep backward-compat with backends that only read `flag`.
+	        listBody.flag = `天意-${sc}`;
+	      }
+	      if (panPasscode) {
+	        if (p === '189') listBody.accessCode = panPasscode;
+	        if (p === '139' || p === 'quark' || p === 'uc') listBody.passcode = panPasscode;
+	        if (p === 'baidu') listBody.pwd = panPasscode;
+	      }
+	      const { resp, data } = await fetchJsonSafe(
+	        target,
+	        { method: 'POST', headers, body: JSON.stringify(listBody) },
+	        {}
+	      );
+	      if (!resp.ok || !data || data.ok === false) {
+	        const msg = data && data.message ? String(data.message) : `HTTP ${resp.status}`;
+	        const err = new Error(msg);
+	        try {
+	          err.status = resp.status;
+	        } catch (_e) {}
+	        throw err;
+	      }
+	      const vodPlayURL = data && typeof data.vod_play_url === 'string' ? data.vod_play_url : '';
+	      return parseFirstPanEpisodeID(vodPlayURL);
+	    };
+
+	    const normalizePanMockPasscode = (raw) => {
+	      let s = typeof raw === 'string' ? raw.trim() : '';
+	      if (!s) return '';
+	      s = s.replace(/\s*\[[^\]]*]\s*$/g, '').trim();
+	      if (s.toLowerCase().endsWith('.mp4')) s = s.slice(0, -4).trim();
+	      if (s.toLowerCase().endsWith('-nopass')) s = s.slice(0, -7).trim();
+	      if (s.toLowerCase().endsWith('_nopass')) s = s.slice(0, -7).trim();
+	      if (!s) return '';
+	      const lower = s.toLowerCase();
+	      if (lower === 'nopass' || lower === 'none' || s === '无密码') return '';
+	      const firstToken = String(s.split(/\s+/)[0] || '').trim();
+	      return firstToken || '';
+	    };
+
+	    const derivePanMockPasscode = (episodeName, episodeID) => {
+	      const nameRaw = typeof episodeName === 'string' ? episodeName.trim() : '';
+	      if (nameRaw) return normalizePanMockPasscode(nameRaw);
+	      const idRaw = typeof episodeID === 'string' ? episodeID.trim() : '';
+	      if (idRaw && idRaw.includes('***')) return normalizePanMockPasscode(String(idRaw.split('***').pop() || '').trim());
+	      return '';
+	    };
 
     const extractSpiderNameFromApi = (api) => {
       const raw = typeof api === 'string' ? api.trim() : '';
@@ -4427,33 +4600,58 @@ export function initDashboardPage(bootstrap = {}) {
           return pick(vod.vod_id) || pick(vod.vodId) || pick(vod.id) || pick(vod.ID) || '';
         };
 
-        const parsePlayCandidate = (fromStr, urlStr) => {
-          const fromRaw = typeof fromStr === 'string' ? fromStr : '';
-          const urlRaw = typeof urlStr === 'string' ? urlStr : '';
-          const from = String(fromRaw.split('$$$')[0] || '').trim();
-          const urlBlock = String(urlRaw.split('$$$')[0] || '').trim();
-          if (!from || !urlBlock) return null;
-          const firstLine = String(urlBlock.split('#')[0] || '').trim();
-          if (!firstLine) return null;
-          const parts = firstLine.split('$');
-          const epUrl = parts.length >= 2 ? parts.slice(1).join('$') : firstLine;
-          const id = String(epUrl || '').trim();
-          if (!id) return null;
-          return { flag: from, id };
-        };
+	        const parsePlayCandidates = (fromStr, urlStr) => {
+	          const fromRaw = typeof fromStr === 'string' ? fromStr : '';
+	          const urlRaw = typeof urlStr === 'string' ? urlStr : '';
+	          const splitTop = (s) => (s ? s.split('$$$') : []);
+	          const fromParts = splitTop(fromRaw);
+	          const urlParts = splitTop(urlRaw);
+	          const len = Math.max(fromParts.length, urlParts.length);
+	          const out = [];
+	          const seen = new Set();
+	          for (let i = 0; i < len; i += 1) {
+	            const baseLabel = String(fromParts[i] || '').trim() || `源${i + 1}`;
+	            const baseURL = String(urlParts[i] || '').trim();
+	            if (!baseURL) continue;
+	            const fromSubs = baseLabel.includes('|||')
+	              ? baseLabel.split('|||').map((x) => String(x || '').trim())
+	              : [baseLabel];
+	            const urlSubs = baseLabel.includes('|||') && baseURL.includes('|||')
+	              ? baseURL.split('|||').map((x) => String(x || '').trim())
+	              : [baseURL];
+	            const subLen = Math.max(fromSubs.length, urlSubs.length);
+		            for (let j = 0; j < subLen; j += 1) {
+		              const flag = String(fromSubs[j] || '').trim() || baseLabel;
+		              const urlBlock = String(urlSubs[j] || '').trim();
+		              if (!urlBlock) continue;
+		              const firstLine = String(urlBlock.split('#')[0] || '').trim();
+		              if (!firstLine) continue;
+		              const idx = firstLine.indexOf('$');
+		              const id = String(idx >= 0 ? firstLine.slice(idx + 1) : firstLine).trim();
+		              const episodeName = String(idx >= 0 ? firstLine.slice(0, idx) : '').trim();
+		              const passcode = derivePanMockPasscode(episodeName, id);
+		              if (!flag || !id) continue;
+		              const uniqKey = `${flag}@@${id}`;
+		              if (seen.has(uniqKey)) continue;
+		              seen.add(uniqKey);
+		              out.push({ flag, id, passcode });
+		            }
+		          }
+		          return out;
+		        };
 
-        const extractPlayFromVod = (vod) => {
-          if (!vod || typeof vod !== 'object') return null;
-          const from =
-            (typeof vod.vod_play_from === 'string' ? vod.vod_play_from : '') ||
-            (typeof vod.play_from === 'string' ? vod.play_from : '') ||
-            (typeof vod.playFrom === 'string' ? vod.playFrom : '');
-          const url =
-            (typeof vod.vod_play_url === 'string' ? vod.vod_play_url : '') ||
-            (typeof vod.play_url === 'string' ? vod.play_url : '') ||
-            (typeof vod.playUrl === 'string' ? vod.playUrl : '');
-          return parsePlayCandidate(from, url);
-        };
+	        const extractPlayCandidatesFromVod = (vod) => {
+	          if (!vod || typeof vod !== 'object') return [];
+	          const from =
+	            (typeof vod.vod_play_from === 'string' ? vod.vod_play_from : '') ||
+	            (typeof vod.play_from === 'string' ? vod.play_from : '') ||
+	            (typeof vod.playFrom === 'string' ? vod.playFrom : '');
+	          const url =
+	            (typeof vod.vod_play_url === 'string' ? vod.vod_play_url : '') ||
+	            (typeof vod.play_url === 'string' ? vod.play_url : '') ||
+	            (typeof vod.playUrl === 'string' ? vod.playUrl : '');
+	          return parsePlayCandidates(from, url);
+	        };
 
 	        const extractPlayUrl = (resp) => {
 	          if (!resp) return '';
@@ -4505,7 +4703,8 @@ export function initDashboardPage(bootstrap = {}) {
         let categoryErr = '';
         let categoryEmpty = false;
         let vodCandidates = [];
-        if (homeOk) {
+	        let categoryPanMock = false;
+	        if (homeOk) {
           const firstWithId = Array.isArray(homeClasses) ? homeClasses.find((c) => !!extractClassId(c)) : null;
           const tid = extractClassId(firstWithId);
           const body = tid ? { id: tid, page: 1, filter: true, filters: {} } : { id: '0', page: 1, filter: true, filters: {} };
@@ -4520,12 +4719,13 @@ export function initDashboardPage(bootstrap = {}) {
             if (sc2 >= 400) {
               const msg = normalizeMessage(catResp) || '请求失败';
               categoryErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc2}：${msg}`;
-            } else {
-              categoryOk = true;
-              const list = extractList(catResp);
-              vodCandidates = Array.isArray(list) ? list.slice(0, 10) : [];
-              categoryEmpty = vodCandidates.length === 0;
-            }
+	            } else {
+	              categoryOk = true;
+	              categoryPanMock = readPanMockFlag(catResp);
+	              const list = extractList(catResp);
+	              vodCandidates = Array.isArray(list) ? list.slice(0, 10) : [];
+	              categoryEmpty = vodCandidates.length === 0;
+	            }
 	          } catch (e) {
 	            categoryErr = formatHttpError(e);
 	          }
@@ -4536,59 +4736,127 @@ export function initDashboardPage(bootstrap = {}) {
 	        let playOkFromSearch = false;
 	        let playErr = '';
 
-	        const tryPlayFromCandidates = async (items, meta) => {
-	          const state = meta && typeof meta === 'object' ? meta : null;
-	          const candidates = (Array.isArray(items) ? items : [])
-	            .filter((v) => v && typeof v === 'object')
-	            .slice(0, 3);
-	          for (let j = 0; j < candidates.length; j += 1) {
-	            const vod = candidates[j];
-	            let playCandidate = extractPlayFromVod(vod);
-	            try {
-	              if (!playCandidate) {
-	                const vodId = extractVodId(vod);
-	                if (!vodId) continue;
-	                const detailResp = await requestCatPawOpenAdminJson({
-	                  apiBase: normalizedBase,
-	                  path: `${spiderPath}/detail`,
-	                  method: 'POST',
-	                  body: { id: vodId, vod_id: vodId },
-	                });
-	                const dsc = normalizeStatusCode(detailResp);
-	                if (dsc >= 400) continue;
-	                const detailList = extractList(detailResp);
-	                const first = Array.isArray(detailList) && detailList.length ? detailList[0] : null;
-	                playCandidate = extractPlayFromVod(first);
-	              }
-	              if (!playCandidate) {
-	                if (state) state.missingPlayMeta = true;
-	                if (!playErr) playErr = '缺少播放信息';
-	                continue;
-	              }
-	              const playResp = await requestCatPawOpenAdminJson({
-	                apiBase: normalizedBase,
-	                path: `play`,
-	                method: 'POST',
-	                body: {
-	                  flag: playCandidate.flag,
-	                  id: playCandidate.id,
-	                  siteApi: `/${spiderPath}`.replace(/\/{2,}/g, '/'),
-	                },
-	              });
-	              const psc = normalizeStatusCode(playResp);
-	              if (psc >= 400) continue;
-	              const url = extractPlayUrl(playResp);
-	              if (url) return true;
-	              playErr = '未提取到地址';
-	            } catch (e) {
-	              playErr = formatHttpError(e);
-	              if (isFatalHttpProbeError(e)) break;
-	            }
+		        const tryPlayFromCandidates = async (items, meta) => {
+		          const state = meta && typeof meta === 'object' ? meta : null;
+		          let panMockFlow = !!(state && state.panMock === true);
+		          const candidates = (Array.isArray(items) ? items : [])
+		            .filter((v) => v && typeof v === 'object')
+		            .slice(0, 3);
+			          for (let j = 0; j < candidates.length; j += 1) {
+			            const vod = candidates[j];
+			            let playCandidates = extractPlayCandidatesFromVod(vod);
+			            try {
+			              let detailFetched = false;
+			              let detailOK = false;
+			              let detailCandidates = [];
+			              const loadDetailOnce = async () => {
+			                if (detailFetched) return detailOK;
+			                detailFetched = true;
+			                const vodId = extractVodId(vod);
+			                if (!vodId) return false;
+			                const detailResp = await requestCatPawOpenAdminJson({
+			                  apiBase: normalizedBase,
+			                  path: `${spiderPath}/detail`,
+			                  method: 'POST',
+			                  body: { id: vodId, vod_id: vodId },
+			                });
+			                const dsc = normalizeStatusCode(detailResp);
+			                if (dsc >= 400) return false;
+			                if (state && readPanMockFlag(detailResp)) {
+			                  state.panMock = true;
+			                  panMockFlow = true;
+			                }
+			                const detailList = extractList(detailResp);
+			                const first = Array.isArray(detailList) && detailList.length ? detailList[0] : null;
+			                detailCandidates = extractPlayCandidatesFromVod(first);
+			                detailOK = true;
+			                return true;
+			              };
+			              if (!playCandidates.length) {
+			                const ok = await loadDetailOnce();
+			                if (!ok) continue;
+			                playCandidates = detailCandidates;
+			              }
+			              if (!panMockFlow) {
+			                const hasPanProvider = Array.isArray(playCandidates) && playCandidates.some((c) => !!panMockProviderFromFlag(c && c.flag));
+			                if (hasPanProvider) {
+			                  const ok = await loadDetailOnce();
+			                  if (ok && detailCandidates.length) playCandidates = detailCandidates;
+			                }
+			              }
+				              if (!playCandidates.length) {
+				                if (state) state.missingPlayMeta = true;
+				                if (!playErr) playErr = '缺少播放信息';
+			                continue;
+			              }
+				              const orderedCandidates = playCandidates.slice();
+			              let candidateOk = false;
+				              for (let k = 0; k < orderedCandidates.length; k += 1) {
+				                const playCandidate = orderedCandidates[k];
+				                if (!playCandidate || !playCandidate.flag || !playCandidate.id) continue;
+				                const panProvider = panMockProviderFromFlag(playCandidate.flag);
+				                if (panMockFlow && panProvider) {
+				                  try {
+				                    const panPasscode = panProvider === '189'
+				                      ? deriveTianyiMockMeta(playCandidate.flag, playCandidate.passcode).accessCode
+				                      : playCandidate.passcode;
+				                    const resolvedID = await callPanListResolver(panProvider, {
+				                      flag: playCandidate.flag,
+				                      passcode: playCandidate.passcode,
+				                    });
+				                    if (!resolvedID) {
+				                      if (!playErr) playErr = '网盘列表为空';
+				                      continue;
+				                    }
+				                    const panURL = await callPanPlayResolver(panProvider, {
+				                      flag: playCandidate.flag,
+				                      id: resolvedID,
+				                      passcode: panPasscode,
+				                    });
+				                    if (panURL) {
+				                      candidateOk = true;
+				                      break;
+				                    }
+				                    playErr = '未提取到地址';
+				                  } catch (pe) {
+				                    playErr = formatHttpError(pe);
+				                    if (isFatalHttpProbeError(pe)) break;
+				                  }
+				                  continue;
+				                }
+				                const playResp = await requestCatPawOpenAdminJson({
+			                  apiBase: normalizedBase,
+			                  path: `play`,
+			                  method: 'POST',
+			                  body: {
+			                    flag: playCandidate.flag,
+			                    id: playCandidate.id,
+			                    siteApi: `/${spiderPath}`.replace(/\/{2,}/g, '/'),
+			                  },
+			                });
+			                const psc = normalizeStatusCode(playResp);
+			                if (psc >= 400) continue;
+			                const url = extractPlayUrl(playResp);
+			                if (url) {
+			                  candidateOk = true;
+			                  break;
+			                }
+				                playErr = '未提取到地址';
+				              }
+				              if (candidateOk) {
+				                if (state) state.missingPlayMeta = false;
+				                playErr = '';
+				                return true;
+				              }
+		            } catch (e) {
+		              playErr = formatHttpError(e);
+		              if (isFatalHttpProbeError(e)) break;
+		            }
 	          }
 	          return false;
 	        };
 
-          const categoryPlayMeta = { missingPlayMeta: false };
+	          const categoryPlayMeta = { missingPlayMeta: false, panMock: categoryPanMock };
 	        if (categoryOk && !categoryEmpty) {
 	          playOkFromCategory = await tryPlayFromCandidates(vodCandidates, categoryPlayMeta);
 	        }
@@ -4598,7 +4866,8 @@ export function initDashboardPage(bootstrap = {}) {
 	        // - If category+play ok => lastly test search endpoint (no need to play from search).
 	        let searchOk = false;
 	        let searchErr = '';
-	        let searchCandidates = [];
+		        let searchCandidates = [];
+		        let searchPanMock = false;
 	        const shouldUseSearchForPlay =
 	          !categoryOk || categoryEmpty || (!playOkFromCategory && categoryPlayMeta.missingPlayMeta);
 	        const shouldProbeSearchFinally = playOkFromCategory;
@@ -4614,28 +4883,31 @@ export function initDashboardPage(bootstrap = {}) {
 	            if (sc >= 400) {
 	              const msg = normalizeMessage(searchResp) || '请求失败';
 	              searchErr = msg.startsWith('HTTP') ? msg : `HTTP ${sc}：${msg}`;
-	            } else {
-	              searchCandidates = extractList(searchResp);
-	              searchOk = true;
-	            }
+		            } else {
+		              searchCandidates = extractList(searchResp);
+		              searchPanMock = readPanMockFlag(searchResp);
+		              searchOk = true;
+		            }
 	          } catch (e) {
 	            searchErr = formatHttpError(e);
 	            if (isFatalHttpProbeError(e)) searchOk = false;
 	          }
 	        }
 
-	        if (shouldUseSearchForPlay && searchOk && Array.isArray(searchCandidates) && searchCandidates.length) {
-	          playOkFromSearch = await tryPlayFromCandidates(searchCandidates);
-	        }
+		        if (shouldUseSearchForPlay && searchOk && Array.isArray(searchCandidates) && searchCandidates.length) {
+		          playOkFromSearch = await tryPlayFromCandidates(searchCandidates, { panMock: searchPanMock });
+		        }
 
 	        // Final decision.
 	        // - Category flow yields playable => valid (and optionally mark search_error when search probe fails)
-	        // - Category failed/empty but search play yields playable => category_error (disable homepage but keep search)
+	        // - Category failed due missing play meta, but search yields playable => valid
+	        // - Category failed/empty but search play yields playable => category_error
 	        // - Otherwise => invalid
 	        if (playOkFromCategory) {
 	          results[key] = searchOk ? 'valid' : 'search_error';
 	        } else if (playOkFromSearch) {
-	          results[key] = 'category_error';
+	          results[key] = categoryPlayMeta.missingPlayMeta ? 'valid' : 'category_error';
+	          playErr = '';
 	        } else {
 	          results[key] = 'invalid';
 	        }
