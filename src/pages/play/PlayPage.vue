@@ -1141,6 +1141,12 @@ const getStableContentKey = () => {
 };
 
 const getSourcesSearchQuery = () => {
+  if (tmdbMode.value && tmdbMovieMode.value) {
+    const tmdbTitle = tmdbMeta.value && typeof tmdbMeta.value.title === 'string' ? tmdbMeta.value.title.trim() : '';
+    const cleanedTMDBTitle = applyAggregateCleanRules(tmdbTitle || '');
+    if (cleanedTMDBTitle) return cleanedTMDBTitle;
+    if (tmdbTitle) return tmdbTitle;
+  }
   const cleaned = applyAggregateCleanRules(props.videoTitle || '');
   if (cleaned) return cleaned;
   const fromHistory = resumeHistory.value && typeof resumeHistory.value.contentKey === 'string' ? resumeHistory.value.contentKey.trim() : '';
@@ -1150,10 +1156,40 @@ const getSourcesSearchQuery = () => {
   return (props.videoTitle || '').trim();
 };
 
+const getAggregateStorageGroupKey = () => {
+  if (tmdbMode.value && tmdbMovieMode.value) {
+    const qRaw = getSourcesSearchQuery();
+    const qBase = applyAggregateCleanRules(qRaw || '') || qRaw;
+    const qKey = normalizeForAggKey(qBase || '');
+    if (qKey) return qKey;
+  }
+  return getStableContentKey();
+};
+
+const getAggregateStorageGroupKeys = () => {
+  const out = [];
+  const push = (v) => {
+    const k = typeof v === 'string' ? v.trim() : '';
+    if (!k) return;
+    if (!out.includes(k)) out.push(k);
+  };
+  if (tmdbMode.value && tmdbMovieMode.value) {
+    push(getAggregateStorageGroupKey());
+    push(getStableContentKey());
+    const id = Number(props.tmdbId || 0);
+    if (Number.isFinite(id) && id > 0) push(`tmdb_movie_${Math.floor(id)}`);
+    return out;
+  }
+  push(getStableContentKey());
+  return out;
+};
+
 const loadAggregatedSourcesFromStorage = () => {
-  const titleKey = getStableContentKey();
-  if (!titleKey) {
-    aggregatedSources.value = [];
+  const titleKeys = getAggregateStorageGroupKeys();
+  if (!titleKeys.length) {
+    if (!(tmdbMode.value && Array.isArray(aggregatedSources.value) && aggregatedSources.value.length > 0)) {
+      aggregatedSources.value = [];
+    }
     aggregatedFromStorage.value = false;
     return;
   }
@@ -1161,9 +1197,23 @@ const loadAggregatedSourcesFromStorage = () => {
     const raw = sessionStorage.getItem(AGG_STORAGE_KEY);
     const parsed = raw && raw.trim() ? JSON.parse(raw) : null;
     const groups = parsed && parsed.version === 4 && parsed.groups && typeof parsed.groups === 'object' ? parsed.groups : null;
-    const group = groups && groups[titleKey] && typeof groups[titleKey] === 'object' ? groups[titleKey] : null;
+    let group = null;
+    let hitKey = '';
+    if (groups) {
+      for (let i = 0; i < titleKeys.length; i += 1) {
+        const k = titleKeys[i];
+        const g = groups[k] && typeof groups[k] === 'object' ? groups[k] : null;
+        if (g) {
+          group = g;
+          hitKey = k;
+          break;
+        }
+      }
+    }
     if (!group) {
-      aggregatedSources.value = [];
+      if (!(tmdbMode.value && Array.isArray(aggregatedSources.value) && aggregatedSources.value.length > 0)) {
+        aggregatedSources.value = [];
+      }
       aggregatedFromStorage.value = false;
       return;
     }
@@ -1192,8 +1242,18 @@ const loadAggregatedSourcesFromStorage = () => {
         return true;
       });
     aggregatedFromStorage.value = aggregatedSources.value.length > 0;
+    if (group && hitKey && titleKeys.length > 1 && groups) {
+      const merged = { ...groups };
+      titleKeys.forEach((k) => {
+        if (!k) return;
+        merged[k] = group;
+      });
+      sessionStorage.setItem(AGG_STORAGE_KEY, JSON.stringify({ version: 4, q: hitKey, groups: merged, lastKey: hitKey }));
+    }
   } catch (_e) {
-    aggregatedSources.value = [];
+    if (!(tmdbMode.value && Array.isArray(aggregatedSources.value) && aggregatedSources.value.length > 0)) {
+      aggregatedSources.value = [];
+    }
     aggregatedFromStorage.value = false;
   }
 };
@@ -1295,7 +1355,9 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
   if (sourcesLoading.value) return;
   const appendMode = !!(opts && typeof opts === 'object' && opts.append === true);
   const qRaw = getSourcesSearchQuery();
-  const qKey = getStableContentKey();
+  const isTMDBMovieSourceMatchMode = !!(tmdbMode.value && tmdbMovieMode.value);
+  const qBase = applyAggregateCleanRules(qRaw || '') || qRaw;
+  const qKey = isTMDBMovieSourceMatchMode ? normalizeForAggKey(qBase) : getStableContentKey();
   if (!qRaw || !qKey) return;
 
   const stripSeasonMarkers = (s) => {
@@ -1314,6 +1376,15 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
       .replace(/[\s\u200b\u200c\u200d\ufeff]+/g, '')
       .trim();
   const qNorm = normalizeForMatch(qRaw);
+  const movieQueryKey = normalizeForAggKey(qBase || '');
+  const movieTitleMatchedBySearchResult = (title) => {
+    const rawTitle = typeof title === 'string' ? title : String(title || '');
+    if (!rawTitle || !movieQueryKey) return false;
+    const cleanedTitle = applyAggregateCleanRules(rawTitle) || rawTitle;
+    const titleKey = normalizeForAggKey(cleanedTitle);
+    if (!titleKey) return false;
+    return titleKey === movieQueryKey || titleKey.startsWith(movieQueryKey) || movieQueryKey.startsWith(titleKey);
+  };
   const computeMatchScore = (title) => {
     const name = normalizeForMatch(title);
     if (!qNorm || !name) return 0;
@@ -1408,11 +1479,27 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
   const runtimeKey = `${qKey}::${qRaw}`;
   const isNew = sourcesSearchRuntime.key !== runtimeKey;
   if (isNew) {
+    const preserveVisibleInTMDBMovie =
+      isTMDBMovieSourceMatchMode && Array.isArray(aggregatedSources.value) && aggregatedSources.value.length > 0;
     sourcesSearchRuntime.key = runtimeKey;
     sourcesSearchRuntime.queue = [];
-    sourcesSearchRuntime.outUniq = new Set();
-    sourcesSearchRuntime.insertSeq = 0;
-    aggregatedSources.value = [];
+    if (preserveVisibleInTMDBMovie) {
+      const uniq = new Set();
+      let maxSeq = 0;
+      (Array.isArray(aggregatedSources.value) ? aggregatedSources.value : []).forEach((s) => {
+        const sk = s && s.siteKey ? String(s.siteKey) : '';
+        const vid = s && s.videoId ? String(s.videoId) : '';
+        if (sk && vid) uniq.add(`${sk}::${vid}`);
+        const seq = Number(s && s.__seq);
+        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+      });
+      sourcesSearchRuntime.outUniq = uniq;
+      sourcesSearchRuntime.insertSeq = maxSeq;
+    } else {
+      sourcesSearchRuntime.outUniq = new Set();
+      sourcesSearchRuntime.insertSeq = 0;
+      aggregatedSources.value = [];
+    }
     sourcesSearchDone.value = false;
     sourcesSearchRemainingCount.value = 0;
   }
@@ -1496,14 +1583,18 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
         if (seqAtCall !== sourcesSearchState.seq) return;
         const items = normalizeSearchList(raw);
         let pushed = false;
+        let matchedCount = 0;
         items.forEach((it) => {
           if (seqAtCall !== sourcesSearchState.seq) return;
           const rawTitle = it && it.name ? String(it.name) : '';
           const cleanedTitle = applyAggregateCleanRules(rawTitle || '') || rawTitle;
           const key = normalizeForAggKey(cleanedTitle);
           const looseKey = normalizeForAggKey(stripSeasonMarkers(cleanedTitle));
-          const okKey = (key && key === qKey) || (qKeyLoose && looseKey && looseKey === qKeyLoose);
+          const okKey = isTMDBMovieSourceMatchMode
+            ? movieTitleMatchedBySearchResult(rawTitle)
+            : ((key && key === qKey) || (qKeyLoose && looseKey && looseKey === qKeyLoose));
           if (!okKey) return;
+          matchedCount += 1;
           const noNoiseExact = normalizeForAggKey(rawTitle) === qKey;
           const noNoiseLoose = qKeyLoose && normalizeForAggKey(stripSeasonMarkers(rawTitle)) === qKeyLoose;
           const noNoiseMatch = !!(noNoiseExact || noNoiseLoose);
@@ -1534,6 +1625,16 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
           insertAgg(entry);
           pushed = true;
         });
+        if (isTMDBMovieSourceMatchMode) {
+          smartDebugLog('movie_search_filter', {
+            siteKey: site && site.key ? String(site.key) : '',
+            siteName: site && site.name ? String(site.name) : '',
+            total: items.length,
+            matched: matchedCount,
+            query: qRaw,
+            queryKey: movieQueryKey,
+          });
+        }
         if (pushed && seqAtCall === sourcesSearchState.seq) await yieldToUi();
 	      } catch (_e) {
 	      }
@@ -1569,7 +1670,14 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
         prev && prev.version === 4 && prev.groups && typeof prev.groups === 'object'
           ? { ...prev.groups }
           : {};
-      groups[qKey] = { sources: aggregatedSources.value, updatedAt: Date.now(), q: qRaw };
+      const payload = { sources: aggregatedSources.value, updatedAt: Date.now(), q: qRaw };
+      groups[qKey] = payload;
+      const stableKey = getStableContentKey();
+      if (stableKey) groups[stableKey] = payload;
+      if (isTMDBMovieSourceMatchMode) {
+        const id = Number(props.tmdbId || 0);
+        if (Number.isFinite(id) && id > 0) groups[`tmdb_movie_${Math.floor(id)}`] = payload;
+      }
       sessionStorage.setItem(AGG_STORAGE_KEY, JSON.stringify({ version: 4, q: qRaw, groups, lastKey: qKey }));
     } catch (_e) {}
   } catch (e) {
@@ -2559,6 +2667,7 @@ const resolvedSiteName = computed(() => {
 });
 
 const orderedSiteSources = computed(() => {
+  const isTMDB = !!tmdbMode.value;
   const currentSiteKey = (props.siteKey || '').trim();
   const currentVideoId = (props.videoId || '').trim();
   const currentSourceTitle = (props.videoTitle || '').trim();
@@ -2584,16 +2693,18 @@ const orderedSiteSources = computed(() => {
     list.push(x);
   };
 
-  pushOne({
-    kind: 'site',
-    key: `${currentSiteKey}::${currentVideoId}`,
-    active: true,
-    siteKey: currentSiteKey,
-    spiderApi: resolvedSpiderApiFinal.value,
-    siteName: resolvedSiteName.value || currentSiteKey || '站点',
-    videoId: currentVideoId,
-    sourceTitle: currentSourceTitle,
-  });
+  if (!isTMDB) {
+    pushOne({
+      kind: 'site',
+      key: `${currentSiteKey}::${currentVideoId}`,
+      active: true,
+      siteKey: currentSiteKey,
+      spiderApi: resolvedSpiderApiFinal.value,
+      siteName: resolvedSiteName.value || currentSiteKey || '站点',
+      videoId: currentVideoId,
+      sourceTitle: currentSourceTitle,
+    });
+  }
 
   (aggregatedSources.value || []).forEach((s) => {
     pushOne({
@@ -2991,7 +3102,7 @@ const sourcesTabItems = computed(() => {
     }
   };
 
-  if (isSmartPanActive.value) return buildSmartSwitchItems();
+  if (isSmartPanActive.value && !tmdbMode.value) return buildSmartSwitchItems();
 
   const currentSiteKey = (props.siteKey || '').trim();
   const currentVideoId = (props.videoId || '').trim();
@@ -3006,19 +3117,21 @@ const sourcesTabItems = computed(() => {
     list.push(x);
   };
 
-  pushOne({
-    kind: 'site',
-    key: `${currentSiteKey}::${currentVideoId}`,
-    active: true,
-    siteKey: currentSiteKey,
-    spiderApi: resolvedSpiderApiFinal.value,
-    siteName: resolvedSiteName.value || '站点',
-    videoId: currentVideoId,
-    title: displayTitle.value || '未命名',
-    poster: displayPoster.value,
-    remark: (detail.value.remark || props.videoRemark || '').trim(),
-    error: !isSmartPanActive.value && introError.value ? String(introError.value) : '',
-  });
+  if (!tmdbMode.value) {
+    pushOne({
+      kind: 'site',
+      key: `${currentSiteKey}::${currentVideoId}`,
+      active: true,
+      siteKey: currentSiteKey,
+      spiderApi: resolvedSpiderApiFinal.value,
+      siteName: resolvedSiteName.value || '站点',
+      videoId: currentVideoId,
+      title: displayTitle.value || '未命名',
+      poster: displayPoster.value,
+      remark: (detail.value.remark || props.videoRemark || '').trim(),
+      error: !isSmartPanActive.value && introError.value ? String(introError.value) : '',
+    });
+  }
 
   (aggregatedSources.value || []).forEach((s) => {
     pushOne({
@@ -3105,6 +3218,7 @@ const switchAggregatedSource = async (src) => {
 const canLoadMoreSources = computed(() => {
   if (sourcesLoading.value) return false;
   if (sourcesError.value) return false;
+  if (tmdbMode.value) return sourcesSearchRemainingCount.value > 0 && sourcesSearchDone.value === false;
   if (!sourcesSearchedOnce.value) return false;
   return sourcesSearchRemainingCount.value > 0 && sourcesSearchDone.value === false;
 });
@@ -3555,7 +3669,14 @@ const smartLimitChars = (text, maxChars) => {
 
 const tmdbSitePanOptions = computed(() => {
   if (!tmdbMode.value) return [];
-  const list = Array.isArray(orderedSiteSources.value) ? orderedSiteSources.value : [];
+  const list = (Array.isArray(aggregatedSources.value) ? aggregatedSources.value : []).map((s) => ({
+    kind: 'site',
+    siteKey: s && s.siteKey ? String(s.siteKey) : '',
+    spiderApi: s && s.spiderApi ? String(s.spiderApi) : '',
+    siteName: s && s.siteName ? String(s.siteName) : '',
+    videoId: s && s.videoId ? String(s.videoId) : '',
+    sourceTitle: s && s.videoTitle ? String(s.videoTitle) : '',
+  }));
   const out = [];
   const seen = new Set();
   list.forEach((src) => {
@@ -3569,12 +3690,10 @@ const tmdbSitePanOptions = computed(() => {
     seen.add(key);
     const siteName = typeof src.siteName === 'string' && src.siteName.trim() ? src.siteName.trim() : siteKey;
     const sourceTitle = typeof src.sourceTitle === 'string' ? src.sourceTitle.trim() : '';
-
-    const tail = sourceTitle || getSourcesSearchQuery() || topLeftTitle.value || '';
     out.push({
       kind: 'tmdb_site_pan',
       key,
-      label: `${siteName}-${tail}`,
+      label: sourceTitle ? `${siteName}-${sourceTitle}` : siteName,
       siteKey,
       siteName,
       spiderApi,
@@ -8555,13 +8674,25 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
     if (!entry || entry.ok !== true || !Array.isArray(entry.pans)) return null;
     const rules = compiledMagicMovieRules.value;
     const hasRules = Array.isArray(rules) && rules.length > 0;
+    if (!hasRules) {
+      smartDebugLog('movie_rules_empty', {
+        siteKey: src0 && src0.siteKey ? String(src0.siteKey) : '',
+        siteName: src0 && src0.siteName ? String(src0.siteName) : '',
+      });
+      return null;
+    }
 
     let bestRule4k = null;
-    let best4k = null;
-    let first = null;
+    let bestRule1080 = null;
+    let bestRuleAny = null;
+    let scanned = 0;
+    let ruleHit = 0;
+    let ruleHit4k = 0;
+    let ruleHit1080 = 0;
 
     const better = (a, b) => (smartCompareCandidates(a, b, { explicit, orderKeys }) <= 0 ? a : b);
     const is4k = (cand) => Number((smartComputeCandidateFeatures(cand) || {}).qualityRank) === 3;
+    const is1080 = (cand) => Number((smartComputeCandidateFeatures(cand) || {}).qualityRank) === 2;
     const ruleMatchedOf = (ep0) => (hasRules ? extractEpisodeCandidateTexts(ep0).some((t) => matchesAnyMagicRule(t, rules)) : false);
 
     for (let p = 0; p < entry.pans.length; p += 1) {
@@ -8572,27 +8703,84 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
       for (let i = 0; i < maxScan; i += 1) {
         const ep0 = eps[i];
         if (!ep0 || !ep0.url) continue;
+        scanned += 1;
         const cand = buildCandidate(src0, panLabel, ep0);
-        if (!first) first = cand;
         const m = ruleMatchedOf(ep0);
         const q4k = is4k(cand);
-        if (m && q4k) bestRule4k = bestRule4k ? better(bestRule4k, cand) : cand;
-        if (q4k) best4k = best4k ? better(best4k, cand) : cand;
+        const q1080 = is1080(cand);
+        if (m) {
+          ruleHit += 1;
+          if (q4k) ruleHit4k += 1;
+          if (q1080) ruleHit1080 += 1;
+          if (q4k) bestRule4k = bestRule4k ? better(bestRule4k, cand) : cand;
+          if (q1080) bestRule1080 = bestRule1080 ? better(bestRule1080, cand) : cand;
+          bestRuleAny = bestRuleAny ? better(bestRuleAny, cand) : cand;
+        }
       }
     }
-    return bestRule4k || best4k || first;
+    const chosen = bestRule4k || bestRule1080 || bestRuleAny || null;
+    smartDebugLog('movie_rules_eval', {
+      siteKey: src0 && src0.siteKey ? String(src0.siteKey) : '',
+      siteName: src0 && src0.siteName ? String(src0.siteName) : '',
+      scanned,
+      ruleHit,
+      ruleHit4k,
+      ruleHit1080,
+      picked: chosen ? 1 : 0,
+    });
+    return chosen;
   };
 
   const task = (async () => {
     const pool = await smartBuildSourcePool();
     const sources = (Array.isArray(pool) ? pool : []).filter((s) => s && s.siteKey && s.spiderApi && s.videoId).slice(0, 18);
+    smartDebugLog('movie_pool', { sources: sources.length, tmdbId, contentKey: getStableContentKey() });
 
     const out = [];
+    const pushOutAndPublish = (item) => {
+      if (!item) return;
+      out.push(item);
+      try {
+        const snapshot = out
+          .slice()
+          .sort((a, b) => smartCompareCandidates(a && a.__tmdbMovieCand, b && b.__tmdbMovieCand, { explicit, orderKeys }))
+          .map((ep0) => {
+            const next = { ...ep0 };
+            try {
+              delete next.__tmdbMovieCand;
+            } catch (_e) {}
+            return next;
+          });
+        if (seqAtCall === tmdbMovieSmartFetchState.seq) tmdbMovieSmartEpisodes.value = snapshot;
+      } catch (_e) {}
+    };
+
+    let settledBy4k = false;
     for (let i = 0; i < sources.length; i += 1) {
       if (seqAtCall !== tmdbMovieSmartFetchState.seq) return;
       const src0 = sources[i];
       const entry = await ensureTMDBSmartDetailCacheEntry(src0);
-      const picked = pickFromDetailEntry(src0, entry);
+      let picked = pickFromDetailEntry(src0, entry);
+      if ((!picked || !picked.ep || !picked.ep.url) && entry && entry.panMockEnabled && entry.panMockResolved !== true) {
+        smartDebugLog('movie_wait_panmock', {
+          siteKey: src0 && src0.siteKey ? String(src0.siteKey) : '',
+          siteName: src0 && src0.siteName ? String(src0.siteName) : '',
+        });
+        const startedAt = Date.now();
+        let lastSeq = Number.isFinite(Number(entry.__updateSeq)) ? Number(entry.__updateSeq) : 0;
+        while (Date.now() - startedAt < 12000) {
+          const left = 12000 - (Date.now() - startedAt);
+          if (left <= 0) break;
+          try {
+            await smartWaitTMDBSmartEntryUpdate(entry, { sinceSeq: lastSeq, timeoutMs: Math.min(1200, left) });
+          } catch (_e) {}
+          if (seqAtCall !== tmdbMovieSmartFetchState.seq) return;
+          lastSeq = Number.isFinite(Number(entry.__updateSeq)) ? Number(entry.__updateSeq) : lastSeq;
+          picked = pickFromDetailEntry(src0, entry);
+          if (picked && picked.ep && picked.ep.url) break;
+          if (entry && entry.panMockResolved === true) break;
+        }
+      }
       if (!picked || !picked.ep || !picked.ep.url) continue;
 
       const siteName = (picked.siteName || src0.siteName || picked.siteKey || src0.siteKey || '').trim();
@@ -8610,16 +8798,30 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
         __tmdbMovieVideoId: picked.videoId || src0.videoId || '',
         __tmdbMovieCand: picked,
       });
+      pushOutAndPublish(out[out.length - 1]);
+
+      const feat = smartComputeCandidateFeatures(picked) || {};
+      const qr = Number(feat.qualityRank) || 0;
+      if (qr === 3) {
+        settledBy4k = true;
+        smartDebugLog('movie_pick_early_4k', {
+          siteKey: picked.siteKey || src0.siteKey || '',
+          siteName,
+          videoId: picked.videoId || src0.videoId || '',
+        });
+        break;
+      }
     }
-
-    out.sort((a, b) => smartCompareCandidates(a && a.__tmdbMovieCand, b && b.__tmdbMovieCand, { explicit, orderKeys }));
-    out.forEach((ep0) => {
-      try {
-        delete ep0.__tmdbMovieCand;
-      } catch (_e) {}
-    });
-
-    if (seqAtCall === tmdbMovieSmartFetchState.seq) tmdbMovieSmartEpisodes.value = out;
+    if (!settledBy4k) {
+      out.sort((a, b) => smartCompareCandidates(a && a.__tmdbMovieCand, b && b.__tmdbMovieCand, { explicit, orderKeys }));
+      out.forEach((ep0) => {
+        try {
+          delete ep0.__tmdbMovieCand;
+        } catch (_e) {}
+      });
+      if (seqAtCall === tmdbMovieSmartFetchState.seq) tmdbMovieSmartEpisodes.value = out;
+    }
+    smartDebugLog('movie_pick_result', { candidates: out.length, settledBy4k: settledBy4k ? 1 : 0 });
   })();
 
   tmdbMovieSmartFetchState.inFlight = task;
@@ -11480,8 +11682,9 @@ watch(
 	        (resumeHistory.value.playback_item_id != null ? String(resumeHistory.value.playback_item_id) : '');
 		      const normalize = (label) => String(label || '').trim().replace(/#\d{1,3}\s*$/i, '').trim().toLowerCase();
 
-		      let target = null;
-		      if (wantedPanLabel) {
+	      let target = null;
+	      // TMDB 模式下不按历史 panLabel 自动切换来源，避免智能命中后下拉源被动变化。
+	      if (wantedPanLabel && !tmdbMode.value) {
 	        const want = normalize(wantedPanLabel);
           const smartHit =
             smartListAvailable.value
@@ -12598,12 +12801,12 @@ watch(
 );
 
 watch(
-  () => `${getStableContentKey()}|${tmdbSmartListAvailable.value ? '1' : '0'}`,
+  () => `${getStableContentKey()}|${tmdbSmartListAvailable.value ? '1' : '0'}|${tmdbMovieSmartListAvailable.value ? '1' : '0'}`,
   async () => {
-    if (!tmdbSmartListAvailable.value) return;
+    if (!tmdbMode.value) return;
+    if (!tmdbSmartListAvailable.value && !tmdbMovieSmartListAvailable.value) return;
     if (sourcesLoading.value) return;
     loadAggregatedSourcesFromStorage();
-    if (aggregatedSources.value && aggregatedSources.value.length) return;
     if (sourcesSearchedOnce.value) return;
     await fetchAggregatedSourcesExactMatches();
   },
@@ -12615,13 +12818,14 @@ watch(
   async (v) => {
     if (v !== 'sources') return;
     if (sourcesLoading.value) return;
-    if (isSmartPanActive.value) {
+    if (isSmartPanActive.value && !tmdbMode.value) {
       await scrollSourcesToActive({ behavior: 'auto' });
       return;
     }
     loadAggregatedSourcesFromStorage();
-    // If we already have sources from search storage, do not auto-fetch.
-    if (aggregatedSources.value && aggregatedSources.value.length) {
+    // If storage already has sources but this session hasn't searched yet,
+    // continue searching incrementally so "加载更多" can work with fresh runtime queue.
+    if (aggregatedSources.value && aggregatedSources.value.length && sourcesSearchedOnce.value) {
       await scrollSourcesToActive({ behavior: 'auto' });
       return;
     }
