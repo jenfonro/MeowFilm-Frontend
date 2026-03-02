@@ -64,11 +64,11 @@
             全局设置
           </div>
 
-          <form id="siteSettingsForm" method="post" action="/dashboard/site/save">
-            <div class="admin-card space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">站点设置</div>
-              </div>
+	          <form id="siteSettingsForm" method="post" action="/dashboard/site/save">
+	            <div class="admin-card space-y-4">
+	              <div class="flex items-center gap-3">
+	                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">站点设置</div>
+	              </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">站点名称</label>
                 <input name="siteName" class="tv-field" :value="bootstrap.siteName" placeholder="站点名称" />
@@ -80,17 +80,19 @@
                   <option value="sites" selected>视频源</option>
                   <option value="both">展示两者</option>
                 </select>
-                <div id="searchDisplayModeError" class="text-xs hidden mt-1"></div>
-              </div>
+	                <div id="searchDisplayModeError" class="text-xs hidden mt-1"></div>
+	              </div>
+	            </div>
 
-              <div class="pt-2 border-t border-gray-200/50 dark:border-white/10"></div>
+	            <div class="admin-card space-y-4 mt-6">
+	              <div class="flex items-center gap-3">
+	                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">网盘接口代理设置</div>
+	              </div>
+	              <div class="space-y-1">
+	                <div class="text-xs text-gray-500 dark:text-gray-400">仅影响天翼189/夸克/UC/移动云盘/百度等网盘接口请求。</div>
+	              </div>
 
-              <div class="space-y-1">
-                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">网盘接口代理设置</div>
-                <div class="text-xs text-gray-500 dark:text-gray-400">仅影响天翼189/夸克/UC/移动云盘/百度等网盘接口请求。</div>
-              </div>
-
-              <div class="space-y-1">
+	              <div class="space-y-1">
                 <div class="text-sm font-medium text-gray-700 dark:text-gray-200">启用代理</div>
                 <div>
                   <label class="enable-switch" title="网盘接口代理启用">
@@ -100,12 +102,12 @@
                 </div>
               </div>
 
-              <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">代理地址</label>
-                <input id="netdiskProxyUrl" name="netdiskProxyUrl" class="tv-field" placeholder="http://127.0.0.1:7890" autocomplete="off" />
-              </div>
-            </div>
-          </form>
+	              <div>
+	                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">代理地址</label>
+	                <input id="netdiskProxyUrl" name="netdiskProxyUrl" class="tv-field" placeholder="http://127.0.0.1:7890" autocomplete="off" />
+	              </div>
+	            </div>
+	          </form>
 
 	          <div class="admin-card space-y-4">
 	            <div class="flex items-center gap-3">
