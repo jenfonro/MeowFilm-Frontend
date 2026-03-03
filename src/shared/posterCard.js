@@ -1,4 +1,4 @@
-import { pauseCatLowPriority } from './catpawopen';
+import { pauseCatLowPriority } from './catpawrunner';
 import { normalizeDoubanImageProxyMode, normalizeImageUrl, rewriteDoubanImageUrl } from './doubanImage';
 
 export const TV_CARD_PLAY_ICON_SVG =

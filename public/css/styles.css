@@ -973,7 +973,7 @@ html:not(.dark) body {
 .tv-magic-preview{display:flex;align-items:center;font-size:.875rem;line-height:1.25rem;color:#16a34a;}
 .dark .tv-magic-preview{color:#4ade80;}
 
-/* CatPawOpen config list: make the outer panels shrink to the table width (no extra blank space). */
+/* catpawrunner config list: make the outer panels shrink to the table width (no extra blank space). */
 .tv-cpo-config-shell{display:inline-block;max-width:100%;}
 .tv-cpo-config-table{display:inline-block;width:max-content;max-width:100%;}
 .tv-cpo-config-editor{width:100%;max-width:100%;box-sizing:border-box;}

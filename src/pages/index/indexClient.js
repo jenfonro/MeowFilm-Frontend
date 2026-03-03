@@ -1,4 +1,4 @@
-import { requestCatSpider } from '../../shared/catpawopen';
+import { requestCatSpider } from '../../shared/catpawrunner';
 import { initSearchPage } from '../../shared/searchClient';
 import { appendTvCardHoverOverlays, createPosterCard } from '../../shared/posterCard';
 import { apiDeleteJson, apiGetJson, apiInvalidateCache, buildQuery } from '../../shared/apiClient';
@@ -278,7 +278,7 @@ function setupHomeSpiderBrowse() {
         if (!data || data.authenticated !== true) throw new Error('未登录');
         const s = data.settings && typeof data.settings === 'object' ? data.settings : {};
         const prevCatBase = (cfgEl.getAttribute('data-cat-api-base') || '').trim();
-        const nextCatBase = (s.catPawOpenApiBase || '').trim();
+        const nextCatBase = (s.catpawrunnerApiBase || '').trim();
         const finalCatBase = (nextCatBase || prevCatBase).trim();
         if (finalCatBase) setCfgAttr('data-cat-api-base', finalCatBase);
         setCfgAttr('data-search-thread-count', s.searchThreadCount != null ? String(s.searchThreadCount) : '');
@@ -290,7 +290,7 @@ function setupHomeSpiderBrowse() {
         );
         setCfgAttr('data-search-display-mode', (s.searchDisplayMode || 'sites').trim());
         setCfgAttr('data-smart-skip-site-keys', JSON.stringify(Array.isArray(s.smartSkipSiteKeys) ? s.smartSkipSiteKeys : []));
-        if (!finalCatBase) throw new Error('CatPawOpen 接口地址未设置（bootstrap/search 未返回）');
+        if (!finalCatBase) throw new Error('catpawrunner 接口地址未设置（bootstrap/search 未返回）');
         searchSettingsLoaded = true;
       } catch (e) {
         searchSettingsLastError = e && e.message ? String(e.message) : '加载失败';
@@ -1610,7 +1610,7 @@ function setupHomeSpiderBrowse() {
 
   const requestCatWebsiteJson = async (apiBase, path, init = {}) => {
     const normalized = normalizeCatApiBase(apiBase);
-    if (!normalized) throw new Error('CatPawOpen 接口地址未设置');
+    if (!normalized) throw new Error('catpawrunner 接口地址未设置');
     const url = new URL(String(path || '').replace(/^\//, ''), normalized);
     const headers = Object.assign({}, init.headers && typeof init.headers === 'object' ? init.headers : {});
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
@@ -1629,7 +1629,7 @@ function setupHomeSpiderBrowse() {
     }
     if (data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'code')) {
       if (data.code === 0) return data.data;
-      throw new Error((data && data.message) || 'CatPawOpen 网站接口返回异常');
+      throw new Error((data && data.message) || 'catpawrunner 网站接口返回异常');
     }
     return data;
   };

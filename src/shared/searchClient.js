@@ -1,4 +1,4 @@
-import { requestCatSpider } from './catpawopen';
+import { requestCatSpider } from './catpawrunner';
 import { createPosterCard } from './posterCard';
 import { formatTMDBTVRemark } from './tmdbBadge';
 

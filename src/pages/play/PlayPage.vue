@@ -739,7 +739,7 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, onBeforeUpdate, ref, watch } from 'vue';
 import { initPlayPage } from './playClient.js';
 	import ArtPlayer from '../../shared/ArtPlayer.vue';
-import { grantCatLowPrioritySearchTickets, normalizeCatPawOpenApiBase, pauseCatLowPriority, requestCatPlay, requestCatSpider } from '../../shared/catpawopen';
+import { grantCatLowPrioritySearchTickets, normalizecatpawrunnerApiBase, pauseCatLowPriority, requestCatPlay, requestCatSpider } from '../../shared/catpawrunner';
 import { apiGetJson, apiPostJson, buildQuery } from '../../shared/apiClient';
 import { fetchBootstrap } from '../../shared/bootstrap';
 import { processPosterUrl } from '../../shared/posterCard';
@@ -1328,7 +1328,7 @@ const fetchUserSitesCached = async (ttlMs = 15 * 1000) => {
 
 const resolveCatApiBaseForPlay = () => {
   const s = effectiveBootstrapSettings.value || {};
-  const serverBase = s.catPawOpenApiBase || '';
+  const serverBase = s.catpawrunnerApiBase || '';
   return String(serverBase || '').trim();
 };
 
@@ -1550,7 +1550,7 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
 
     const apiBase = resolveCatApiBaseForPlay();
     const tvUser = props.bootstrap?.user?.username || '';
-    if (!apiBase) throw new Error('CatPawOpen 接口地址未设置');
+    if (!apiBase) throw new Error('catpawrunner 接口地址未设置');
 
     const concurrencyRaw = effectiveBootstrapSettings.value.searchThreadCount;
     const concurrencyNum = Number(concurrencyRaw);
@@ -1911,7 +1911,7 @@ const panDropdownEl = ref(null);
   panMock189AccessByShareId: {},
 });
 
-// pan_mock is returned by CatPawOpen detail; in TMDB smart flows we might not populate `detail`,
+// pan_mock is returned by catpawrunner detail; in TMDB smart flows we might not populate `detail`,
 // so keep a lightweight hint/cache for pan_mock state and Tianyi access codes.
 const panMockEnabledHint = ref(false);
 const panMock189AccessByShareIdHint = ref({});
@@ -6866,7 +6866,7 @@ const pickFirstPlayableUrl = (payload) => {
 const rewriteProxyUrlToBase = (urlString, apiBase, tvUser) => {
   const raw = typeof urlString === 'string' ? urlString.trim() : '';
   if (!raw) return '';
-  const normalized = normalizeCatPawOpenApiBase(apiBase);
+  const normalized = normalizecatpawrunnerApiBase(apiBase);
   if (!normalized) return raw;
   try {
     const u = new URL(raw);
@@ -6879,7 +6879,7 @@ const rewriteProxyUrlToBase = (urlString, apiBase, tvUser) => {
     const needsDeport = u.port === '3006' && base.port !== '3006';
     if (!isLoopback && !(isSameHost && needsDeport)) return raw;
 
-    // Drop origin/port from CatPawOpen raw URL, then resolve against configured base
+    // Drop origin/port from catpawrunner raw URL, then resolve against configured base
     // (this keeps any base-path prefix and avoids leaking :3006 when not configured).
     const next = new URL(String(u.pathname || '/').replace(/^\//, ''), normalized);
     next.search = u.search || '';
@@ -7237,8 +7237,8 @@ const probeFetchSmall = async (urlString, timeoutMs = 6000) => {
 };
 
 const registerCatM3U8 = async ({ apiBase, tvUser, url, headers }) => {
-  const base = normalizeCatPawOpenApiBase(apiBase);
-  if (!base) throw new Error('CatPawOpen 接口地址未设置');
+  const base = normalizecatpawrunnerApiBase(apiBase);
+  if (!base) throw new Error('catpawrunner 接口地址未设置');
   const target = new URL('api/m3u8/register', base);
   const u = typeof tvUser === 'string' ? tvUser.trim() : '';
   const resp = await fetch(target.toString(), {
@@ -7262,7 +7262,7 @@ const registerCatM3U8 = async ({ apiBase, tvUser, url, headers }) => {
   const token = data && data.token ? String(data.token).trim() : '';
   const indexPath = data && data.index ? String(data.index).trim() : '';
   const proxyPath = data && data.proxy ? String(data.proxy).trim() : '';
-  if (!token || !indexPath || !proxyPath) throw new Error('CatPawOpen m3u8 register 返回无效');
+  if (!token || !indexPath || !proxyPath) throw new Error('catpawrunner m3u8 register 返回无效');
   const indexUrl = new URL(indexPath.replace(/^\//, ''), base).toString();
   const proxyUrl = new URL(proxyPath.replace(/^\//, ''), base).toString();
   return { token, indexUrl, proxyUrl };
@@ -7310,7 +7310,7 @@ const maybeUseCatM3U8ProxyForPlayback = async ({
   const hasHeader = hasNonEmptyHeaders(playHeaders);
 
   // If server doesn't require headers, prefer direct m3u8 fetch first. If it fails (CORS/IP/anti-leech),
-  // then fall back to CatPawOpen m3u8 registration + proxy rewrite.
+  // then fall back to catpawrunner m3u8 registration + proxy rewrite.
   if (!hasHeader) {
     try {
       await fetchM3U8Text({ url: playUrl, tvUser });
@@ -7320,7 +7320,7 @@ const maybeUseCatM3U8ProxyForPlayback = async ({
     }
   }
 
-  // 1) Ask CatPawOpen to fetch the m3u8 with required headers and give us both playlists.
+  // 1) Ask catpawrunner to fetch the m3u8 with required headers and give us both playlists.
   const { indexUrl, proxyUrl } = await registerCatM3U8({ apiBase, tvUser, url: playUrl, headers: playHeaders });
 
   // 2) Fetch the normalized "index" playlist (absolute URIs), then probe first segment (and key if present)
@@ -7345,7 +7345,7 @@ const maybeUseCatM3U8ProxyForPlayback = async ({
   const segProbe = await probeFetchSmall(firstUri);
   if (!segProbe.ok) return { url: proxyUrl, headers: {}, reason: `seg-probe-failed:${segProbe.message}` };
 
-  // Direct mode: use CatPawOpen index playlist (same-origin), but segments stay upstream.
+  // Direct mode: use catpawrunner index playlist (same-origin), but segments stay upstream.
   return { url: indexUrl, headers: {}, reason: 'direct-ok' };
 };
 
@@ -10485,9 +10485,9 @@ const requestPlay = async (opts = {}) => {
 
         const goProxyEnabled = !!effectiveBootstrapSettings.value.goProxyEnabled;
 
-	      // HLS/m3u8: if possible, use CatPawOpen m3u8 proxy mode to avoid CORS/IP-bound issues.
-	      // - index.m3u8: CatPawOpen fetches playlist with headers and returns absolute URIs (segments are upstream)
-	      // - proxy.m3u8: playlist + segments/key are proxied through CatPawOpen
+	      // HLS/m3u8: if possible, use catpawrunner m3u8 proxy mode to avoid CORS/IP-bound issues.
+	      // - index.m3u8: catpawrunner fetches playlist with headers and returns absolute URIs (segments are upstream)
+	      // - proxy.m3u8: playlist + segments/key are proxied through catpawrunner
 	      try {
 	        const out = await maybeUseCatM3U8ProxyForPlayback({
 	          apiBase,

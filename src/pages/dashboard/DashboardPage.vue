@@ -214,10 +214,10 @@
 		              <div class="flex flex-col gap-2">
 		                <div class="flex items-center gap-2">
 		                  <button
-		                    id="videoSourceImportFromCatPawOpen"
+		                    id="videoSourceImportFromcatpawrunner"
 		                    type="button"
 		                    class="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-sm text-gray-700 dark:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-white/10 transition-colors duration-150"
-		                  >从 CatPawOpen 导入站源</button>
+		                  >从 catpawrunner 导入站源</button>
 		                </div>
 		                <div id="videoSourceSaveStatus" class="text-sm hidden"></div>
 		              </div>
@@ -396,14 +396,14 @@
 	            接口设置
 	          </div>
 		          <div class="admin-card space-y-4">
-		            <form id="catPawOpenSettingsForm" method="post" action="/dashboard/catpawopen/save" class="space-y-4">
+		            <form id="catpawrunnerSettingsForm" method="post" action="/dashboard/catpawrunner/save" class="space-y-4">
 		              <div class="flex items-center gap-3">
-		                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">CatPawOpen 设置</div>
+		                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">catpawrunner 设置</div>
 		              </div>
 					              <div class="space-y-2">
 						                <div class="flex items-center gap-3 flex-wrap justify-start">
 						                  <button
-						                    id="catPawOpenServerAdd"
+						                    id="catpawrunnerServerAdd"
 						                    type="button"
 						                    class="btn-green"
 					                  >添加服务器</button>
@@ -412,8 +412,8 @@
 					                  <div class="text-sm font-medium text-gray-700 dark:text-gray-200">服务器选择</div>
 					                  <div class="tv-cpo-server-select">
 						                    <select
-						                      id="catPawOpenServerSelect"
-						                      name="catPawOpenServerKey"
+						                      id="catpawrunnerServerSelect"
+						                      name="catpawrunnerServerKey"
 						                      data-custom-dropdown-autosize="max"
 						                      class="custom-select tv-field"
 						                    >
@@ -421,82 +421,82 @@
 					                    </select>
 					                  </div>
 					                  <button
-					                    id="catPawOpenServerDelete"
+					                    id="catpawrunnerServerDelete"
 					                    type="button"
 					                    class="btn-ghost-red hidden"
 					                  >删除</button>
 					                  <button
-					                    id="catPawOpenServerDeleteCancel"
+					                    id="catpawrunnerServerDeleteCancel"
 					                    type="button"
 					                    class="btn-ghost-blue hidden"
 					                  >取消</button>
 					                </div>
 					              </div>
-						              <div id="catPawOpenNameRow" class="hidden">
+						              <div id="catpawrunnerNameRow" class="hidden">
 						                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">服务器名称</label>
 						                <input
-						                  name="catPawOpenName"
+						                  name="catpawrunnerName"
 						                  class="tv-field"
 						                  required
 						                  autocomplete="off"
 						                >
 							              </div>
-					              <div id="catPawOpenApiRow" class="hidden">
-					                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawOpen 接口地址</label>
+					              <div id="catpawrunnerApiRow" class="hidden">
+					                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">catpawrunner 接口地址</label>
 					                <input
-					                  name="catPawOpenApiBase"
+					                  name="catpawrunnerApiBase"
 					                  class="tv-field"
 					                  placeholder="http://127.0.0.1:9988"
 					                >
 						              </div>
-					              <div id="catPawOpenSyncFromServerRow" class="hidden">
+					              <div id="catpawrunnerSyncFromServerRow" class="hidden">
 					                <div class="flex items-center gap-2 flex-wrap text-sm text-gray-700 dark:text-gray-200">
 					                  <span class="whitespace-nowrap">从</span>
 					                  <div class="tv-cpo-server-select">
-					                    <select id="catPawOpenSyncFromServerSelect" class="custom-select tv-field" data-custom-dropdown-autosize="max">
+					                    <select id="catpawrunnerSyncFromServerSelect" class="custom-select tv-field" data-custom-dropdown-autosize="max">
 					                      <option value="" selected>请选择</option>
 					                    </select>
 					                  </div>
 					                  <span class="whitespace-nowrap">获取配置并同步</span>
 					                </div>
 					              </div>
-					              <div id="catPawOpenVersionRow" class="hidden">
-					                <div id="catPawOpenVersionText" class="text-xs text-gray-500 dark:text-gray-400"></div>
+					              <div id="catpawrunnerVersionRow" class="hidden">
+					                <div id="catpawrunnerVersionText" class="text-xs text-gray-500 dark:text-gray-400"></div>
 					              </div>
-						              <div id="catPawOpenSettingsExtras" class="hidden space-y-4">
-						              <div id="catPawOpenRemoteError" class="hidden rounded-lg border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/10 px-3 py-2 text-xs text-red-700 dark:text-red-300"></div>
-						              <div id="catPawOpenRemoteSettings" class="hidden space-y-4">
+						              <div id="catpawrunnerSettingsExtras" class="hidden space-y-4">
+						              <div id="catpawrunnerRemoteError" class="hidden rounded-lg border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/10 px-3 py-2 text-xs text-red-700 dark:text-red-300"></div>
+						              <div id="catpawrunnerRemoteSettings" class="hidden space-y-4">
 						                <div>
 						                  <div class="flex items-center gap-2 mb-1">
 						                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200">配置列表</label>
 						                    <button
-						                      id="catPawOpenConfigListAdd"
+						                      id="catpawrunnerConfigListAdd"
 						                      type="button"
 						                      class="btn-green"
 						                    >添加</button>
 						                  </div>
-						                  <input id="catPawOpenConfigListJson" type="hidden" value="[]" />
+						                  <input id="catpawrunnerConfigListJson" type="hidden" value="[]" />
 						                  <div class="tv-cpo-config-shell">
-						                    <div id="catPawOpenConfigEditor" class="tv-panel tv-cpo-config-editor mb-3 hidden">
+						                    <div id="catpawrunnerConfigEditor" class="tv-panel tv-cpo-config-editor mb-3 hidden">
 						                      <div
 						                        class="grid items-center"
 						                        style="grid-template-columns:max-content 1fr;gap:14px 18px"
 						                      >
 						                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">名称：</span>
-						                        <input id="catPawOpenConfigEditorName" class="tv-field" placeholder="名称" autocomplete="off" />
+						                        <input id="catpawrunnerConfigEditorName" class="tv-field" placeholder="名称" autocomplete="off" />
 
 						                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">配置地址：</span>
-						                        <input id="catPawOpenConfigEditorUrl" class="tv-field" placeholder="https://example.com/xx.js" autocomplete="off" />
+						                        <input id="catpawrunnerConfigEditorUrl" class="tv-field" placeholder="https://example.com/xx.js" autocomplete="off" />
 						                      </div>
 							                      <div class="flex justify-start items-center gap-3 mt-3">
-							                        <button id="catPawOpenConfigEditorConfirm" class="btn-add" type="button">确定</button>
+							                        <button id="catpawrunnerConfigEditorConfirm" class="btn-add" type="button">确定</button>
 							                        <button
-							                          id="catPawOpenConfigEditorCancel"
+							                          id="catpawrunnerConfigEditorCancel"
 							                          type="button"
 							                          class="btn-ghost-blue"
 							                        >取消</button>
 							                      </div>
-						                      <div id="catPawOpenConfigEditorStatus" class="text-sm mt-2" hidden></div>
+						                      <div id="catpawrunnerConfigEditorStatus" class="text-sm mt-2" hidden></div>
 						                    </div>
 						                    <div class="tv-panel tv-cpo-config-table overflow-x-auto">
 						                      <table class="table-auto w-max max-w-full text-sm text-left text-gray-700 dark:text-gray-100">
@@ -508,7 +508,7 @@
 						                            <th class="px-3 py-2 whitespace-nowrap">操作</th>
 						                          </tr>
 						                        </thead>
-						                        <tbody id="catPawOpenConfigList" class="divide-y divide-gray-100 dark:divide-gray-800">
+						                        <tbody id="catpawrunnerConfigList" class="divide-y divide-gray-100 dark:divide-gray-800">
 						                          <tr>
 						                            <td class="px-3 py-2 text-gray-500 dark:text-gray-400">-</td>
 						                            <td class="px-3 py-2 text-gray-500 dark:text-gray-400">-</td>
@@ -521,19 +521,19 @@
 						                  </div>
 						                </div>
 						              <div>
-						                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawOpen 全局代理</label>
+						                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">catpawrunner 全局代理</label>
 				                <input
-				                  name="catPawOpenProxy"
+				                  name="catpawrunnerProxy"
 			                  class="tv-field"
 			                  placeholder="http://127.0.0.1:7890"
 			                >
-				                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">用于 CatPawOpen 请求时的全局代理（留空关闭）。</p>
+				                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">用于 catpawrunner 请求时的全局代理（留空关闭）。</p>
 					              </div>
 					              <div class="space-y-1 pt-1">
 					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">使用内置网盘解析</div>
 					                <div>
 					                  <label class="enable-switch" title="使用内置网盘解析">
-					                    <input id="catPawOpenPanBuiltinResolverEnabled" name="catPawOpenPanBuiltinResolverEnabled" type="checkbox" />
+					                    <input id="catpawrunnerPanBuiltinResolverEnabled" name="catpawrunnerPanBuiltinResolverEnabled" type="checkbox" />
 					                    <span class="enable-slider"></span>
 					                  </label>
 					                </div>
@@ -542,16 +542,16 @@
 					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">加速详情获取</div>
 					                <div>
 					                  <label class="enable-switch" title="加速详情获取（pan_mock）">
-					                    <input id="catPawOpenPanMockEnabled" name="catPawOpenPanMockEnabled" type="checkbox" />
+					                    <input id="catpawrunnerPanMockEnabled" name="catpawrunnerPanMockEnabled" type="checkbox" />
 					                    <span class="enable-slider"></span>
 					                  </label>
 					                </div>
 					                <p class="text-xs text-gray-500 dark:text-gray-400">开启后会在 detail 返回中注入 pan_mock，并由 MeowFilm 直接并发请求网盘接口解析（仅影响智能播放链路）。</p>
 					              </div>
 					              <div class="space-y-2">
-					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">GoProxy API（挂载在 CatPawOpen 同机）</div>
+					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">GoProxy API（挂载在 catpawrunner 同机）</div>
 					                <input
-					                  name="catPawOpenGoProxyApi"
+					                  name="catpawrunnerGoProxyApi"
 					                  class="tv-field"
 					                  placeholder="/api 或 https://example.com/"
 					                  autocomplete="off"
@@ -559,36 +559,36 @@
 					                <p class="text-xs text-gray-500 dark:text-gray-400">用于 m3u8 分片改写指向同机 GoProxy。</p>
 					              </div>
 				              <div class="pt-1 flex items-center gap-3">
-				                <button id="catPawOpenSyncPanLoginSettingsBtn" type="button" class="btn-green">同步网盘账号至catpawopen</button>
+				                <button id="catpawrunnerSyncPanLoginSettingsBtn" type="button" class="btn-green">同步网盘账号至catpawrunner</button>
 					                <div
-					                  id="catPawOpenSyncPanLoginSettingsStatus"
+					                  id="catpawrunnerSyncPanLoginSettingsStatus"
 					                  class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"
 					                ></div>
 					              </div>
 				              <div class="pt-1 flex flex-col items-start gap-2">
-				                <button id="catPawOpenSyncConfigToOtherBtn" type="button" class="btn-green">同步配置至其他服务器</button>
+				                <button id="catpawrunnerSyncConfigToOtherBtn" type="button" class="btn-green">同步配置至其他服务器</button>
 				                <div
-				                  id="catPawOpenSyncConfigToOtherPicker"
+				                  id="catpawrunnerSyncConfigToOtherPicker"
 				                  class="hidden flex items-center gap-2 flex-wrap"
 				                >
 				                  <div class="tv-cpo-server-select">
-				                    <select id="catPawOpenSyncConfigToOtherSelect" class="custom-select tv-field">
+				                    <select id="catpawrunnerSyncConfigToOtherSelect" class="custom-select tv-field">
 				                      <option value="" selected>请选择</option>
 				                    </select>
 				                  </div>
 				                  <button
-				                    id="catPawOpenSyncConfigToOtherConfirm"
+				                    id="catpawrunnerSyncConfigToOtherConfirm"
 				                    type="button"
 				                    class="btn-green"
 				                    disabled
 				                  >确定</button>
 				                  <button
-				                    id="catPawOpenSyncConfigToOtherCancel"
+				                    id="catpawrunnerSyncConfigToOtherCancel"
 				                    type="button"
 				                    class="btn-ghost-blue"
 				                  >取消</button>
 				                  <div
-				                    id="catPawOpenSyncConfigToOtherStatus"
+				                    id="catpawrunnerSyncConfigToOtherStatus"
 				                    class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"
 				                  ></div>
 				                </div>
@@ -597,21 +597,21 @@
 				              </div>
 				              <div class="pt-1 flex flex-col items-start gap-1">
 				                <div
-				                  id="catPawOpenSyncSaveWrap"
+				                  id="catpawrunnerSyncSaveWrap"
 				                  class="hidden flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
 				                >
-				                  <input id="catPawOpenSyncSave" type="checkbox" class="h-4 w-4" checked>
-				                  <label for="catPawOpenSyncSave" class="select-none">同步保存</label>
+				                  <input id="catpawrunnerSyncSave" type="checkbox" class="h-4 w-4" checked>
+				                  <label for="catpawrunnerSyncSave" class="select-none">同步保存</label>
 				                </div>
 				                <div class="flex items-center gap-2">
 				                  <button type="submit" class="btn-green">保存</button>
 				                  <button
-				                    id="catPawOpenServerAddCancelBottom"
+				                    id="catpawrunnerServerAddCancelBottom"
 				                    type="button"
 				                    class="btn-ghost-blue hidden"
 				                  >取消</button>
 				                </div>
-				                <div id="catPawOpenSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
+				                <div id="catpawrunnerSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"></div>
 				              </div>
 				            </form>
 			          </div>

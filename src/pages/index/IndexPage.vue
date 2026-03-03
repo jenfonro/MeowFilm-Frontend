@@ -150,7 +150,7 @@
 		                class="hidden"
 		                :data-douban-img-proxy="bootstrap.settings.doubanImgProxy"
 		                :data-douban-img-custom="bootstrap.settings.doubanImgCustom"
-		                :data-cat-api-base="bootstrap.settings.catPawOpenApiBase || ''"
+		                :data-cat-api-base="bootstrap.settings.catpawrunnerApiBase || ''"
 		                :data-user-role="bootstrap.user.role"
 		                :data-tv-user="bootstrap.user.username"
 		                :data-search-thread-count="bootstrap.settings.searchThreadCount"

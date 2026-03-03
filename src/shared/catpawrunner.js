@@ -1,4 +1,4 @@
-export function normalizeCatPawOpenApiBase(inputUrl) {
+export function normalizecatpawrunnerApiBase(inputUrl) {
   const raw = typeof inputUrl === 'string' ? inputUrl.trim() : '';
   if (!raw) return '';
   try {
@@ -86,8 +86,8 @@ export async function requestCatSpider({
 
   if (safeAction === 'search') await waitIfLowPriorityPaused();
 
-  const normalizedBase = normalizeCatPawOpenApiBase(apiBase);
-  if (!normalizedBase) throw new Error('CatPawOpen 接口地址未设置');
+  const normalizedBase = normalizecatpawrunnerApiBase(apiBase);
+  if (!normalizedBase) throw new Error('catpawrunner 接口地址未设置');
 
   const spiderPath = safeSpider.endsWith('/') ? safeSpider.slice(0, -1) : safeSpider;
   const target = new URL(`${spiderPath}/${encodeURIComponent(safeAction)}`, normalizedBase);
@@ -125,8 +125,8 @@ export async function requestCatPlay({ apiBase, username, payload, query, header
   const extra = extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : null;
   const sig = signal || null;
 
-  const normalizedBase = normalizeCatPawOpenApiBase(apiBase);
-  if (!normalizedBase) throw new Error('CatPawOpen 接口地址未设置');
+  const normalizedBase = normalizecatpawrunnerApiBase(apiBase);
+  if (!normalizedBase) throw new Error('catpawrunner 接口地址未设置');
 
   const target = new URL('play', normalizedBase);
   if (q) {
