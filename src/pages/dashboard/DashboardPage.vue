@@ -217,7 +217,7 @@
 		                    id="videoSourceImportFromcatpawrunner"
 		                    type="button"
 		                    class="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white/60 dark:bg-white/5 text-sm text-gray-700 dark:text-gray-100 hover:bg-gray-100/50 dark:hover:bg-white/10 transition-colors duration-150"
-		                  >从 catpawrunner 导入站源</button>
+		                  >从 CatPawRunner 导入站源</button>
 		                </div>
 		                <div id="videoSourceSaveStatus" class="text-sm hidden"></div>
 		              </div>
@@ -398,7 +398,7 @@
 		          <div class="admin-card space-y-4">
 		            <form id="catpawrunnerSettingsForm" method="post" action="/dashboard/catpawrunner/save" class="space-y-4">
 		              <div class="flex items-center gap-3">
-		                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">catpawrunner 设置</div>
+		                <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">CatPawRunner 设置</div>
 		              </div>
 					              <div class="space-y-2">
 						                <div class="flex items-center gap-3 flex-wrap justify-start">
@@ -442,7 +442,7 @@
 						                >
 							              </div>
 					              <div id="catpawrunnerApiRow" class="hidden">
-					                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">catpawrunner 接口地址</label>
+					                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawRunner 接口地址</label>
 					                <input
 					                  name="catpawrunnerApiBase"
 					                  class="tv-field"
@@ -521,13 +521,13 @@
 						                  </div>
 						                </div>
 						              <div>
-						                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">catpawrunner 全局代理</label>
+						                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawRunner 全局代理</label>
 				                <input
 				                  name="catpawrunnerProxy"
 			                  class="tv-field"
 			                  placeholder="http://127.0.0.1:7890"
 			                >
-				                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">用于 catpawrunner 请求时的全局代理（留空关闭）。</p>
+				                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">用于 CatPawRunner 请求时的全局代理（留空关闭）。</p>
 					              </div>
 					              <div class="space-y-1 pt-1">
 					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">使用内置网盘解析</div>
@@ -546,10 +546,10 @@
 					                    <span class="enable-slider"></span>
 					                  </label>
 					                </div>
-					                <p class="text-xs text-gray-500 dark:text-gray-400">开启后会在 detail 返回中注入 pan_mock，并由 MeowFilm 直接并发请求网盘接口解析（仅影响智能播放链路）。</p>
+					                <p class="text-xs text-gray-500 dark:text-gray-400">开启后由 MeowFilm 处理网盘数据。</p>
 					              </div>
 					              <div class="space-y-2">
-					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">GoProxy API（挂载在 catpawrunner 同机）</div>
+					                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">GoProxy API（挂载在 CatPawRunner 同机）</div>
 					                <input
 					                  name="catpawrunnerGoProxyApi"
 					                  class="tv-field"
@@ -559,7 +559,7 @@
 					                <p class="text-xs text-gray-500 dark:text-gray-400">用于 m3u8 分片改写指向同机 GoProxy。</p>
 					              </div>
 				              <div class="pt-1 flex items-center gap-3">
-				                <button id="catpawrunnerSyncPanLoginSettingsBtn" type="button" class="btn-green">同步网盘账号至catpawrunner</button>
+				                <button id="catpawrunnerSyncPanLoginSettingsBtn" type="button" class="btn-green">同步网盘账号至 CatPawRunner</button>
 					                <div
 					                  id="catpawrunnerSyncPanLoginSettingsStatus"
 					                  class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400"
@@ -722,9 +722,6 @@
 	            <div class="space-y-3">
 	              <div class="space-y-1">
 	                <div class="text-sm font-medium text-gray-700 dark:text-gray-200">优先片源规则</div>
-	                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-	                  仅影响同等画质/特征下的优先提取，不再依赖画质/帧率偏好设置
-	                </div>
 	                <select id="smartSourceExtractPriority" class="custom-select tv-field">
 	                  <option value="无">无</option>
 	                  <option value="网盘">网盘</option>

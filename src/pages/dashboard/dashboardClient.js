@@ -1308,7 +1308,7 @@ export function initDashboardPage(bootstrap = {}) {
 
   const requestcatpawrunnerAdminJson = async ({ apiBase, path, method, body, timeoutMs }) => {
     const base = normalizecatpawrunnerAdminBase(apiBase);
-    if (!base) throw new Error('catpawrunner 接口地址无效');
+    if (!base) throw new Error('CatPawRunner 接口地址无效');
     const cleanPath = String(path || '').replace(/^\//, '');
     const target = new URL(cleanPath, base);
 
@@ -1352,7 +1352,7 @@ export function initDashboardPage(bootstrap = {}) {
       if (remoteErrorEl) {
         const showErr = state === 'error';
         remoteErrorEl.classList.toggle('hidden', !showErr);
-        remoteErrorEl.textContent = showErr ? (message || 'catpawrunner 接口异常') : '';
+        remoteErrorEl.textContent = showErr ? (message || 'CatPawRunner 接口异常') : '';
       }
       if (state === 'hidden') {
         if (remoteErrorEl) {
@@ -1396,7 +1396,7 @@ export function initDashboardPage(bootstrap = {}) {
               : '';
         const v = typeof raw === 'string' ? raw.trim() : '';
         if (versionRow && versionText && v) {
-          versionText.textContent = `catpawrunner版本:${v}`;
+          versionText.textContent = `CatPawRunner 版本: ${v}`;
           versionRow.classList.remove('hidden');
         } else {
           if (versionText) versionText.textContent = '';
@@ -1481,7 +1481,7 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const unwrapcatpawrunnerWebsiteData = (resp) => {
-    if (!resp) throw new Error('catpawrunner 返回为空');
+    if (!resp) throw new Error('CatPawRunner 返回为空');
     if (resp && typeof resp === 'object') {
       if (resp.code === 0) return resp.data;
       if (resp.success === true && Object.prototype.hasOwnProperty.call(resp, 'data')) return resp.data;
@@ -1561,7 +1561,7 @@ export function initDashboardPage(bootstrap = {}) {
 
   const fetchcatpawrunnerStatus = async ({ apiBase, path }) => {
     const base = normalizecatpawrunnerAdminBase(apiBase);
-    if (!base) throw new Error('catpawrunner 接口地址未设置');
+    if (!base) throw new Error('CatPawRunner 接口地址未设置');
     const cleanPath = String(path || '').replace(/^\//, '');
     const target = new URL(cleanPath, base);
     try {
@@ -3396,7 +3396,7 @@ export function initDashboardPage(bootstrap = {}) {
   const savePansList = async (pans) => {
     const apiBase = await resolvecatpawrunnerApiBase();
     const normalizedBase = normalizecatpawrunnerAdminBase(apiBase);
-    if (!normalizedBase) return { ok: false, message: 'catpawrunner 接口地址未设置' };
+    if (!normalizedBase) return { ok: false, message: 'CatPawRunner 接口地址未设置' };
     const list = normalizePans(pans);
     try {
       const putResp = await requestcatpawrunnerAdminJson({
@@ -3411,7 +3411,7 @@ export function initDashboardPage(bootstrap = {}) {
       await cachePansListToServer(next);
       return { ok: true, pans: next };
     } catch (e) {
-      return { ok: false, message: 'catpawrunner 接口异常' };
+      return { ok: false, message: 'CatPawRunner 接口异常' };
     }
   };
 
@@ -4216,7 +4216,7 @@ export function initDashboardPage(bootstrap = {}) {
     const apiBase = await resolvecatpawrunnerApiBase();
     const normalizedBase = normalizecatpawrunnerAdminBase(apiBase);
     if (!normalizedBase) {
-      setVideoSourceListStatus('error', 'catpawrunner 接口地址未设置');
+      setVideoSourceListStatus('error', 'CatPawRunner 接口地址未设置');
       return;
     }
 
@@ -4284,7 +4284,7 @@ export function initDashboardPage(bootstrap = {}) {
 	  const checkVideoSourceSites = async (keys) => {
 	    const apiBase = await resolvecatpawrunnerApiBase();
 	    const normalizedBase = normalizecatpawrunnerAdminBase(apiBase);
-	    if (!normalizedBase) return { ok: false, message: 'catpawrunner 接口地址未设置' };
+	    if (!normalizedBase) return { ok: false, message: 'CatPawRunner 接口地址未设置' };
 
     const uniq = (Array.isArray(keys) ? keys : [])
       .map((k) => (typeof k === 'string' ? k.trim() : ''))
@@ -4660,7 +4660,7 @@ export function initDashboardPage(bootstrap = {}) {
 	            const direct = pickStr(v);
 	            if (direct) return direct;
 	            if (!Array.isArray(v)) return '';
-	            // catpawrunner may return `url: ["原画", "https://..."]` (or other array shapes).
+	            // CatPawRunner may return `url: ["原画", "https://..."]` (or other array shapes).
 	            // Prefer an http(s) URL, starting from the end.
 	            for (let i = v.length - 1; i >= 0; i -= 1) {
 	              const s = pickStr(v[i]);
@@ -6420,21 +6420,21 @@ export function initDashboardPage(bootstrap = {}) {
     const renderCheckingStatus = ({ dots = 0, failed = false } = {}) => {
       const dotText = failed ? '' : '.'.repeat(Math.max(0, Math.min(3, dots)));
       const inner = failed
-        ? `<span class="text-red-600">catpawrunner检测配置异常</span>`
-        : `<span class="text-gray-500 dark:text-gray-400">catpawrunner检测配置中${dotText}</span>`;
+        ? `<span class="text-red-600">CatPawRunner 检测配置异常</span>`
+        : `<span class="text-gray-500 dark:text-gray-400">CatPawRunner 检测配置中${dotText}</span>`;
       setcatpawrunnerSaveStatusHtml('success', `保存成功(${inner})`);
     };
 
     const renderRestartingStatus = ({ dots = 0, failed = false } = {}) => {
       const dotText = failed ? '' : '.'.repeat(Math.max(0, Math.min(3, dots)));
       const inner = failed
-        ? `<span class="text-red-600">catpawrunner启动异常</span>`
-        : `<span class="text-gray-500 dark:text-gray-400">catpawrunner重启中${dotText}</span>`;
+        ? `<span class="text-red-600">CatPawRunner 启动异常</span>`
+        : `<span class="text-gray-500 dark:text-gray-400">CatPawRunner 重启中${dotText}</span>`;
       setcatpawrunnerSaveStatusHtml('success', `保存成功(${inner})`);
     };
 
     const renderRestartDoneStatus = () => {
-      setcatpawrunnerSaveStatusHtml('success', `保存成功(<span class="text-gray-500 dark:text-gray-400">catpawrunner重启完成</span>)`);
+      setcatpawrunnerSaveStatusHtml('success', `保存成功(<span class="text-gray-500 dark:text-gray-400">CatPawRunner 重启完成</span>)`);
     };
 
     const startCheckingWatch = () => {
@@ -6504,7 +6504,7 @@ export function initDashboardPage(bootstrap = {}) {
           try {
             const sync = await syncAllPanLoginSettingsTocatpawrunner();
             if (sync && sync.ok === false && sync.skipped === true && sync.reason === 'unconfigured') {
-              notify.error('catpawrunner 接口地址未设置');
+              notify.error('CatPawRunner 接口地址未设置');
               return;
             }
 
@@ -6707,7 +6707,7 @@ export function initDashboardPage(bootstrap = {}) {
               });
               setcatpawrunnerRemoteState('ready');
             } catch (err) {
-              const msg = err && err.message ? String(err.message) : 'catpawrunner 接口异常';
+              const msg = err && err.message ? String(err.message) : 'CatPawRunner 接口异常';
               setcatpawrunnerRemoteState('error', msg);
               return;
             }
@@ -7043,7 +7043,7 @@ export function initDashboardPage(bootstrap = {}) {
     const normalizedBase = normalizecatpawrunnerAdminBase(apiBase);
     if (!normalizedBase) {
       setVideoSourceSaveStatus('', '');
-      notify.error('catpawrunner 接口地址未设置');
+      notify.error('CatPawRunner 接口地址未设置');
       return;
     }
     setVideoSourceSaveStatus('', '');
