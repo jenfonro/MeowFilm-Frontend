@@ -937,10 +937,12 @@ export function initDashboardPage(bootstrap = {}) {
       const obj = it && typeof it === 'object' ? it : {};
       const name = typeof obj.name === 'string' ? obj.name.trim() : '';
       const url = normalizeHttpUrl(typeof obj.url === 'string' ? obj.url : '');
+      const idRaw = typeof obj.id === 'string' ? obj.id.trim().toLowerCase() : '';
+      const id = /^[a-f0-9]{10}$/.test(idRaw) ? idRaw : '';
       const check = normalizeConfigCheckStatus(obj.check);
       const phase = normalizeConfigCheckPhase(obj.checkPhase || obj.phase || '');
       if (!url) return null;
-      return { name: name || '未命名', url, check, checkPhase: phase };
+      return { name: name || '未命名', url, id, check, checkPhase: phase };
     };
 
     const parseInitialItems = () => {
@@ -985,7 +987,9 @@ export function initDashboardPage(bootstrap = {}) {
     const syncJsonField = () => {
       if (!catpawrunnerConfigListJsonInput) return;
       try {
-        const saved = (items || []).filter(Boolean).map((it) => ({ name: it.name, url: it.url }));
+        const saved = (items || [])
+          .filter(Boolean)
+          .map((it) => ({ name: it.name, url: it.url, ...(it && it.id ? { id: it.id } : {}) }));
         catpawrunnerConfigListJsonInput.value = JSON.stringify(saved);
       } catch (_e) {
         catpawrunnerConfigListJsonInput.value = '[]';
@@ -1182,9 +1186,10 @@ export function initDashboardPage(bootstrap = {}) {
         const prev = items[editorIndex];
         const prevCheck = prev && typeof prev.check === 'string' ? prev.check : 'unchecked';
         const prevPhase = prev && typeof prev.checkPhase === 'string' ? prev.checkPhase : '';
-        items = (items || []).map((x, i) => (i === editorIndex ? { name, url, check: prevCheck, checkPhase: prevPhase } : x));
+        const prevId = prev && typeof prev.id === 'string' ? prev.id : '';
+        items = (items || []).map((x, i) => (i === editorIndex ? { name, url, id: prevId, check: prevCheck, checkPhase: prevPhase } : x));
       } else {
-        items = (items || []).concat([{ name, url, check: 'unchecked', checkPhase: '' }]);
+        items = (items || []).concat([{ name, url, id: '', check: 'unchecked', checkPhase: '' }]);
       }
 
       closeEditor();
@@ -1223,7 +1228,9 @@ export function initDashboardPage(bootstrap = {}) {
 
     const api = {
       getItems: () =>
-        (items || []).filter(Boolean).map((it) => ({ name: it.name, url: it.url, check: it.check })),
+        (items || [])
+          .filter(Boolean)
+          .map((it) => ({ name: it.name, url: it.url, ...(it && it.id ? { id: it.id } : {}), check: it.check })),
       setCheckingAll: () => {
         let changed = false;
         items = (items || []).map((it) => {
@@ -1424,6 +1431,7 @@ export function initDashboardPage(bootstrap = {}) {
           settingsResp.onlineConfigs.map((it) => ({
             name: it && typeof it.name === 'string' ? it.name : '',
             url: it && typeof it.url === 'string' ? it.url : '',
+            id: it && typeof it.id === 'string' ? it.id : '',
             check: it && typeof it.status === 'string' ? it.status : '',
             phase: it && typeof it.phase === 'string' ? it.phase : '',
           }))
@@ -3368,14 +3376,29 @@ export function initDashboardPage(bootstrap = {}) {
     return { ok: false, message: (data && data.message) || '保存失败' };
   }
 
+  const getRuntimeIdFromOnlineConfigs = () => {
+    try {
+      if (!catpawrunnerConfigListEditor || typeof catpawrunnerConfigListEditor.getItems !== 'function') return '';
+      const list = catpawrunnerConfigListEditor.getItems();
+      if (!Array.isArray(list)) return '';
+      for (const it of list) {
+        const idRaw = it && typeof it.id === 'string' ? it.id.trim().toLowerCase() : '';
+        if (/^[a-f0-9]{10}$/.test(idRaw)) return idRaw;
+      }
+    } catch (_e) {}
+    return '';
+  };
+
   const fetchPansList = async () => {
     const apiBase = await resolvecatpawrunnerApiBase();
     const normalizedBase = normalizecatpawrunnerAdminBase(apiBase);
+    const runtimeId = getRuntimeIdFromOnlineConfigs();
     if (normalizedBase) {
       try {
+        if (!runtimeId) throw new Error('CatPawRunner runtime id 未配置');
         const resp = await requestcatpawrunnerAdminJson({
           apiBase: normalizedBase,
-          path: 'website/pans/list',
+          path: `${runtimeId}/website/pans/list`,
           method: 'GET',
         });
         const data = unwrapcatpawrunnerWebsiteData(resp);
@@ -3397,11 +3420,13 @@ export function initDashboardPage(bootstrap = {}) {
     const apiBase = await resolvecatpawrunnerApiBase();
     const normalizedBase = normalizecatpawrunnerAdminBase(apiBase);
     if (!normalizedBase) return { ok: false, message: 'CatPawRunner 接口地址未设置' };
+    const runtimeId = getRuntimeIdFromOnlineConfigs();
+    if (!runtimeId) return { ok: false, message: 'CatPawRunner runtime id 未配置' };
     const list = normalizePans(pans);
     try {
       const putResp = await requestcatpawrunnerAdminJson({
         apiBase: normalizedBase,
-        path: 'website/pans/list',
+        path: `${runtimeId}/website/pans/list`,
         method: 'PUT',
         body: { list },
       });

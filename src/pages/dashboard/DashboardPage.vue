@@ -520,6 +520,38 @@
 						                    </div>
 						                  </div>
 						                </div>
+						                <div class="tv-us-acc-item">
+						                  <button id="catpawrunnerPansToggle" class="tv-us-acc-head" type="button">
+						                    <span>网盘列表</span>
+						                    <span id="catpawrunnerPansToggleIcon" class="tv-us-acc-icon" data-open="false">
+						                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+						                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 9l6 6 6-6" />
+						                      </svg>
+						                    </span>
+						                  </button>
+						                  <div id="catpawrunnerPansPanel" class="tv-us-acc-body hidden">
+						                    <div class="max-h-[40vh] overflow-y-auto tv-panel">
+						                      <div class="tv-row sticky top-0 z-[2] mb-2">
+						                        <span
+						                          id="panHeaderName"
+						                          class="text-sm font-medium text-gray-600 dark:text-gray-300 truncate"
+						                        >网盘名称</span>
+						                        <span
+						                          id="panHeaderEnable"
+						                          class="text-sm font-medium text-gray-600 dark:text-gray-300"
+						                        >启用</span>
+						                        <span
+						                          id="panHeaderSort"
+						                          class="text-sm font-medium text-gray-600 dark:text-gray-300"
+						                        >排序</span>
+						                      </div>
+						                      <ul id="panList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+						                        <li class="text-gray-500 dark:text-gray-400">暂无网盘数据。</li>
+						                      </ul>
+						                    </div>
+						                    <div id="panListSaveStatus" class="text-xs hidden whitespace-nowrap text-gray-500 dark:text-gray-400 mt-2"></div>
+						                  </div>
+						                </div>
 						              <div>
 						                <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CatPawRunner 全局代理</label>
 				                <input
