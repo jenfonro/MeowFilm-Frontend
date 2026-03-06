@@ -6863,6 +6863,77 @@ const pickFirstPlayableUrl = (payload) => {
   return '';
 };
 
+const isHttpPlayableUrl = (value) => {
+  const s = typeof value === 'string' ? value.trim() : '';
+  return !!s && /^https?:\/\//i.test(s);
+};
+
+const parseLabeledPlayUrlEntries = (payload) => {
+  const arr = payload && Array.isArray(payload.url) ? payload.url : [];
+  const entries = [];
+  for (let i = 0; i + 1 < arr.length; i += 2) {
+    const labelRaw = typeof arr[i] === 'string' ? arr[i].trim() : '';
+    const urlRaw = typeof arr[i + 1] === 'string' ? arr[i + 1].trim() : '';
+    if (!labelRaw || !urlRaw) continue;
+    if (isHttpPlayableUrl(labelRaw)) continue;
+    if (!isHttpPlayableUrl(urlRaw)) continue;
+    entries.push({ label: labelRaw, url: urlRaw });
+  }
+  return entries;
+};
+
+const buildLocalProxyPlaybackUrl = ({ apiBase, sourceUrl, headers }) => {
+  const base = normalizecatpawrunnerApiBase(apiBase);
+  const target = typeof sourceUrl === 'string' ? sourceUrl.trim() : '';
+  if (!base || !isHttpPlayableUrl(target)) return '';
+  try {
+    const u = new URL('proxy', base);
+    u.searchParams.set('url', target);
+    if (headers && typeof headers === 'object' && Object.keys(headers).length) {
+      u.searchParams.set('header', JSON.stringify(headers));
+    }
+    return u.toString();
+  } catch (_e) {
+    return '';
+  }
+};
+
+const resolvePlayTargetForPlayback = ({ payload, rawHeaders }) => {
+  const headers = rawHeaders && typeof rawHeaders === 'object' ? rawHeaders : {};
+  const fallbackUrl = pickFirstPlayableUrl(payload);
+  if (!fallbackUrl) return { url: '', headers, needsProxy: false, proxySourceUrl: '' };
+  if (!hasNonEmptyHeaders(headers)) return { url: fallbackUrl, headers, needsProxy: false, proxySourceUrl: '' };
+
+  let sourceUrl = '';
+  const direct = payload && typeof payload.url === 'string' ? payload.url.trim() : '';
+  if (isHttpPlayableUrl(direct)) sourceUrl = direct;
+
+  const labeledEntries = parseLabeledPlayUrlEntries(payload);
+  if (labeledEntries.length) {
+    const byLabel = (name) => {
+      const n = String(name || '').trim().toLowerCase();
+      return labeledEntries.find((it) => String(it && it.label ? it.label : '').trim().toLowerCase() === n) || null;
+    };
+    const proxyRawEntry = byLabel('代理raw');
+    const rawEntry = byLabel('raw');
+    if (proxyRawEntry && rawEntry && isHttpPlayableUrl(rawEntry.url)) {
+      sourceUrl = rawEntry.url;
+    } else if (labeledEntries.length === 1 && isHttpPlayableUrl(labeledEntries[0].url)) {
+      sourceUrl = labeledEntries[0].url;
+    }
+  } else {
+    const arr = payload && Array.isArray(payload.url) ? payload.url : [];
+    const urls = arr
+      .map((it) => (typeof it === 'string' ? it.trim() : ''))
+      .filter((it) => isHttpPlayableUrl(it));
+    if (urls.length === 1) sourceUrl = urls[0];
+  }
+
+  if (!sourceUrl) sourceUrl = fallbackUrl;
+  const candidate = isHttpPlayableUrl(sourceUrl) ? sourceUrl : fallbackUrl;
+  return { url: candidate, headers, needsProxy: true, proxySourceUrl: candidate };
+};
+
 const rewriteProxyUrlToBase = (urlString, apiBase, tvUser) => {
   const raw = typeof urlString === 'string' ? urlString.trim() : '';
   if (!raw) return '';
@@ -7268,6 +7339,36 @@ const registerCatM3U8 = async ({ apiBase, tvUser, url, headers }) => {
   return { token, indexUrl, proxyUrl };
 };
 
+const registerCatProxyToken = async ({ apiBase, tvUser, url, headers }) => {
+  const base = normalizecatpawrunnerApiBase(apiBase);
+  if (!base) throw new Error('catpawrunner 接口地址未设置');
+  const target = new URL('api/proxy/register', base);
+  const u = typeof tvUser === 'string' ? tvUser.trim() : '';
+  const resp = await fetch(target.toString(), {
+    method: 'POST',
+    mode: 'cors',
+    credentials: 'omit',
+    headers: { 'Content-Type': 'application/json', ...(u ? { 'X-TV-User': u } : {}) },
+    body: JSON.stringify({
+      url: typeof url === 'string' ? url.trim() : '',
+      headers: headers && typeof headers === 'object' ? headers : {},
+    }),
+  });
+  const status = resp && typeof resp.status === 'number' ? resp.status : 0;
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data || data.ok === false) {
+    const msg = data && (data.message || data.error) ? String(data.message || data.error) : `HTTP ${status}`;
+    const err = new Error(msg);
+    err.status = status;
+    throw err;
+  }
+  const token = data && data.token ? String(data.token).trim() : '';
+  const proxyPath = data && data.proxy ? String(data.proxy).trim() : '';
+  if (!token || !proxyPath) throw new Error('catpawrunner proxy register 返回无效');
+  const proxyUrl = new URL(proxyPath.replace(/^\//, ''), base).toString();
+  return { token, proxyUrl };
+};
+
 const fetchM3U8Text = async ({ url, tvUser }) => {
   const target = typeof url === 'string' ? url.trim() : '';
   if (!target) throw new Error('missing m3u8 url');
@@ -7464,6 +7565,8 @@ const playRequestState = {
   inFlight: null,
   controller: null,
 };
+const pendingProxyRetry = ref(null);
+const proxyRetryInFlight = ref(false);
 
 const initialAutoPlayInFlight = ref(false);
 const autoPlaySuppressedByUser = ref(false);
@@ -10119,6 +10222,7 @@ const requestPlay = async (opts = {}) => {
   const trigger = opts && typeof opts === 'object' && typeof opts.trigger === 'string' ? opts.trigger : 'auto';
   const tmdbAttempt = opts && Number.isFinite(Number(opts.__tmdbAttempt)) ? Math.max(0, Math.floor(Number(opts.__tmdbAttempt))) : 0;
   const tmdbExcludeKeys = opts && Array.isArray(opts.__tmdbExcludeKeys) ? opts.__tmdbExcludeKeys : [];
+  const forceProxyFromOpts = !!(opts && typeof opts === 'object' && opts.__forceProxy);
   if (trigger !== 'user' && autoPlaySuppressedByUser.value) return false;
   // Clear stale error before starting a new attempt (prevents "获取视频失败" flashing on entry auto attempts).
   playError.value = '';
@@ -10360,6 +10464,7 @@ const requestPlay = async (opts = {}) => {
     playerFirstFrameReady.value = false;
     goProxyInUseBase.value = '';
     lastGoProxyCandidate.value = null;
+    pendingProxyRetry.value = null;
     if (playerFirstFrameTimer) {
       window.clearTimeout(playerFirstFrameTimer);
       playerFirstFrameTimer = 0;
@@ -10446,9 +10551,9 @@ const requestPlay = async (opts = {}) => {
 	          });
 	          const rewritten = rewritePlayPayloadUrls(raw, apiBase, tvUser);
 	          const payload = normalizePlayPayload(rewritten);
-	          const url = pickFirstPlayableUrl(payload);
 	          const rawHeaders = payload && payload.header && typeof payload.header === 'object' ? payload.header : {};
-	          return { raw, payload, url, rawHeaders };
+            const resolvedPlay = resolvePlayTargetForPlayback({ payload, rawHeaders });
+	          return { raw, payload, url: resolvedPlay.url, rawHeaders: resolvedPlay.headers, playSelection: resolvedPlay };
 	        };
 
 	        let playResult = null;
@@ -10484,45 +10589,85 @@ const requestPlay = async (opts = {}) => {
         }
 
         const goProxyEnabled = !!effectiveBootstrapSettings.value.goProxyEnabled;
-
-	      // HLS/m3u8: if possible, use catpawrunner m3u8 proxy mode to avoid CORS/IP-bound issues.
-	      // - index.m3u8: catpawrunner fetches playlist with headers and returns absolute URIs (segments are upstream)
-	      // - proxy.m3u8: playlist + segments/key are proxied through catpawrunner
-	      try {
-	        const out = await maybeUseCatM3U8ProxyForPlayback({
-	          apiBase,
-	          tvUser,
-	          playUrl: finalUrl,
-	          playHeaders: finalHeaders,
-	        });
-	        if (out && typeof out.url === 'string' && out.url.trim()) {
-	          finalUrl = out.url.trim();
-	          finalHeaders = out.headers && typeof out.headers === 'object' ? out.headers : {};
-	          disableGoProxy = true;
+        const preferredPan = guessPreferredPanFromFlag(flag);
+        if (forceProxyFromOpts) {
+	        // HLS/m3u8: if possible, use catpawrunner m3u8 proxy mode to avoid CORS/IP-bound issues.
+	        // - index.m3u8: catpawrunner fetches playlist with headers and returns absolute URIs (segments are upstream)
+	        // - proxy.m3u8: playlist + segments/key are proxied through catpawrunner
+	        try {
+	          const out = await maybeUseCatM3U8ProxyForPlayback({
+	            apiBase,
+	            tvUser,
+	            playUrl: finalUrl,
+	            playHeaders: finalHeaders,
+	          });
+	          if (out && typeof out.url === 'string' && out.url.trim()) {
+	            finalUrl = out.url.trim();
+	            finalHeaders = out.headers && typeof out.headers === 'object' ? out.headers : {};
+	            disableGoProxy = true;
+	          }
+	        } catch (_e) {
+	          // best-effort
 	        }
-	      } catch (_e) {
-	        // best-effort
-	      }
 
-	      try {
-	        const preferredPan = guessPreferredPanFromFlag(flag);
+	        try {
+            goProxyInUseBase.value = '';
+            lastGoProxyCandidate.value = {
+              url: finalUrl,
+              headers: finalHeaders,
+              preferredPan,
+              enabled: goProxyEnabled && !disableGoProxy,
+            };
+	          const out = await maybeUseGoProxyForPlayback(finalUrl, finalHeaders, preferredPan, goProxyEnabled && !disableGoProxy);
+	          if (out && typeof out === 'object') {
+	            if (typeof out.url === 'string' && out.url.trim()) finalUrl = out.url.trim();
+	            if (out.headers && typeof out.headers === 'object') finalHeaders = out.headers;
+              goProxyInUseBase.value = out.goProxyBase ? String(out.goProxyBase) : '';
+	          }
+	        } catch (e) {
+          // Keep direct URL as fallback (GoProxy is best-effort on the client).
+          console.warn('[GoProxy] register failed:', e && e.message ? e.message : e);
+        }
+
+          // Prefer GoProxy when available; if still carrying playback headers,
+          // register catpawrunner proxy token as the next fallback.
+          if (hasNonEmptyHeaders(finalHeaders)) {
+            const sourceUrl =
+              playResult &&
+              playResult.playSelection &&
+              typeof playResult.playSelection.proxySourceUrl === 'string' &&
+              playResult.playSelection.proxySourceUrl.trim()
+                ? playResult.playSelection.proxySourceUrl.trim()
+                : finalUrl;
+            try {
+              const out = await registerCatProxyToken({ apiBase, tvUser, url: sourceUrl, headers: finalHeaders });
+              if (out && typeof out.proxyUrl === 'string' && out.proxyUrl.trim()) {
+                finalUrl = out.proxyUrl.trim();
+                finalHeaders = {};
+                disableGoProxy = true;
+              }
+            } catch (e) {
+              // Last fallback for older backends: legacy local /proxy passthrough URL.
+              const localProxyUrl = buildLocalProxyPlaybackUrl({ apiBase, sourceUrl, headers: finalHeaders });
+              if (localProxyUrl) {
+                finalUrl = localProxyUrl;
+                finalHeaders = {};
+                disableGoProxy = true;
+              } else {
+                console.warn('[CatProxy] register failed:', e && e.message ? e.message : e);
+              }
+            }
+          }
+        } else {
+          // First attempt: play directly with server-provided headers; defer proxy registration until runtime error.
           goProxyInUseBase.value = '';
           lastGoProxyCandidate.value = {
             url: finalUrl,
             headers: finalHeaders,
             preferredPan,
-            enabled: goProxyEnabled && !disableGoProxy,
+            enabled: false,
           };
-	        const out = await maybeUseGoProxyForPlayback(finalUrl, finalHeaders, preferredPan, goProxyEnabled && !disableGoProxy);
-	        if (out && typeof out === 'object') {
-	          if (typeof out.url === 'string' && out.url.trim()) finalUrl = out.url.trim();
-	          if (out.headers && typeof out.headers === 'object') finalHeaders = out.headers;
-            goProxyInUseBase.value = out.goProxyBase ? String(out.goProxyBase) : '';
-	        }
-	      } catch (e) {
-        // Keep direct URL as fallback (GoProxy is best-effort on the client).
-        console.warn('[GoProxy] register failed:', e && e.message ? e.message : e);
-      }
+        }
 	        if (seqAtCall !== playRequestState.seq) return;
 			    playerMetaReady.value = false;
         playerBuffering.value = false;
@@ -10535,6 +10680,10 @@ const requestPlay = async (opts = {}) => {
 				    try {
 				      if (smartPlayCtx) smartDebugLog('play_ok', { ...smartPlayCtx, url: finalUrl, goProxyBase: String(goProxyInUseBase.value || '') });
 				    } catch (_e) {}
+            const canRetryWithProxy = !forceProxyFromOpts && hasNonEmptyHeaders(finalHeaders);
+            pendingProxyRetry.value = canRetryWithProxy
+              ? { playKey, panKey: panKeyAtCall, idx: idxAtCall, trigger }
+              : null;
 				    playerUrl.value = finalUrl;
 					    playerHeaders.value = finalHeaders;
 				    playingPanKey.value = panKeyAtCall;
@@ -10616,6 +10765,7 @@ const requestPlay = async (opts = {}) => {
 		  } catch (e) {
 		    const status = e && typeof e.status === 'number' ? e.status : 0;
 		    const msg = (e && e.message) || '请求失败';
+        pendingProxyRetry.value = null;
 		    try {
 		      if (smartPlayCtx) smartDebugLog('play_err', { ...smartPlayCtx, err: status ? `HTTP ${status}：${msg}` : String(msg || '') });
 		    } catch (_e) {}
@@ -11256,6 +11406,20 @@ const onPlayerError = (e) => {
       ctx.playbackReported = true;
       const err = playerRuntimeError.value || '播放失败';
       void reportTMDBPlay({ ctx, stage: 'playback', result: 'failure', error: err });
+    }
+  } catch (_e) {}
+  try {
+    const pending = pendingProxyRetry.value && typeof pendingProxyRetry.value === 'object' ? pendingProxyRetry.value : null;
+    const sameEpisode =
+      pending &&
+      String(pending.panKey || '') === String(selectedPanKey.value || '') &&
+      Number(pending.idx) === Number(selectedEpisodeIndex.value);
+    if (pending && sameEpisode && !proxyRetryInFlight.value && !playRequestState.inFlight) {
+      pendingProxyRetry.value = null;
+      proxyRetryInFlight.value = true;
+      void requestPlay({ trigger: String(pending.trigger || 'auto'), __forceProxy: true }).finally(() => {
+        proxyRetryInFlight.value = false;
+      });
     }
   } catch (_e) {}
 };
