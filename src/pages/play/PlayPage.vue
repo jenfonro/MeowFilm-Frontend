@@ -1164,6 +1164,70 @@ const AGG_STORAGE_KEY = 'tv:search:aggregate:sources:v3';
 const aggregatedSources = ref([]);
 const aggregatedFromStorage = ref(false);
 
+const toCircledIndex = (nRaw) => {
+  const n = Number.isFinite(Number(nRaw)) ? Math.floor(Number(nRaw)) : 0;
+  if (n <= 0) return '';
+  const circled = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳'];
+  if (n <= circled.length) return circled[n - 1];
+  return `(${n})`;
+};
+
+const buildAggregatedSourceDisplayMetaMap = (sourcesRaw) => {
+  const sources = Array.isArray(sourcesRaw) ? sourcesRaw : [];
+  const groupSeen = new Map();
+  const groupTotal = new Map();
+  sources.forEach((s) => {
+    if (!s) return;
+    const sk = s.siteKey ? String(s.siteKey).trim() : '';
+    const title = s.videoTitle ? String(s.videoTitle).trim() : '';
+    if (!sk || !title) return;
+    const gk = `${sk}::${title}`;
+    groupTotal.set(gk, (groupTotal.get(gk) || 0) + 1);
+  });
+
+  const out = new Map();
+  sources.forEach((s) => {
+    if (!s) return;
+    const sk = s.siteKey ? String(s.siteKey).trim() : '';
+    const api = s.spiderApi ? String(s.spiderApi).trim() : '';
+    const vid = s.videoId ? String(s.videoId).trim() : '';
+    if (!sk || !vid) return;
+    const key = `${sk}::${api}::${vid}`;
+    const siteName = s.siteName ? String(s.siteName).trim() : sk;
+    const sourceTitle = s.videoTitle ? String(s.videoTitle).trim() : '';
+    let sourceTitleMarked = sourceTitle;
+    if (sourceTitle) {
+      const gk = `${sk}::${sourceTitle}`;
+      const total = groupTotal.get(gk) || 0;
+      const idx = (groupSeen.get(gk) || 0) + 1;
+      groupSeen.set(gk, idx);
+      if (total > 1) {
+        const suffix = toCircledIndex(idx);
+        if (suffix) sourceTitleMarked = `${sourceTitle}${suffix}`;
+      }
+    }
+    const siteTitleLabel = sourceTitleMarked ? `${siteName}-${sourceTitleMarked}` : siteName;
+    out.set(key, { siteName, sourceTitle, sourceTitleMarked, siteTitleLabel });
+  });
+  return out;
+};
+
+const aggregatedSourceDisplayMetaMap = computed(() => buildAggregatedSourceDisplayMetaMap(aggregatedSources.value));
+
+const getAggregatedSourceDisplayMeta = ({ siteKey = '', spiderApi = '', videoId = '', fallbackSiteName = '' } = {}) => {
+  const sk = typeof siteKey === 'string' ? siteKey.trim() : '';
+  const api = typeof spiderApi === 'string' ? spiderApi.trim() : '';
+  const vid = typeof videoId === 'string' ? videoId.trim() : '';
+  const fallback = typeof fallbackSiteName === 'string' ? fallbackSiteName.trim() : '';
+  if (sk && vid) {
+    const key = `${sk}::${api}::${vid}`;
+    const hit = aggregatedSourceDisplayMetaMap.value && aggregatedSourceDisplayMetaMap.value.get ? aggregatedSourceDisplayMetaMap.value.get(key) : null;
+    if (hit) return hit;
+  }
+  const siteName = sk || fallback || '站点';
+  return { siteName, sourceTitle: '', sourceTitleMarked: '', siteTitleLabel: siteName };
+};
+
 const normalizeForAggKey = (s) =>
   String(s || '')
     .toLowerCase()
@@ -2760,28 +2824,43 @@ const orderedSiteSources = computed(() => {
   };
 
   if (!isTMDB) {
+    const currentMeta = getAggregatedSourceDisplayMeta({
+      siteKey: currentSiteKey,
+      spiderApi: resolvedSpiderApiFinal.value,
+      videoId: currentVideoId,
+      fallbackSiteName: resolvedSiteName.value || currentSiteKey,
+    });
     pushOne({
       kind: 'site',
       key: `${currentSiteKey}::${currentVideoId}`,
       active: true,
       siteKey: currentSiteKey,
       spiderApi: resolvedSpiderApiFinal.value,
-      siteName: resolvedSiteName.value || currentSiteKey || '站点',
+      siteName: currentMeta.siteName || resolvedSiteName.value || currentSiteKey || '站点',
       videoId: currentVideoId,
-      sourceTitle: currentSourceTitle,
+      sourceTitle: currentMeta.sourceTitleMarked || currentSourceTitle,
     });
   }
 
   (aggregatedSources.value || []).forEach((s) => {
+    const siteKey = s.siteKey;
+    const spiderApi = s.spiderApi;
+    const videoId = s.videoId;
+    const meta = getAggregatedSourceDisplayMeta({
+      siteKey,
+      spiderApi,
+      videoId,
+      fallbackSiteName: s.siteName || s.siteKey,
+    });
     pushOne({
       kind: 'site',
       key: `${s.siteKey}::${s.videoId}`,
       active: false,
-      siteKey: s.siteKey,
-      spiderApi: s.spiderApi,
-      siteName: s.siteName || s.siteKey,
-      videoId: s.videoId,
-      sourceTitle: s.videoTitle || '',
+      siteKey,
+      spiderApi,
+      siteName: meta.siteName || s.siteName || s.siteKey,
+      videoId,
+      sourceTitle: meta.sourceTitleMarked || s.videoTitle || '',
     });
   });
 
@@ -3184,15 +3263,21 @@ const sourcesTabItems = computed(() => {
   };
 
   if (!tmdbMode.value) {
+    const currentMeta = getAggregatedSourceDisplayMeta({
+      siteKey: currentSiteKey,
+      spiderApi: resolvedSpiderApiFinal.value,
+      videoId: currentVideoId,
+      fallbackSiteName: resolvedSiteName.value || currentSiteKey,
+    });
     pushOne({
       kind: 'site',
       key: `${currentSiteKey}::${currentVideoId}`,
       active: true,
       siteKey: currentSiteKey,
       spiderApi: resolvedSpiderApiFinal.value,
-      siteName: resolvedSiteName.value || '站点',
+      siteName: currentMeta.siteName || resolvedSiteName.value || '站点',
       videoId: currentVideoId,
-      title: displayTitle.value || '未命名',
+      title: currentMeta.sourceTitleMarked || displayTitle.value || '未命名',
       poster: displayPoster.value,
       remark: (detail.value.remark || props.videoRemark || '').trim(),
       error: !isSmartPanActive.value && introError.value ? String(introError.value) : '',
@@ -3200,15 +3285,24 @@ const sourcesTabItems = computed(() => {
   }
 
   (aggregatedSources.value || []).forEach((s) => {
+    const siteKey = s.siteKey;
+    const spiderApi = s.spiderApi;
+    const videoId = s.videoId;
+    const meta = getAggregatedSourceDisplayMeta({
+      siteKey,
+      spiderApi,
+      videoId,
+      fallbackSiteName: s.siteName || s.siteKey,
+    });
     pushOne({
       kind: 'site',
       key: `${s.siteKey}::${s.videoId}`,
       active: false,
-      siteKey: s.siteKey,
-      spiderApi: s.spiderApi,
-      siteName: s.siteName || s.siteKey,
-      videoId: s.videoId,
-      title: s.videoTitle || '未命名',
+      siteKey,
+      spiderApi,
+      siteName: meta.siteName || s.siteName || s.siteKey,
+      videoId,
+      title: meta.sourceTitleMarked || s.videoTitle || '未命名',
       poster: processPosterUrl(s.videoPoster || ''),
       remark: (s.videoRemark || '').trim(),
     });
@@ -3754,8 +3848,14 @@ const tmdbSitePanOptions = computed(() => {
     const key = buildTMDBSitePanKey(siteKey, spiderApi, videoId);
     if (seen.has(key)) return;
     seen.add(key);
-    const siteName = typeof src.siteName === 'string' && src.siteName.trim() ? src.siteName.trim() : siteKey;
-    const sourceTitle = typeof src.sourceTitle === 'string' ? src.sourceTitle.trim() : '';
+    const meta = getAggregatedSourceDisplayMeta({
+      siteKey,
+      spiderApi,
+      videoId,
+      fallbackSiteName: typeof src.siteName === 'string' ? src.siteName.trim() : '',
+    });
+    const siteName = meta.siteName || siteKey;
+    const sourceTitle = meta.sourceTitleMarked || (typeof src.sourceTitle === 'string' ? src.sourceTitle.trim() : '');
     out.push({
       kind: 'tmdb_site_pan',
       key,
@@ -9177,7 +9277,7 @@ const smartSwitchTo = async ({
   excludeCurrent = true,
   excludePlayed = false,
 } = {}) => {
-  if (!tmdbSmartListAvailable.value || !isSmartPanKey(selectedPanKey.value)) return false;
+  if (!tmdbSmartListAvailable.value) return false;
   if (playLoading.value) return false;
 
   const eps = selectedEpisodes.value;
@@ -9441,7 +9541,7 @@ const smartSwitchTo = async ({
 };
 
 const smartCurrentEpisodeNo = computed(() => {
-  if (!tmdbSmartListAvailable.value || !isSmartPanKey(selectedPanKey.value)) return 0;
+  if (!tmdbSmartListAvailable.value) return 0;
   const eps = selectedEpisodes.value;
   const idxRaw = Number.isFinite(Number(selectedEpisodeIndex.value)) ? Math.floor(Number(selectedEpisodeIndex.value)) : 0;
   const idx = idxRaw >= 0 ? idxRaw : 0;
@@ -9504,6 +9604,7 @@ const smartCurrentQualityLabel = computed(() => {
 
 const smartUiPanOverride = ref('');
 const smartUiQualityOverride = ref('');
+const smartPlayerControlsVisible = computed(() => !!tmdbSmartListAvailable.value);
 
 watch(
   () => smartCurrentPicked.value && smartCurrentEpisodeNo.value ? `${smartCurrentEpisodeNo.value}` : '',
@@ -9523,7 +9624,7 @@ watch(
 );
 
 const playerExtraMenus = computed(() => {
-  if (!isSmartPanActive.value) return [];
+  if (!smartPlayerControlsVisible.value) return [];
   const panTokens = Array.isArray(smartPanMatchTokensSetting.value) ? smartPanMatchTokensSetting.value : [];
   const panToken = smartCurrentPanToken.value;
   const qualityKey = smartCurrentQualityModeKey.value;
@@ -9556,7 +9657,7 @@ const playerExtraMenus = computed(() => {
 });
 
 const playerExtraActions = computed(() => {
-  if (!isSmartPanActive.value) return [];
+  if (!smartPlayerControlsVisible.value) return [];
   return [{ key: 'switch', label: '换源', ariaLabel: '换源' }];
 });
 
@@ -9564,7 +9665,7 @@ const onPlayerExtraMenuSelect = async (payload) => {
   const key = payload && payload.key != null ? String(payload.key) : '';
   const value = payload && payload.value != null ? String(payload.value) : '';
   if (!key) return;
-  if (!isSmartPanActive.value) return;
+  if (!smartPlayerControlsVisible.value) return;
 
   if (key === 'pan') {
     const cur = smartCurrentPanToken.value;
@@ -9599,7 +9700,7 @@ const onPlayerExtraMenuSelect = async (payload) => {
 const onPlayerExtraAction = async (keyRaw) => {
   const key = keyRaw != null ? String(keyRaw) : '';
   if (key !== 'switch') return;
-  if (!isSmartPanActive.value) return;
+  if (!smartPlayerControlsVisible.value) return;
   const q = (smartUiQualityOverride.value || smartCurrentQualityModeKey.value || 'auto').trim() || 'auto';
   await smartSwitchTo({
     panMode: 'prefer',
@@ -10647,7 +10748,13 @@ const requestPlay = async (opts = {}) => {
   };
 
   try {
-    playerStatsSiteName.value = String(historySiteName || '').trim();
+    const statsMeta = getAggregatedSourceDisplayMeta({
+      siteKey: historySiteKey,
+      spiderApi: historySpiderApi,
+      videoId: historyVideoId,
+      fallbackSiteName: historySiteName,
+    });
+    playerStatsSiteName.value = statsMeta && statsMeta.siteTitleLabel ? String(statsMeta.siteTitleLabel) : '';
     playerStatsPanName.value = String(flag || '').trim();
     playerStatsPathName.value = pickPathNameForStats(statsEpName);
     playerStatsRawFileName.value = pickRawFileNameForStats(statsEpName, statsEpUrl || id);
