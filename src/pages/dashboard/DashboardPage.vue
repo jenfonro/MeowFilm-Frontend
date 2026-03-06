@@ -773,8 +773,9 @@
 	              <div class="text-sm font-medium text-gray-700 dark:text-gray-200">网盘匹配规则</div>
 	            </div>
 	            <div>
-	              <input id="smartPanMatchTokensInput" class="tv-field" placeholder="百度,夸克,天翼,UC,115" />
+	              <input id="smartPanMatchTokensInput" class="tv-field" placeholder="移动,天翼,夸克,uc,百度,115" />
 	            </div>
+
 	          </div>
 
 	          <div class="admin-card space-y-4">
@@ -839,6 +840,25 @@
 	                  </table>
 	                </div>
 	              </div>
+	            </div>
+	          </div>
+
+	          <div class="admin-card space-y-4">
+	            <div class="flex items-center gap-3">
+	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">网盘映射设置</div>
+	            </div>
+	            <div class="text-xs text-gray-500 dark:text-gray-400">
+	              用于智能提取匹配别名（不影响 pan_mock 严格解析规则）
+	            </div>
+	            <div class="space-y-2">
+	              <div class="flex items-center gap-2 min-w-0">
+	                <input id="smartPanAliasMapPanInput" class="tv-field min-w-0" placeholder="网盘（如：百度）" />
+	                <input id="smartPanAliasMapAliasesInput" class="tv-field min-w-0" placeholder="网盘名称（如：百度,baidu）" />
+	                <button id="smartPanAliasMapAdd" type="button" class="btn-green">添加</button>
+	              </div>
+	              <ul id="smartPanAliasMapList" class="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+	                <li class="text-gray-500 dark:text-gray-400">无数据</li>
+	              </ul>
 	            </div>
 	          </div>
 

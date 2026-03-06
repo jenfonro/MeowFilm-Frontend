@@ -101,6 +101,10 @@ export function initDashboardPage(bootstrap = {}) {
 
   const smartSourcePriorityTokensInput = document.getElementById('smartSourcePriorityTokensInput');
   const smartPanMatchTokensInput = document.getElementById('smartPanMatchTokensInput');
+  const smartPanAliasMapPanInput = document.getElementById('smartPanAliasMapPanInput');
+  const smartPanAliasMapAliasesInput = document.getElementById('smartPanAliasMapAliasesInput');
+  const smartPanAliasMapAdd = document.getElementById('smartPanAliasMapAdd');
+  const smartPanAliasMapList = document.getElementById('smartPanAliasMapList');
   const smartSourceExtractPrioritySelect = document.getElementById('smartSourceExtractPriority');
   const smartSiteCleanKeywordsInput = document.getElementById('smartSiteCleanKeywordsInput');
   const smartPanSettingsSave = document.getElementById('smartPanSettingsSave');
@@ -4386,12 +4390,13 @@ export function initDashboardPage(bootstrap = {}) {
 	    const panMockProviderFromFlag = (flag) => {
 	      const s = typeof flag === 'string' ? flag.trim() : '';
 	      if (!s) return '';
-	      const head2 = Array.from(s).slice(0, 2).join('');
-	      const lowerHead2 = head2.toLowerCase();
-	      if (head2 === '天意' || head2 === '天翼') return '189';
-	      if (head2 === '逸动' || head2 === '和彩' || head2 === '移动') return '139';
-	      if (head2 === '夸父' || head2 === '夸克') return 'quark';
-	      if (head2 === '优夕' || lowerHead2 === 'uc') return 'uc';
+	      const headSeg = (s.split('-')[0] || '').trim();
+	      if (!headSeg) return '';
+	      const head2 = Array.from(headSeg).slice(0, 2).join('');
+	      if (head2 === '天意') return '189';
+	      if (head2 === '逸动') return '139';
+	      if (head2 === '夸父') return 'quark';
+	      if (head2 === '优夕') return 'uc';
 	      if (head2 === '百度') return 'baidu';
 	      return '';
 	    };
@@ -7429,6 +7434,7 @@ export function initDashboardPage(bootstrap = {}) {
   let smartSourceExtractPriority = '无';
   let smartSourcePriorityTokens = [];
   let smartPanMatchTokens = [];
+  let smartPanAliasMappings = [];
   let smartSiteCleanKeywords = '';
   let smartPanDefaultsConfirming = false;
   let smartSiteCleanDefaultsConfirming = false;
@@ -7471,6 +7477,22 @@ export function initDashboardPage(bootstrap = {}) {
       defaultList: [],
     });
 
+  const normalizeSmartPanAliasMappings = (list) => {
+    const arr = Array.isArray(list) ? list : [];
+    const out = [];
+    const seen = new Set();
+    arr.forEach((it) => {
+      const pan = it && it.pan != null ? String(it.pan).trim() : '';
+      if (!pan) return;
+      const aliases = normalizeCommaTokenLine(it && it.aliases != null ? String(it.aliases) : '').join(',');
+      const key = pan.toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push({ pan, aliases });
+    });
+    return out;
+  };
+
   const syncSmartDraftFromInputs = () => {
     smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(
       smartSourceExtractPrioritySelect ? smartSourceExtractPrioritySelect.value : smartSourceExtractPriority
@@ -7478,6 +7500,56 @@ export function initDashboardPage(bootstrap = {}) {
     smartSourcePriorityTokens = normalizeCommaTokenLine(smartSourcePriorityTokensInput ? smartSourcePriorityTokensInput.value : '');
     smartPanMatchTokens = normalizeCommaTokenLine(smartPanMatchTokensInput ? smartPanMatchTokensInput.value : '');
     smartSiteCleanKeywords = normalizeCommaTokenLine(smartSiteCleanKeywordsInput ? smartSiteCleanKeywordsInput.value : '').join(',');
+  };
+
+  const renderSmartPanAliasMapList = () => {
+    if (!smartPanAliasMapList) return;
+    smartPanAliasMapList.innerHTML = '';
+    const list = Array.isArray(smartPanAliasMappings) ? smartPanAliasMappings : [];
+    if (!list.length) {
+      appendEmptyItem(smartPanAliasMapList);
+      return;
+    }
+    list.forEach((it, idx) => {
+      const li = createEl('li', { className: 'flex items-center gap-3' });
+      const row = createEl('div', { className: 'tv-row tv-row-fit min-w-0' });
+      const seq = createEl('span', { className: CLS.mutedMonoXs, text: `${idx + 1}.` });
+      const inputs = createEl('div', { className: 'flex items-center gap-2 min-w-0' });
+      setStyles(inputs, { width: 'min(900px, 70vw)', maxWidth: '100%', minWidth: '240px' });
+
+      const panInput = createEl('input', { className: 'tv-field min-w-0' });
+      setStyles(panInput, { flex: '1 1 0', minWidth: '0' });
+      panInput.value = it && it.pan ? String(it.pan) : '';
+      panInput.disabled = smartSaving;
+      panInput.setAttribute('data-smart-pan-alias-idx', String(idx));
+      panInput.setAttribute('data-smart-pan-alias-field', 'pan');
+
+      const aliasesInput = createEl('input', { className: 'tv-field min-w-0' });
+      setStyles(aliasesInput, { flex: '2 1 0', minWidth: '0' });
+      aliasesInput.value = it && it.aliases ? String(it.aliases) : '';
+      aliasesInput.disabled = smartSaving;
+      aliasesInput.setAttribute('data-smart-pan-alias-idx', String(idx));
+      aliasesInput.setAttribute('data-smart-pan-alias-field', 'aliases');
+
+      const saveBtn = createEl('button', { className: 'action-btn green', text: '保存' });
+      saveBtn.type = 'button';
+      saveBtn.disabled = smartSaving;
+      saveBtn.setAttribute('data-smart-pan-alias-save', String(idx));
+
+      const delBtn = createEl('button', { className: 'action-btn red', text: '删除' });
+      delBtn.type = 'button';
+      delBtn.disabled = smartSaving;
+      delBtn.setAttribute('data-smart-pan-alias-del', String(idx));
+
+      inputs.appendChild(panInput);
+      inputs.appendChild(aliasesInput);
+      row.appendChild(seq);
+      row.appendChild(inputs);
+      row.appendChild(saveBtn);
+      row.appendChild(delBtn);
+      li.appendChild(row);
+      smartPanAliasMapList.appendChild(li);
+    });
   };
 
   const renderSmartPanSettings = () => {
@@ -7489,6 +7561,10 @@ export function initDashboardPage(bootstrap = {}) {
       smartPanMatchTokensInput.value = Array.isArray(smartPanMatchTokens) ? smartPanMatchTokens.join(',') : '';
       smartPanMatchTokensInput.disabled = smartSaving;
     }
+    if (smartPanAliasMapPanInput) smartPanAliasMapPanInput.disabled = smartSaving;
+    if (smartPanAliasMapAliasesInput) smartPanAliasMapAliasesInput.disabled = smartSaving;
+    if (smartPanAliasMapAdd) smartPanAliasMapAdd.disabled = smartSaving;
+    renderSmartPanAliasMapList();
     if (smartSiteCleanKeywordsInput) {
       smartSiteCleanKeywordsInput.value = smartSiteCleanKeywords || '';
       smartSiteCleanKeywordsInput.disabled = smartSaving;
@@ -8278,12 +8354,14 @@ export function initDashboardPage(bootstrap = {}) {
         siteCleanKeywords: smartSiteCleanKeywords,
         smartSourcePriorityTokens,
         smartPanMatchTokens,
+        smartPanAliasMappings,
       });
 
       smartSourceExtractPriority = normalizeSmartSourceExtractPriorityMode(data.smartSourceExtractPriority);
       smartSiteCleanKeywords = typeof data.siteCleanKeywords === 'string' ? data.siteCleanKeywords : smartSiteCleanKeywords;
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : smartSourcePriorityTokens;
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : smartPanMatchTokens;
+      smartPanAliasMappings = normalizeSmartPanAliasMappings(Array.isArray(data.smartPanAliasMappings) ? data.smartPanAliasMappings : smartPanAliasMappings);
 
       renderSmartPanSettings();
     } catch (err) {
@@ -8613,6 +8691,7 @@ export function initDashboardPage(bootstrap = {}) {
       smartSiteCleanKeywords = typeof data.siteCleanKeywords === 'string' ? data.siteCleanKeywords : '';
       smartSourcePriorityTokens = Array.isArray(data.smartSourcePriorityTokens) ? data.smartSourcePriorityTokens : [];
       smartPanMatchTokens = Array.isArray(data.smartPanMatchTokens) ? data.smartPanMatchTokens : [];
+      smartPanAliasMappings = normalizeSmartPanAliasMappings(Array.isArray(data.smartPanAliasMappings) ? data.smartPanAliasMappings : []);
       renderSmartPanSettings();
       await loadSmartMatchBlockKeywords();
       smartSettingsLoaded = true;
@@ -8929,8 +9008,76 @@ export function initDashboardPage(bootstrap = {}) {
     });
   }
 
+  if (smartPanAliasMapAdd) {
+    smartPanAliasMapAdd.addEventListener('click', () => {
+      if (smartSaving) return;
+      const pan = smartPanAliasMapPanInput ? String(smartPanAliasMapPanInput.value || '').trim() : '';
+      const aliases = smartPanAliasMapAliasesInput ? normalizeCommaTokenLine(smartPanAliasMapAliasesInput.value || '').join(',') : '';
+      if (!pan) {
+        notify.error('请先填写网盘');
+        return;
+      }
+      const next = (Array.isArray(smartPanAliasMappings) ? smartPanAliasMappings : []).slice();
+      const idx = next.findIndex((it) => String((it && it.pan) || '').trim().toLowerCase() === pan.toLowerCase());
+      const row = { pan, aliases };
+      if (idx >= 0) next[idx] = row;
+      else next.push(row);
+      smartPanAliasMappings = normalizeSmartPanAliasMappings(next);
+      if (smartPanAliasMapPanInput) smartPanAliasMapPanInput.value = '';
+      if (smartPanAliasMapAliasesInput) smartPanAliasMapAliasesInput.value = '';
+      renderSmartPanSettings();
+    });
+  }
+  if (smartPanAliasMapList) {
+    smartPanAliasMapList.addEventListener('click', async (e) => {
+      const target = e && e.target ? e.target : null;
+      const delBtn = target && target.closest ? target.closest('button[data-smart-pan-alias-del]') : null;
+      if (delBtn) {
+        if (smartSaving) return;
+        const idx = Number(delBtn.getAttribute('data-smart-pan-alias-del') || -1);
+        if (!Number.isFinite(idx) || idx < 0) return;
+        smartPanAliasMappings = (Array.isArray(smartPanAliasMappings) ? smartPanAliasMappings : []).filter((_r, i) => i !== idx);
+        renderSmartPanSettings();
+        return;
+      }
+      const saveBtn = target && target.closest ? target.closest('button[data-smart-pan-alias-save]') : null;
+      if (saveBtn) {
+        if (smartSaving) return;
+        try {
+          await persistSmartPreferences({ silent: true });
+          notify.success('保存成功');
+        } catch (err) {
+          notify.error((err && err.message) || '保存失败');
+        }
+      }
+    });
+    smartPanAliasMapList.addEventListener('change', (e) => {
+      const target = e && e.target ? e.target : null;
+      const input = target && target.closest ? target.closest('input[data-smart-pan-alias-idx][data-smart-pan-alias-field]') : null;
+      if (!input) return;
+      const idx = Number(input.getAttribute('data-smart-pan-alias-idx') || -1);
+      const field = String(input.getAttribute('data-smart-pan-alias-field') || '').trim();
+      if (!Number.isFinite(idx) || idx < 0) return;
+      const list = (Array.isArray(smartPanAliasMappings) ? smartPanAliasMappings : []).slice();
+      const row = list[idx] && typeof list[idx] === 'object' ? { ...list[idx] } : { pan: '', aliases: '' };
+      if (field === 'pan') row.pan = String(input.value || '').trim();
+      if (field === 'aliases') row.aliases = normalizeCommaTokenLine(input.value || '').join(',');
+      list[idx] = row;
+      smartPanAliasMappings = normalizeSmartPanAliasMappings(list);
+      renderSmartPanSettings();
+    });
+  }
+
   const DEFAULT_SMART_SOURCE_PRIORITY_TOKENS = [];
-  const DEFAULT_SMART_PAN_MATCH_TOKENS = ['逸动', '天意', '夸父', '优夕', '百度'];
+  const DEFAULT_SMART_PAN_MATCH_TOKENS = ['移动', '天翼', '夸克', 'uc', '百度', '115'];
+  const DEFAULT_SMART_PAN_ALIAS_MAPPINGS = [
+    { pan: '百度', aliases: '百度,baidu' },
+    { pan: '夸克', aliases: '夸克,quark,夸父' },
+    { pan: 'uc', aliases: 'uc,优夕' },
+    { pan: '天翼', aliases: '天翼,天意,189' },
+    { pan: '移动', aliases: '移动,139,逸动' },
+    { pan: '115', aliases: '115,Pan115' },
+  ];
   const DEFAULT_SMART_SITE_CLEAN_KEYWORDS = ['直播', '体育', '短剧', '听书', '舞曲', '哔哩'];
 
   if (smartPanDefaultsRestore) {
@@ -8956,6 +9103,7 @@ export function initDashboardPage(bootstrap = {}) {
       smartSourceExtractPriority = '无';
       smartSourcePriorityTokens = DEFAULT_SMART_SOURCE_PRIORITY_TOKENS.slice();
       smartPanMatchTokens = DEFAULT_SMART_PAN_MATCH_TOKENS.slice();
+      smartPanAliasMappings = DEFAULT_SMART_PAN_ALIAS_MAPPINGS.map((it) => ({ ...it }));
       renderSmartPanSettings();
       setButtonLoading(smartPanDefaultsRestoreConfirm, true);
       try {

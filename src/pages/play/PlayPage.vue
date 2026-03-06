@@ -792,7 +792,8 @@ const ensurePlaySettingsLoaded = async () => {
     !Array.isArray(base.magicEpisodeCleanRegexRules) ||
     !Array.isArray(base.magicMovieRules) ||
     !Array.isArray(base.smartSourcePriorityTokens) ||
-    !Array.isArray(base.smartPanMatchTokens);
+    !Array.isArray(base.smartPanMatchTokens) ||
+    !Array.isArray(base.smartPanAliasMappings);
   if (!needs) return;
   try {
     const b = await fetchBootstrap('play');
@@ -4861,6 +4862,23 @@ const smartPanMatchTokensSetting = computed(() => {
   return list.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean);
 });
 
+const smartPanAliasMappingsSetting = computed(() => {
+  const list = effectiveBootstrapSettings.value.smartPanAliasMappings;
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  const seen = new Set();
+  list.forEach((it) => {
+    const pan = it && it.pan != null ? String(it.pan).trim() : '';
+    if (!pan) return;
+    const aliases = it && it.aliases != null ? String(it.aliases).trim() : '';
+    const key = pan.toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push({ pan, aliases });
+  });
+  return out;
+});
+
 watch(
   () => `${props.tmdbType || ''}::${String(props.tmdbId || '')}`,
   () => refreshDoubanSeasonMeta(),
@@ -5098,18 +5116,44 @@ const compiledSmartSourcePriorityTokens = computed(() => {
 
 const compiledSmartPanMatchTokens = computed(() => {
   const list = Array.isArray(smartPanMatchTokensSetting.value) ? smartPanMatchTokensSetting.value : [];
+  const aliasMapRows = Array.isArray(smartPanAliasMappingsSetting.value) ? smartPanAliasMappingsSetting.value : [];
+  const aliasMap = new Map();
+  aliasMapRows.forEach((it) => {
+    const panKey = it && it.pan ? String(it.pan).trim().toLowerCase() : '';
+    if (!panKey) return;
+    const aliases = String((it && it.aliases) || '')
+      .replaceAll('，', ',')
+      .split(',')
+      .map((s) => String(s || '').trim().toLowerCase())
+      .filter(Boolean);
+    if (!aliasMap.has(panKey)) aliasMap.set(panKey, aliases);
+  });
+
   const out = [];
   const seen = new Set();
   list.forEach((t) => {
     const s = typeof t === 'string' ? t.trim() : '';
     if (!s) return;
     const key = s.toLowerCase();
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    out.push(key);
+    if (!key) return;
+    const aliases = aliasMap.get(key) || [];
+    const tokens = [key].concat(aliases);
+    tokens.forEach((tk) => {
+      const x = String(tk || '').trim().toLowerCase();
+      if (!x || seen.has(x)) return;
+      seen.add(x);
+      out.push(x);
+    });
   });
   return out;
 });
+
+const smartPanMatchLabelText = (label) => {
+  const raw = typeof label === 'string' ? label.trim() : '';
+  if (!raw) return '';
+  const cut = raw.includes('-') ? (raw.split('-')[0] || '').trim() : raw;
+  return String(cut || '').toLowerCase();
+};
 
 const matchesAnyMagicRule = (text, rules) => {
   const normalizeForMagic = (input) => {
@@ -5543,7 +5587,7 @@ const smartPanEpisodes = computed(() => {
 
   const labelTokenIdxOf = (label) => {
     if (allowAnyPan) return 0;
-    const s = typeof label === 'string' ? label.trim().toLowerCase() : '';
+    const s = smartPanMatchLabelText(label);
     if (!s) return -1;
     for (let i = 0; i < panTokenOrder.length; i += 1) {
       const t = panTokenOrder[i];
@@ -5785,7 +5829,7 @@ const smartMovieEpisodes = computed(() => {
   const candidates = [];
   const panTokenOrder = compiledSmartPanMatchTokens.value;
   const labelTokenIdxOf = (label) => {
-    const s = typeof label === 'string' ? label.trim().toLowerCase() : '';
+    const s = smartPanMatchLabelText(label);
     if (!s) return -1;
     for (let i = 0; i < panTokenOrder.length; i += 1) {
       const t = panTokenOrder[i];
@@ -7853,7 +7897,7 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
 
   const panTokenOrder = compiledSmartPanMatchTokens.value;
   const labelTokenIdxOf = (label) => {
-    const s = typeof label === 'string' ? label.trim().toLowerCase() : '';
+    const s = smartPanMatchLabelText(label);
     if (!s) return -1;
     for (let i = 0; i < panTokenOrder.length; i += 1) {
       const t = panTokenOrder[i];
@@ -8280,7 +8324,7 @@ const smartMatchPan = (cand, token) => {
   const t = typeof token === 'string' ? token.trim() : '';
   if (!t) return true;
   const label = cand && cand.panLabel != null ? String(cand.panLabel) : '';
-  return label.toLowerCase().includes(t.toLowerCase());
+  return smartPanMatchLabelText(label).includes(t.toLowerCase());
 };
 
 const smartMatchQualityMode = (cand, modeKey) => {
@@ -8742,7 +8786,7 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
   const panTokenOrder = compiledSmartPanMatchTokens.value;
 
   const labelTokenIdxOf = (label) => {
-    const s = typeof label === 'string' ? label.trim().toLowerCase() : '';
+    const s = smartPanMatchLabelText(label);
     if (!s) return -1;
     for (let i = 0; i < panTokenOrder.length; i += 1) {
       const t = panTokenOrder[i];
@@ -9612,7 +9656,7 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
       : ['网盘'];
 
   const labelTokenIdxOf = (label) => {
-    const s = typeof label === 'string' ? label.trim().toLowerCase() : '';
+    const s = smartPanMatchLabelText(label);
     if (!s) return -1;
     for (let i = 0; i < panTokenOrder.length; i += 1) {
       const t = panTokenOrder[i];
