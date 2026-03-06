@@ -532,12 +532,14 @@ const escapeHtml = (s) =>
 	  const displayName = normalizeInfoValue(extra.displayName);
 	  const siteName = normalizeInfoValue(extra.siteName);
 	  const panName = normalizeInfoValue(extra.panName);
+	  const pathName = normalizeInfoValue(extra.pathName);
 	  const rawFileName = normalizeInfoValue(extra.rawFileName);
 
 	  const lines = [];
 	  if (displayName) lines.push({ k: '名称', v: displayName });
 	  if (siteName) lines.push({ k: '站源', v: siteName });
 	  if (panName) lines.push({ k: '网盘', v: panName });
+	  if (pathName) lines.push({ k: '路径', v: pathName });
 	  if (rawFileName) lines.push({ k: '文件', v: rawFileName });
 	  if (!lines.length) return '';
 
@@ -1975,7 +1977,7 @@ watch(
 	watch(
 	  () => {
 	    const extra = props.statsExtra && typeof props.statsExtra === 'object' ? props.statsExtra : {};
-	    return `${normalizeInfoValue(extra.displayName)}|${normalizeInfoValue(extra.siteName)}|${normalizeInfoValue(extra.panName)}|${normalizeInfoValue(extra.rawFileName)}`;
+	    return `${normalizeInfoValue(extra.displayName)}|${normalizeInfoValue(extra.siteName)}|${normalizeInfoValue(extra.panName)}|${normalizeInfoValue(extra.pathName)}|${normalizeInfoValue(extra.rawFileName)}`;
 	  },
 	  () => syncInfoExtraIntoArtInfoPanel(),
 	  { immediate: true }

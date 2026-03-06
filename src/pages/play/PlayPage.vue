@@ -953,12 +953,14 @@ const smartDebugLog = (type, payload) => {
 
 const playerStatsSiteName = ref('');
 const playerStatsPanName = ref('');
+const playerStatsPathName = ref('');
 const playerStatsRawFileName = ref('');
 const playerStatsExtra = computed(() => {
   return {
     displayName: displayTitle.value || '',
     siteName: playerStatsSiteName.value || '',
     panName: playerStatsPanName.value || '',
+    pathName: playerStatsPathName.value || '',
     rawFileName: playerStatsRawFileName.value || '',
   };
 });
@@ -5277,15 +5279,84 @@ const buildCandidateLowerText = (texts) => {
   return out.join(' ');
 };
 
-const extractEpisodeCandidateTexts = (ep) => {
-  const rawNames = [];
-  if (ep && ep.url != null) {
-    const list = extractRawNamesFromEpisodeUrl(String(ep.url || ''));
-    list.forEach((n) => {
-      const s = String(n || '').trim();
-      if (s) rawNames.push(s);
-    });
+const smartSplitDisplayPathSegments = (nameRaw) => {
+  const name = typeof nameRaw === 'string' ? nameRaw : '';
+  if (!name) return [];
+  const cut = (() => {
+    const idx = name.indexOf('$');
+    return idx >= 0 ? name.slice(0, idx) : name;
+  })();
+  return String(cut || '')
+    .split(/[\\/]+/g)
+    .map((s) => String(s || '').trim())
+    .filter((s) => s);
+};
+
+const smartEpisodePathLayers = (ep) => {
+  const rawNames =
+    ep && ep.url != null ? extractRawNamesFromEpisodeUrl(String(ep.url || '')) : [];
+  let fileName = '';
+  for (let i = 0; i < rawNames.length; i += 1) {
+    const t = String(rawNames[i] || '').trim();
+    if (!t) continue;
+    fileName = t;
+    break;
   }
+  const segs = smartSplitDisplayPathSegments(ep && ep.name != null ? String(ep.name || '') : '');
+  const currentDir = segs.length ? String(segs[segs.length - 1] || '').trim() : '';
+  const parentDir = segs.length > 1 ? String(segs[segs.length - 2] || '').trim() : '';
+  return { fileName: String(fileName || '').trim(), currentDir, parentDir, rawNames };
+};
+
+const smartExtractSeasonMarkerText = (textRaw) => {
+  const text = typeof textRaw === 'string' ? textRaw.trim() : '';
+  if (!text) return '';
+  const found = new Set();
+  const pushSeason = (nRaw) => {
+    const n = Number.isFinite(Number(nRaw)) ? Math.floor(Number(nRaw)) : 0;
+    if (n > 0 && n <= 99) found.add(n);
+  };
+  const parseNum = (raw) => {
+    const s = String(raw || '').trim();
+    if (!s) return 0;
+    const digits = s.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
+    if (/^\d+$/.test(digits)) return Number.parseInt(digits, 10) || 0;
+    return parseChineseNumeralToInt(s);
+  };
+
+  text.replace(/(?:^|[\s._-])S\s*(\d{1,2})(?:$|[\s._-])/gi, (_m, s1) => {
+    pushSeason(s1);
+    return _m;
+  });
+  text.replace(/\bSeason\s*(\d{1,2})\b/gi, (_m, s1) => {
+    pushSeason(s1);
+    return _m;
+  });
+  text.replace(/第\s*([0-9０-９一二三四五六七八九十百千两零〇]{1,16})\s*季/gi, (_m, s1) => {
+    pushSeason(parseNum(s1));
+    return _m;
+  });
+
+  if (found.size !== 1) return '';
+  const only = Array.from(found)[0];
+  return Number.isFinite(Number(only)) && Number(only) > 0 ? `第${Number(only)}季` : '';
+};
+
+const smartGuessQualityByLayers = ({ fileName = '', currentDir = '', parentDir = '' } = {}) => {
+  const qFile = smartGuessQuality(fileName);
+  if (qFile) return qFile;
+  const qCurr = smartGuessQuality(currentDir);
+  if (qCurr) return qCurr;
+  if (smartExtractSeasonMarkerText(currentDir)) {
+    const qParent = smartGuessQuality(parentDir);
+    if (qParent) return qParent;
+  }
+  return '';
+};
+
+const extractEpisodeCandidateTexts = (ep) => {
+  const layers = smartEpisodePathLayers(ep);
+  const rawNames = Array.isArray(layers.rawNames) ? layers.rawNames : [];
 
   const displayName = ep && ep.name != null ? String(ep.name || '').trim() : '';
   const rawLooksUseful = rawNames.some((n) => isInformativeEpisodeText(n));
@@ -5297,10 +5368,27 @@ const extractEpisodeCandidateTexts = (ep) => {
     if (!out.includes(v)) out.push(v);
   };
 
-  if (!rawLooksUseful && displayName) push(displayName);
+  if (layers.fileName) push(layers.fileName);
+  if (!rawLooksUseful && !layers.fileName && displayName) push(displayName);
   rawNames.forEach((n) => push(n));
-  if (ep && ep.name != null) {
-    if (rawLooksUseful) push(displayName);
+  const fileHasSeason = !!smartExtractSeasonMarkerText(layers.fileName);
+  if (!fileHasSeason && layers.currentDir) {
+    const currentMarker = smartExtractSeasonMarkerText(layers.currentDir);
+    if (currentMarker) push(currentMarker);
+    push(layers.currentDir);
+    if (!currentMarker) {
+      const qCurr = smartGuessQuality(layers.currentDir);
+      if (qCurr && layers.parentDir) {
+        const parentMarker = smartExtractSeasonMarkerText(layers.parentDir);
+        if (parentMarker) {
+          push(parentMarker);
+          push(layers.parentDir);
+        }
+      }
+    }
+  }
+  if (ep && ep.name != null && rawLooksUseful) {
+    if (!layers.fileName || displayName !== layers.fileName) push(displayName);
   }
   return out;
 };
@@ -6365,55 +6453,22 @@ const tmdbHistoryRemark = computed(() => {
 const extractStrictSeasonHintFromPathLikeText = (text) => {
   const s = typeof text === 'string' ? text.trim() : '';
   if (!s) return 0;
-
-  const split = (val) =>
-    String(val || '')
-      .split(/[\\/]+/g)
-      .map((x) => String(x || '').trim())
-      .filter((x) => x);
-  const segments = split(s);
-  if (segments.length < 2) return 0;
-
-  const isQualityFolder = (seg) => {
-    const v = typeof seg === 'string' ? seg.trim() : '';
-    if (!v) return false;
-    return /^(?:4k|2160p|1080p|720p|hdr|dv|dolby|dolby[-_. ]?vision)$/i.test(v);
+  const segs = smartSplitDisplayPathSegments(s);
+  const current = segs.length ? String(segs[segs.length - 1] || '') : s;
+  const parent = segs.length > 1 ? String(segs[segs.length - 2] || '') : '';
+  const marker = smartExtractSeasonMarkerText(current);
+  const toInt = (mk) => {
+    const m = String(mk || '').match(/第\s*(\d{1,2})\s*季/);
+    if (!m || !m[1]) return 0;
+    const n = Number.parseInt(String(m[1]), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
   };
-
-  const parseSeasonMarker = (seg) => {
-    const v = typeof seg === 'string' ? seg.trim() : '';
-    if (!v) return 0;
-    const mS = v.match(/(?:^|[\s._-])S(\d{1,2})(?:$|[\s._-])/i);
-    if (mS && mS[1]) {
-      const n = Number.parseInt(String(mS[1]), 10);
-      if (Number.isFinite(n) && n > 0 && n <= 99) return n;
-    }
-    const mSeason = v.match(/\bSeason\s*(\d{1,2})\b/i);
-    if (mSeason && mSeason[1]) {
-      const n = Number.parseInt(String(mSeason[1]), 10);
-      if (Number.isFinite(n) && n > 0 && n <= 99) return n;
-    }
-    // Strict: only treat "第X季" as a season marker (avoid false positives like "共2季").
-    const mCn = v.match(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季/i);
-    if (mCn && mCn[1]) {
-      const raw = String(mCn[1]);
-      const digits = raw.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
-      const n = /^\d+$/.test(digits) ? Number.parseInt(digits, 10) : parseChineseNumeralToInt(raw);
-      if (Number.isFinite(n) && n > 0 && n <= 999) return Math.floor(n);
-    }
-    return 0;
-  };
-
-  const last = segments[segments.length - 1];
-  const parent = segments.length >= 2 ? segments[segments.length - 2] : '';
-  const grand = segments.length >= 3 ? segments[segments.length - 3] : '';
-
-  let hit = parseSeasonMarker(last);
-  if (hit) return hit;
-
-  if (isQualityFolder(parent)) hit = parseSeasonMarker(grand);
-  else hit = parseSeasonMarker(parent);
-  return hit || 0;
+  if (marker) return toInt(marker);
+  if (smartGuessQuality(current)) {
+    const parentMarker = smartExtractSeasonMarkerText(parent);
+    if (parentMarker) return toInt(parentMarker);
+  }
+  return 0;
 };
 
 // For magic matching:
@@ -8224,9 +8279,14 @@ const smartMaybeReindexTMDBSmartEntry = (entry) => {
 
 const smartGuessQuality = (hayRaw) => {
   const hay = String(hayRaw || '').toUpperCase();
-  if (/(2160P|2160|4K)/.test(hay)) return '4K';
-  if (/(1080P|1080)/.test(hay)) return '1080P';
-  if (/(720P|720)/.test(hay)) return '720P';
+  const has4k = /(2160P|2160|4K)/.test(hay);
+  const has1080 = /(1080P|1080)/.test(hay);
+  const has720 = /(720P|720)/.test(hay);
+  const hitCount = (has4k ? 1 : 0) + (has1080 ? 1 : 0) + (has720 ? 1 : 0);
+  if (hitCount >= 2) return '';
+  if (has4k) return '4K';
+  if (has1080) return '1080P';
+  if (has720) return '720P';
   return '';
 };
 
@@ -8254,16 +8314,24 @@ const smartQualityTierRankOf = (q, fps60) => {
 };
 
 const smartBuildHayLower = (cand) => {
-  const rawLower = cand && typeof cand.rawLower === 'string' ? cand.rawLower : '';
-  const epName = cand && cand.ep && cand.ep.name != null ? String(cand.ep.name) : '';
+  const layers = smartEpisodePathLayers(cand && cand.ep ? cand.ep : null);
   const srcTitleLower = cand && typeof cand.srcTitleLower === 'string' ? cand.srcTitleLower : '';
   const srcRemarkLower = cand && typeof cand.srcRemarkLower === 'string' ? cand.srcRemarkLower : '';
-  return `${rawLower} ${String(epName || '').toLowerCase()} ${srcTitleLower} ${srcRemarkLower}`.trim();
+  const parts = [];
+  if (layers.fileName) parts.push(String(layers.fileName).toLowerCase());
+  if (layers.currentDir) parts.push(String(layers.currentDir).toLowerCase());
+  if (!parts.length) {
+    const rawLower = cand && typeof cand.rawLower === 'string' ? cand.rawLower : '';
+    const epName = cand && cand.ep && cand.ep.name != null ? String(cand.ep.name) : '';
+    return `${rawLower} ${String(epName || '').toLowerCase()} ${srcTitleLower} ${srcRemarkLower}`.trim();
+  }
+  return `${parts.join(' ')} ${srcTitleLower} ${srcRemarkLower}`.trim();
 };
 
 const smartComputeCandidateFeatures = (cand) => {
   const hayLower = smartBuildHayLower(cand);
-  const quality = smartGuessQuality(hayLower);
+  const layers = smartEpisodePathLayers(cand && cand.ep ? cand.ep : null);
+  const quality = smartGuessQualityByLayers(layers);
   const qualityRank = smartQualityRankOf(quality);
   const enhanceMatch = computePriorityMatch(hayLower, SMART_ENHANCE_TOKENS);
   const idx = enhanceMatch && Array.isArray(enhanceMatch.indices) ? enhanceMatch.indices : [];
@@ -8350,12 +8418,33 @@ const smartCandidateKey = (cand) => {
 const smartCleanPanToken = (label) => {
   const s = typeof label === 'string' ? label.trim() : '';
   if (!s) return '';
+  const text = smartPanMatchLabelText(s);
+  if (!text) return '';
   const tokens = Array.isArray(smartPanMatchTokensSetting.value) ? smartPanMatchTokensSetting.value : [];
-  const low = s.toLowerCase();
+  const aliasRows = Array.isArray(smartPanAliasMappingsSetting.value) ? smartPanAliasMappingsSetting.value : [];
+  const aliasMap = new Map();
+  aliasRows.forEach((it) => {
+    const pan = it && it.pan != null ? String(it.pan).trim() : '';
+    if (!pan) return;
+    const key = pan.toLowerCase();
+    const aliases = String((it && it.aliases) || '')
+      .replaceAll('，', ',')
+      .split(',')
+      .map((x) => String(x || '').trim().toLowerCase())
+      .filter(Boolean);
+    aliasMap.set(key, aliases);
+  });
+
   for (let i = 0; i < tokens.length; i += 1) {
     const t = typeof tokens[i] === 'string' ? tokens[i].trim() : '';
     if (!t) continue;
-    if (low.includes(t.toLowerCase())) return t;
+    const canonical = t.toLowerCase();
+    const probes = [canonical].concat(aliasMap.get(canonical) || []);
+    for (let j = 0; j < probes.length; j += 1) {
+      const p = String(probes[j] || '').trim().toLowerCase();
+      if (!p) continue;
+      if (text.includes(p)) return t;
+    }
   }
   return '';
 };
@@ -10547,14 +10636,25 @@ const requestPlay = async (opts = {}) => {
     const name = typeof episodeName === 'string' ? episodeName.trim() : '';
     return name;
   };
+  const pickPathNameForStats = (episodeName) => {
+    const raw = typeof episodeName === 'string' ? episodeName.trim() : '';
+    if (!raw) return '';
+    const head = raw.includes('$') ? String(raw.split('$')[0] || '').trim() : raw;
+    if (!head) return '';
+    // Only show directory-like text as "路径" to avoid duplicating plain filenames.
+    if (head.includes('/')) return head;
+    return '';
+  };
 
   try {
     playerStatsSiteName.value = String(historySiteName || '').trim();
     playerStatsPanName.value = String(flag || '').trim();
+    playerStatsPathName.value = pickPathNameForStats(statsEpName);
     playerStatsRawFileName.value = pickRawFileNameForStats(statsEpName, statsEpUrl || id);
   } catch (_e) {
     playerStatsSiteName.value = '';
     playerStatsPanName.value = '';
+    playerStatsPathName.value = '';
     playerStatsRawFileName.value = '';
   }
 
