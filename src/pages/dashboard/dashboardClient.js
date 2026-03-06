@@ -7477,12 +7477,19 @@ export function initDashboardPage(bootstrap = {}) {
       defaultList: [],
     });
 
+  // Sequence labels are display-only. Strip common "1. " / "2) " prefixes
+  // before persisting user-edited values to avoid polluting saved config/cache.
+  const stripDisplaySequencePrefix = (text) => {
+    const raw = typeof text === 'string' ? text : String(text || '');
+    return raw.replace(/^\s*\d+\s*[.．、)）]\s+/u, '').trim();
+  };
+
   const normalizeSmartPanAliasMappings = (list) => {
     const arr = Array.isArray(list) ? list : [];
     const out = [];
     const seen = new Set();
     arr.forEach((it) => {
-      const pan = it && it.pan != null ? String(it.pan).trim() : '';
+      const pan = stripDisplaySequencePrefix(it && it.pan != null ? String(it.pan) : '');
       if (!pan) return;
       const aliases = normalizeCommaTokenLine(it && it.aliases != null ? String(it.aliases) : '').join(',');
       const key = pan.toLowerCase();
@@ -7596,7 +7603,7 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const decodeEpisodeRule = (rule) => {
-    const raw = typeof rule === 'string' ? rule.trim() : '';
+    const raw = stripDisplaySequencePrefix(typeof rule === 'string' ? rule : '');
     if (!raw) return null;
     if (raw.startsWith('{') && raw.endsWith('}')) {
       try {
@@ -7661,7 +7668,7 @@ export function initDashboardPage(bootstrap = {}) {
   };
 
   const normalizeAggregateRegexRuleInput = (text) => {
-    const p = normalizePatternInput(text);
+    const p = normalizePatternInput(stripDisplaySequencePrefix(text));
     if (!p || !p.pattern) return '';
     const flags = typeof p.flags === 'string' ? p.flags.trim() : '';
     if (flags) return `/${p.pattern}/${flags}`;
@@ -9011,7 +9018,7 @@ export function initDashboardPage(bootstrap = {}) {
   if (smartPanAliasMapAdd) {
     smartPanAliasMapAdd.addEventListener('click', () => {
       if (smartSaving) return;
-      const pan = smartPanAliasMapPanInput ? String(smartPanAliasMapPanInput.value || '').trim() : '';
+      const pan = smartPanAliasMapPanInput ? stripDisplaySequencePrefix(smartPanAliasMapPanInput.value || '') : '';
       const aliases = smartPanAliasMapAliasesInput ? normalizeCommaTokenLine(smartPanAliasMapAliasesInput.value || '').join(',') : '';
       if (!pan) {
         notify.error('请先填写网盘');
@@ -9060,7 +9067,7 @@ export function initDashboardPage(bootstrap = {}) {
       if (!Number.isFinite(idx) || idx < 0) return;
       const list = (Array.isArray(smartPanAliasMappings) ? smartPanAliasMappings : []).slice();
       const row = list[idx] && typeof list[idx] === 'object' ? { ...list[idx] } : { pan: '', aliases: '' };
-      if (field === 'pan') row.pan = String(input.value || '').trim();
+      if (field === 'pan') row.pan = stripDisplaySequencePrefix(input.value || '');
       if (field === 'aliases') row.aliases = normalizeCommaTokenLine(input.value || '').join(',');
       list[idx] = row;
       smartPanAliasMappings = normalizeSmartPanAliasMappings(list);
