@@ -848,7 +848,7 @@
 	              <div class="text-sm font-semibold text-gray-700 dark:text-gray-200">网盘映射设置</div>
 	            </div>
 	            <div class="text-xs text-gray-500 dark:text-gray-400">
-	              用于智能提取匹配别名（不影响 pan_mock 严格解析规则）
+	              用于智能提取匹配别名
 	            </div>
 	            <div class="space-y-2">
 	              <div class="flex items-center gap-2 min-w-0">

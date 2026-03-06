@@ -803,6 +803,69 @@ const ensurePlaySettingsLoaded = async () => {
   } catch (_e) {}
 };
 
+const panLoginSettingsCache = ref(null);
+let panLoginSettingsInFlight = null;
+
+const hasMeaningfulPanLoginValue = (obj) => {
+  if (!obj || typeof obj !== 'object') return false;
+  const values = Object.values(obj || {});
+  for (let i = 0; i < values.length; i += 1) {
+    const v = values[i];
+    if (typeof v === 'string' && v.trim()) return true;
+    if (v && typeof v === 'object' && hasMeaningfulPanLoginValue(v)) return true;
+  }
+  return false;
+};
+
+const loadPanLoginSettingsForPlay = async () => {
+  if (panLoginSettingsCache.value && typeof panLoginSettingsCache.value === 'object') {
+    return panLoginSettingsCache.value;
+  }
+  if (panLoginSettingsInFlight) return await panLoginSettingsInFlight;
+  panLoginSettingsInFlight = (async () => {
+    try {
+      const data = await apiGetJson(
+        `/api/home${buildQuery({
+          includePlayHistory: 0,
+          includeFavorites: 0,
+          includePanLoginSettings: 1,
+        })}`,
+        { cacheMs: 5000 }
+      );
+      const store = data && data.panLoginSettings && typeof data.panLoginSettings === 'object' ? data.panLoginSettings : {};
+      panLoginSettingsCache.value = store;
+      return store;
+    } catch (_e) {
+      return null;
+    } finally {
+      panLoginSettingsInFlight = null;
+    }
+  })();
+  return await panLoginSettingsInFlight;
+};
+
+const isBuiltinPanProviderConfiguredForPlay = async (provider) => {
+  const p = typeof provider === 'string' ? provider.trim() : '';
+  if (!p) return false;
+  const keyMap = {
+    baidu: 'baidu',
+    quark: 'quark',
+    uc: 'uc',
+    '139': '139',
+    '189': '189',
+  };
+  const key = keyMap[p] || '';
+  if (!key) return false;
+  const store = await loadPanLoginSettingsForPlay();
+  if (!store || typeof store !== 'object') {
+    // Do not block playback on state API errors; keep legacy behavior.
+    return true;
+  }
+  const slot = store[key] && typeof store[key] === 'object' ? store[key] : {};
+  // For quark/uc, only check cookie slot of the same provider (do not rely on *_tv).
+  return hasMeaningfulPanLoginValue(slot);
+};
+
 const debugEnabled = computed(() => {
   try {
     if (typeof window === 'undefined') return false;
@@ -7337,6 +7400,7 @@ const probeFetchSmall = async (urlString, timeoutMs = 6000) => {
       mode: 'cors',
       credentials: 'omit',
       cache: 'no-store',
+      referrerPolicy: 'no-referrer',
       headers: { Range: 'bytes=0-0' },
       signal: controller ? controller.signal : undefined,
     });
@@ -10530,6 +10594,10 @@ const requestPlay = async (opts = {}) => {
 
 		          const provider = panMockProviderFromFlag(flag);
 		          if (provider) {
+                const providerConfigured = await isBuiltinPanProviderConfiguredForPlay(provider);
+                if (!providerConfigured) {
+                  // Fallback to spider-native play flow when builtin pan account is not configured.
+                } else {
 		            const call = async (path, body) => {
 		              const headers = { 'Content-Type': 'application/json' };
 		              const u = typeof tvUser === 'string' ? tvUser.trim() : '';
@@ -10581,6 +10649,7 @@ const requestPlay = async (opts = {}) => {
 		              const out = await call('/api/pan/baidu/play', { flag: String(flag || '').trim(), id: String(id || '').trim() });
 		              return { raw: out, payload: { ...out, header: out.headers || out.header || {} }, url: out.url || '', rawHeaders: out.headers || out.header || {} };
 		            }
+                }
 		          }
 
 	          const raw = await requestCatPlay({
@@ -10635,7 +10704,7 @@ const requestPlay = async (opts = {}) => {
 
         const goProxyEnabled = !!effectiveBootstrapSettings.value.goProxyEnabled;
         const preferredPan = guessPreferredPanFromFlag(flag);
-        if (forceProxyFromOpts) {
+        const applyProxyFallbackChain = async () => {
 	        // HLS/m3u8: if possible, use catpawrunner m3u8 proxy mode to avoid CORS/IP-bound issues.
 	        // - index.m3u8: catpawrunner fetches playlist with headers and returns absolute URIs (segments are upstream)
 	        // - proxy.m3u8: playlist + segments/key are proxied through catpawrunner
@@ -10703,8 +10772,13 @@ const requestPlay = async (opts = {}) => {
               }
             }
           }
+        };
+
+        if (forceProxyFromOpts) {
+          await applyProxyFallbackChain();
         } else {
-          // First attempt: play directly with server-provided headers; defer proxy registration until runtime error.
+          // First attempt: probe direct playback with headers.
+          // If probe fails, immediately register proxy/token fallback (no need to wait player runtime error).
           goProxyInUseBase.value = '';
           lastGoProxyCandidate.value = {
             url: finalUrl,
@@ -10712,6 +10786,19 @@ const requestPlay = async (opts = {}) => {
             preferredPan,
             enabled: false,
           };
+          if (hasNonEmptyHeaders(finalHeaders)) {
+            const sourceUrl =
+              playResult &&
+              playResult.playSelection &&
+              typeof playResult.playSelection.proxySourceUrl === 'string' &&
+              playResult.playSelection.proxySourceUrl.trim()
+                ? playResult.playSelection.proxySourceUrl.trim()
+                : finalUrl;
+            const probe = await probeFetchSmall(sourceUrl || finalUrl, 5000);
+            if (!probe.ok) {
+              await applyProxyFallbackChain();
+            }
+          }
         }
 	        if (seqAtCall !== playRequestState.seq) return;
 			    playerMetaReady.value = false;
