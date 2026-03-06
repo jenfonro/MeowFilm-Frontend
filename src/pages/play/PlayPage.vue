@@ -7385,7 +7385,37 @@ const parseM3U8FirstUrls = (text) => {
   return { firstUri, keyUri };
 };
 
-const probeFetchSmall = async (urlString, timeoutMs = 6000) => {
+const buildProbeRequestHeaders = (rawHeaders) => {
+  const out = { Range: 'bytes=0-0' };
+  const h = rawHeaders && typeof rawHeaders === 'object' ? rawHeaders : {};
+  const blocked = new Set([
+    'origin',
+    'referer',
+    'host',
+    'cookie',
+    'user-agent',
+    'content-length',
+    'content-encoding',
+    'accept-encoding',
+    'connection',
+    'range',
+  ]);
+  Object.keys(h).forEach((k) => {
+    const key = typeof k === 'string' ? k.trim() : '';
+    if (!key) return;
+    const lower = key.toLowerCase();
+    if (blocked.has(lower)) return;
+    if (lower.startsWith('sec-')) return;
+    const v = h[k];
+    if (v == null) return;
+    const s = Array.isArray(v) ? String(v[0] == null ? '' : v[0]).trim() : String(v).trim();
+    if (!s) return;
+    out[key] = s;
+  });
+  return out;
+};
+
+const probeFetchSmall = async (urlString, timeoutMs = 6000, requestHeaders = {}) => {
   const url = typeof urlString === 'string' ? urlString.trim() : '';
   if (!url) return { ok: false, status: 0, message: 'missing url' };
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -7401,7 +7431,7 @@ const probeFetchSmall = async (urlString, timeoutMs = 6000) => {
       credentials: 'omit',
       cache: 'no-store',
       referrerPolicy: 'no-referrer',
-      headers: { Range: 'bytes=0-0' },
+      headers: buildProbeRequestHeaders(requestHeaders),
       signal: controller ? controller.signal : undefined,
     });
     const status = resp && typeof resp.status === 'number' ? resp.status : 0;
@@ -10777,8 +10807,8 @@ const requestPlay = async (opts = {}) => {
         if (forceProxyFromOpts) {
           await applyProxyFallbackChain();
         } else {
-          // First attempt: probe direct playback with headers.
-          // If probe fails, immediately register proxy/token fallback (no need to wait player runtime error).
+          // Keep legacy behavior: do not pre-probe.
+          // Start direct playback first, then fallback chain only after player runtime error.
           goProxyInUseBase.value = '';
           lastGoProxyCandidate.value = {
             url: finalUrl,
@@ -10786,19 +10816,6 @@ const requestPlay = async (opts = {}) => {
             preferredPan,
             enabled: false,
           };
-          if (hasNonEmptyHeaders(finalHeaders)) {
-            const sourceUrl =
-              playResult &&
-              playResult.playSelection &&
-              typeof playResult.playSelection.proxySourceUrl === 'string' &&
-              playResult.playSelection.proxySourceUrl.trim()
-                ? playResult.playSelection.proxySourceUrl.trim()
-                : finalUrl;
-            const probe = await probeFetchSmall(sourceUrl || finalUrl, 5000);
-            if (!probe.ok) {
-              await applyProxyFallbackChain();
-            }
-          }
         }
 	        if (seqAtCall !== playRequestState.seq) return;
 			    playerMetaReady.value = false;
