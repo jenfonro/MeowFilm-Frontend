@@ -4372,12 +4372,13 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
 const panMockProviderFromFlag = (flag) => {
   const s = typeof flag === 'string' ? flag.trim() : '';
   if (!s) return '';
-  const head2 = Array.from(s).slice(0, 2).join('');
-  const lowerHead2 = head2.toLowerCase();
-  if (head2 === '天意' || head2 === '天翼') return '189';
-  if (head2 === '逸动' || head2 === '和彩' || head2 === '移动') return '139';
-  if (head2 === '夸父' || head2 === '夸克') return 'quark';
-  if (head2 === '优夕' || lowerHead2 === 'uc') return 'uc';
+  const headSeg = (s.split('-')[0] || '').trim();
+  if (!headSeg) return '';
+  const head2 = Array.from(headSeg).slice(0, 2).join('');
+  if (head2 === '天意') return '189';
+  if (head2 === '逸动') return '139';
+  if (head2 === '夸父') return 'quark';
+  if (head2 === '优夕') return 'uc';
   if (head2 === '百度') return 'baidu';
   return '';
 };
