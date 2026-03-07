@@ -534,6 +534,8 @@ const playParams = ref({
   videoIntro: '',
   videoPoster: '',
   videoRemark: '',
+  switchOnlyToken: 0,
+  openFromSearch: 0,
 });
 
 function dispatchHomeView(view) {
@@ -755,6 +757,13 @@ const syncMobileContextFromStorage = () => {
 			    hasScrollBeforePlay = true;
 			  }
 			  const d0 = e && e.detail && typeof e.detail === 'object' ? e.detail : {};
+			  const switchOnly = !!(d0 && d0.switchOnly);
+			  const switchOnlyToken0 =
+			    switchOnly && Number.isFinite(Number(d0.switchOnlyToken))
+			      ? Math.max(1, Math.floor(Number(d0.switchOnlyToken)))
+			      : switchOnly
+			        ? Date.now()
+			        : 0;
 			  const prevParams = playParams.value && typeof playParams.value === 'object' ? playParams.value : {};
 			  const prevContentKey = typeof prevParams.contentKey === 'string' ? prevParams.contentKey.trim() : '';
 			  const nextContentKey0 = typeof d0.contentKey === 'string' ? d0.contentKey.trim() : '';
@@ -793,6 +802,9 @@ const syncMobileContextFromStorage = () => {
 			    contentKey: typeof d0.contentKey === 'string' ? d0.contentKey : '',
 			    tmdbId: Number.isFinite(Number(d0.tmdbId)) ? Number(d0.tmdbId) : 0,
 			    tmdbType: typeof d0.tmdbType === 'string' ? d0.tmdbType.trim().toLowerCase() : '',
+			    switchOnlyToken: switchOnlyToken0,
+			    autoPlayResetToken: Number.isFinite(Number(d0.autoPlayResetToken)) ? Number(d0.autoPlayResetToken) : 0,
+          openFromSearch: Number.isFinite(Number(d0.openFromSearch)) ? Number(d0.openFromSearch) : 0,
 			  };
 			  isPlayView.value = true;
 			  if (!wasInPlay) {
@@ -806,6 +818,8 @@ const syncMobileContextFromStorage = () => {
 			      }
 			    });
 			  }
+
+			  if (switchOnly) return;
 
 			  void (async () => {
 			    const d = await resolveOpenPlayDetail(d0);

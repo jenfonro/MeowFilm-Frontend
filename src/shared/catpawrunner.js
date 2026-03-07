@@ -73,6 +73,7 @@ export async function requestCatSpider({
   query,
   headers: extraHeaders,
   signal,
+  timeoutMs,
 }) {
   const safeAction = typeof action === 'string' ? action.trim() : '';
   const safeSpider = typeof spiderApi === 'string' ? spiderApi.trim() : '';
@@ -80,6 +81,9 @@ export async function requestCatSpider({
   const q = query && typeof query === 'object' ? query : null;
   const extra = extraHeaders && typeof extraHeaders === 'object' ? extraHeaders : null;
   const sig = signal || null;
+  const timeoutRaw = Number(timeoutMs);
+  const timeout =
+    Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? Math.max(1000, Math.floor(timeoutRaw)) : 0;
 
   if (!safeAction) throw new Error('action 不能为空');
   if (!safeSpider || !(/^\/spider\/|^\/[a-f0-9]{10}\/spider\//.test(safeSpider))) throw new Error('站点 API 无效');
@@ -101,13 +105,46 @@ export async function requestCatSpider({
   }
   const headers = { 'Content-Type': 'application/json', ...(extra ? extra : {}) };
 
-  const resp = await fetch(target.toString(), {
+  let controller = null;
+  let timer = null;
+  if (timeout || sig) {
+    controller = new AbortController();
+    if (sig) {
+      try {
+        if (sig.aborted) controller.abort();
+        else sig.addEventListener('abort', () => controller.abort(), { once: true });
+      } catch (_e) {}
+    }
+    if (timeout) {
+      timer = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (_e) {}
+      }, timeout);
+    }
+  }
+
+  let resp;
+  try {
+    resp = await fetch(target.toString(), {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
     credentials: 'omit',
-    ...(sig ? { signal: sig } : {}),
+    ...(controller ? { signal: controller.signal } : sig ? { signal: sig } : {}),
   });
+  } catch (e) {
+    if (timer) clearTimeout(timer);
+    if (e && (e.name === 'AbortError' || e.code === 20)) {
+      const err = new Error('请求超时');
+      err.status = 408;
+      err.code = 'ETIMEDOUT';
+      throw err;
+    }
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
   const status = resp && typeof resp.status === 'number' ? resp.status : 0;
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {

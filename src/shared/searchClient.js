@@ -6,6 +6,8 @@ export function initSearchPage() {
   const historyEndpoint = '/api/searchhistory';
   const sitesEndpoint = '/api/user/sites';
   const AGG_STORAGE_KEY = 'tv:search:aggregate:sources:v3';
+  const SEARCH_AGG_RUNTIME_KEY = '__tvSearchAggregateState';
+  const SEARCH_AGG_EVENT = 'tv:search-aggregate-state';
 
   const form = document.getElementById('searchForm');
   const input = document.getElementById('searchInput');
@@ -50,7 +52,6 @@ export function initSearchPage() {
   let siteOrderMap = new Map();
   let magicSearchCleanRules = [];
   let searchDisplayMode = 'sites'; // sites | tmdb | both
-  let smartSkipSiteKeySet = new Set();
 
   const safeParseJsonArray = (text) => {
     try {
@@ -89,11 +90,6 @@ export function initSearchPage() {
     const modeRaw = ((configEl && configEl.getAttribute('data-search-display-mode')) || 'sites').trim();
     searchDisplayMode = modeRaw === 'tmdb' || modeRaw === 'both' || modeRaw === 'sites' ? modeRaw : 'sites';
 
-    const skipRaw = (configEl && configEl.getAttribute('data-smart-skip-site-keys')) || '[]';
-    const skipKeys = safeParseJsonArray(skipRaw)
-      .map((k) => (typeof k === 'string' ? k.trim() : ''))
-      .filter(Boolean);
-    smartSkipSiteKeySet = new Set(skipKeys);
   };
 
   refreshSearchConfigFromDom();
@@ -109,6 +105,19 @@ export function initSearchPage() {
       throw err;
     }
     return data;
+  };
+
+  const publishSearchAggregateState = (state) => {
+    try {
+      if (typeof window === 'undefined') return;
+      const payload = state && typeof state === 'object' ? state : {};
+      window[SEARCH_AGG_RUNTIME_KEY] = payload;
+      window.dispatchEvent(
+        new CustomEvent(SEARCH_AGG_EVENT, {
+          detail: { state: payload },
+        })
+      );
+    } catch (_e) {}
   };
 
   // TMDB detail hydration cache (in-memory, per page session).
@@ -378,6 +387,7 @@ export function initSearchPage() {
               : it && typeof it.tmdbType === 'string'
                 ? it.tmdbType
                 : '',
+            openFromSearch: 1,
         },
         title: name,
         poster: it && it.pic ? String(it.pic) : '',
@@ -500,7 +510,7 @@ export function initSearchPage() {
 	      const typeLabel = mt === 'tv' ? '剧集' : mt === 'movie' ? '电影' : '';
 	      const siteLabel = typeLabel;
 	      const groupKey = it && typeof it.__groupKey === 'string' ? String(it.__groupKey) : '';
-	      const detail = {
+      const detail = {
         tmdbId,
         tmdbType: mt,
         contentKey: groupKey || '',
@@ -512,6 +522,7 @@ export function initSearchPage() {
         videoId: it && it.id != null ? String(it.id) : '',
         videoPoster: it && it.poster ? String(it.poster) : '',
         videoRemark: remarkText,
+        openFromSearch: 1,
       };
       const cardWrapper = createPosterCard({
         wrapperEl: wrapper,
@@ -569,6 +580,16 @@ export function initSearchPage() {
     if (!q) return;
     lastSearchKeyword = q;
     matchBlockedKeySet = new Set();
+    publishSearchAggregateState({
+      runId,
+      keyword: q,
+      done: 0,
+      total: 0,
+      failed: 0,
+      running: true,
+      updatedAt: Date.now(),
+      groups: {},
+    });
 
     const debugEnabled = (() => {
       try {
@@ -931,14 +952,19 @@ export function initSearchPage() {
     };
 
     let insertSeq = 0;
+    let pinTMDBFirstByExactHit = false;
     const insertCardSorted = (wrapperEl, score) => {
+      const kindPriorityOf = (siteKey) => {
+        if (!pinTMDBFirstByExactHit) return 0;
+        return siteKey === 'tmdb' ? 0 : 1;
+      };
       wrapperEl.dataset.score = String(score);
       wrapperEl.dataset.seq = String((insertSeq += 1));
       const wrapperScore = Number(wrapperEl.dataset.score || 0);
       const wrapperTitleLen = Number(wrapperEl.dataset.titleLen || 0);
       const wrapperSeq = Number(wrapperEl.dataset.seq || 0);
       const wrapperSiteKey = wrapperEl && wrapperEl.dataset ? String(wrapperEl.dataset.siteKey || '') : '';
-      const wrapperKindPriority = wrapperSiteKey === 'tmdb' ? 0 : 1;
+      const wrapperKindPriority = kindPriorityOf(wrapperSiteKey);
       const wrapperSiteOrder = Number(wrapperEl && wrapperEl.dataset ? wrapperEl.dataset.siteOrder : 0);
       const wrapperTmdbRank = Number(wrapperEl && wrapperEl.dataset ? wrapperEl.dataset.tmdbRank : 0);
       const children = Array.from(grid.children || []);
@@ -948,7 +974,7 @@ export function initSearchPage() {
         const elTitleLen = Number(el && el.dataset ? el.dataset.titleLen : 0);
         const elSeq = Number(el && el.dataset ? el.dataset.seq : 0);
         const elSiteKey = el && el.dataset ? String(el.dataset.siteKey || '') : '';
-        const elKindPriority = elSiteKey === 'tmdb' ? 0 : 1;
+        const elKindPriority = kindPriorityOf(elSiteKey);
         const elSiteOrder = Number(el && el.dataset ? el.dataset.siteOrder : 0);
         const elTmdbRank = Number(el && el.dataset ? el.dataset.tmdbRank : 0);
 
@@ -1275,7 +1301,8 @@ export function initSearchPage() {
 	            tmdbSeenTitleType.add(k);
 	            return true;
 	          });
-        dbg('tmdb_map', { size: tmdbByGroupKeyByType.size, items: items.length });
+        pinTMDBFirstByExactHit = items.some((it) => Number(it && it.__score) >= 1000);
+        dbg('tmdb_map', { size: tmdbByGroupKeyByType.size, items: items.length, tmdbPinned: pinTMDBFirstByExactHit ? 1 : 0 });
         if (!items.length) return 0;
         const appended = appendTMDBItemsToGrid({
           gridEl: grid,
@@ -1307,13 +1334,21 @@ export function initSearchPage() {
     };
     const sites = (await loadSites()).filter((s) => {
       if (!s || s.enabled === false || s.search === false || !s.api || isConfigCenter(s)) return false;
-      const k = s && typeof s.key === 'string' ? s.key.trim() : '';
-      if (k && smartSkipSiteKeySet.has(k)) return false;
       return true;
     });
     if (runId !== currentRunId) return;
     if (!sites.length) {
       setStatus(grid.children.length ? '' : '暂无可用站点');
+      publishSearchAggregateState({
+        runId,
+        keyword: q,
+        done: 0,
+        total: 0,
+        failed: 0,
+        running: false,
+        updatedAt: Date.now(),
+        groups: {},
+      });
       return;
     }
 
@@ -1323,6 +1358,57 @@ export function initSearchPage() {
 
 	    const aggregateByGroup = new Map();
 	    const aggregateCardByGroup = new Map();
+    const buildSearchAggregateBridgeGroups = () => {
+      const groups = {};
+      aggregateByGroup.forEach((group, groupKey) => {
+        const gk = typeof groupKey === 'string' ? groupKey.trim() : '';
+        const nk = normalizeAggStorageKey(gk);
+        const key = nk || gk;
+        if (!key) return;
+        const bySite = group && group.bySite instanceof Map ? group.bySite : new Map();
+        const sources = [];
+        bySite.forEach((entry) => {
+          const matches = entry && entry.matches instanceof Map ? entry.matches : new Map();
+          matches.forEach((m) => {
+            const siteKey = m && m.siteKey ? String(m.siteKey).trim() : '';
+            const spiderApi = m && m.spiderApi ? String(m.spiderApi).trim() : '';
+            const videoId = m && m.videoId ? String(m.videoId).trim() : '';
+            if (!siteKey || !spiderApi || !videoId) return;
+            sources.push({
+              siteKey,
+              spiderApi,
+              siteName: m && m.siteName ? String(m.siteName) : siteKey,
+              videoId,
+              videoTitle: m && m.videoTitle ? String(m.videoTitle) : '',
+              videoPoster: m && m.videoPoster ? String(m.videoPoster) : '',
+              videoRemark: m && m.videoRemark ? String(m.videoRemark) : '',
+            });
+          });
+        });
+        groups[key] = {
+          groupKey: gk,
+          contentKey: key,
+          title: group && group.title ? String(group.title) : '',
+          siteCount: computeAggregateSourceSiteCount(bySite),
+          updatedAt: Date.now(),
+          sources,
+        };
+      });
+      return groups;
+    };
+    const publishSearchAggregateBridgeState = ({ running }) => {
+      if (runId !== currentRunId) return;
+      publishSearchAggregateState({
+        runId,
+        keyword: q,
+        done,
+        total: sites.length,
+        failed,
+        running: !!running,
+        updatedAt: Date.now(),
+        groups: buildSearchAggregateBridgeGroups(),
+      });
+    };
 
 	    const parseSeasonedProgress = (rawText) => {
 	      const raw = typeof rawText === 'string' ? rawText : '';
@@ -1734,6 +1820,7 @@ export function initSearchPage() {
 
     const updateMeta = () => updateProgressAndCount(done, sites.length);
     updateMeta();
+    publishSearchAggregateBridgeState({ running: true });
 
     const queue = sites.slice();
     const runners = new Array(Math.max(1, searchConcurrency)).fill(null).map(async () => {
@@ -1790,6 +1877,7 @@ export function initSearchPage() {
           // Always update groups for this site so we can build aggregate cards after toggling off "原始列表".
           if (site && site.key) {
             const sk = String(site.key);
+            let groupTouched = false;
             normalItems.forEach((it) => {
               const vid = it && it.id != null ? String(it.id) : '';
               const rawName = it && it.name ? String(it.name) : '';
@@ -1829,6 +1917,7 @@ export function initSearchPage() {
               }
               group.bySite.set(sk, entry);
               aggregateByGroup.set(groupKey, group);
+              groupTouched = true;
             });
 
             // After updating groups, activate aggregate cards for any group that now has >=2 sites.
@@ -1843,6 +1932,7 @@ export function initSearchPage() {
                 ensureStreamingAggregateCardForGroup(gk);
               });
             }
+            if (groupTouched) publishSearchAggregateBridgeState({ running: true });
           }
 
           const filteredItems = normalItems;
@@ -1872,6 +1962,7 @@ export function initSearchPage() {
         } finally {
           done += 1;
           updateMeta();
+          publishSearchAggregateBridgeState({ running: done < sites.length });
           if (done >= sites.length) {
             if (!grid.children.length) {
               setStatus('暂无搜索结果');
@@ -1899,6 +1990,7 @@ export function initSearchPage() {
     } else {
       setStatus('');
     }
+    publishSearchAggregateBridgeState({ running: false });
 
     // Allow toggling off "原始列表" to build aggregate cards without re-searching.
     refreshAggregatesForCurrentRun = () => {

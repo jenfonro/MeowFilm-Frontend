@@ -147,7 +147,7 @@ export function createPosterCard({
           window.__tvLowPriorityPauseAt = Date.now();
         }
       } catch (_e) {}
-      window.dispatchEvent(new CustomEvent('tv:open-play', { detail: d }));
+      window.dispatchEvent(new CustomEvent('tv:open-play', { detail: { ...d, autoPlayResetToken: Date.now() } }));
     } catch (_e) {}
   };
   bindActivate(card, activate);

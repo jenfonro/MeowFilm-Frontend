@@ -209,6 +209,50 @@
 
                     <!-- Episodes tab -->
                     <div id="episodesTab" class="flex flex-col flex-1 min-h-0" v-show="activeTab === 'episodes'">
+                      <div
+                        v-if="!tmdbMode"
+                        class="episode-controls-row flex items-center gap-2.5 mb-3 -mx-6 px-6 flex-shrink-0"
+                      >
+                        <div class="flex-1 min-w-0">
+                          <div ref="siteSourceDropdownEl" class="custom-dropdown play-pan-dropdown">
+                            <button
+                              type="button"
+                              class="custom-dropdown-btn play-pan-btn"
+                              :disabled="orderedSiteSources.length === 0"
+                              @click="siteSourceDropdownOpen = !siteSourceDropdownOpen"
+                            >
+                              {{ selectedSiteSourceLabel }}
+                            </button>
+                            <div class="custom-dropdown-list" :class="{ hidden: !siteSourceDropdownOpen }">
+                              <div
+                                v-for="src in orderedSiteSources"
+                                :key="src.key"
+                                class="custom-dropdown-item"
+                                :class="{ active: src.active }"
+                                role="option"
+                                :title="formatSiteSourceLabel(src)"
+                                @click="selectSiteSourceFromEpisodes(src)"
+                              >
+                                {{ formatSiteSourceLabel(src) }}
+                              </div>
+                              <div v-if="orderedSiteSources.length === 0" class="custom-dropdown-item">
+                                <span>暂无数据</span>
+                              </div>
+                              <div
+                                v-if="sourcesLoading || canLoadMoreSources"
+                                class="custom-dropdown-item"
+                                :class="{ 'opacity-60 cursor-not-allowed': sourcesLoading }"
+                                role="option"
+                                @click="canLoadMoreSources ? loadMoreSources() : null"
+                              >
+                                <span v-if="sourcesLoading">加载中...</span>
+                                <span v-else>加载更多...</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                       <div class="episode-controls-row flex items-center gap-2.5 mb-3 -mx-6 px-6 flex-shrink-0">
                         <div class="flex-1 min-w-0">
 	                          <div ref="panDropdownEl" class="custom-dropdown play-pan-dropdown">
@@ -255,11 +299,21 @@
                               >
                                 {{ o.label }}
                               </div>
-		                              <div v-if="panDropdownOptions.length === 0 && !smartListAvailable" class="custom-dropdown-item">
-		                                <span>
-		                                  {{ panDropdownStatusText || '暂无数据' }}
-		                                </span>
-		                              </div>
+                              <div v-if="panDropdownOptions.length === 0 && !smartListAvailable" class="custom-dropdown-item">
+                                <span>
+                                  {{ panDropdownStatusText || '暂无数据' }}
+                                </span>
+                              </div>
+                              <div
+                                v-if="tmdbMode && (sourcesLoading || canLoadMoreSources)"
+                                class="custom-dropdown-item"
+                                :class="{ 'opacity-60 cursor-not-allowed': sourcesLoading }"
+                                role="option"
+                                @click="canLoadMoreSources ? loadMoreSources() : null"
+                              >
+                                <span v-if="sourcesLoading">加载中...</span>
+                                <span v-else>加载更多...</span>
+                              </div>
 		                              </template>
 		                            </div>
 		                          </div>
@@ -329,6 +383,15 @@
                           <div class="tv-spinner" aria-hidden="true"></div>
                         </div>
                         <button
+                          v-if="tmdbMode && !tmdbMovieMode && isTMDBSitePanKey(selectedPanKey)"
+                          type="button"
+                          class="episode-control episode-control--btn flex-shrink-0"
+                          v-show="!rawListMode"
+                          @click="toggleEpisodeMetaMode"
+                        >
+                          {{ episodeMetaModeLabel }}
+                        </button>
+                        <button
                           id="rawListBtn"
                           type="button"
                           class="episode-control episode-control--btn flex-shrink-0"
@@ -378,7 +441,7 @@
 	                                type="button"
 	                                class="episode-season-btn"
 	                                :data-active="Number(s.season) === Number(selectedSeason) ? 'true' : 'false'"
-	                                @click="selectSeason(s.season)"
+	                                @click="selectSeason(s.season, { fromUser: true })"
 	                              >
 	                                {{ s.label }}
 	                              </button>
@@ -442,7 +505,7 @@
 
 	                      <div id="rawListView" ref="rawListViewEl" class="raw-list flex-1 overflow-y-auto content-start pb-4" v-show="rawListMode">
 	                        <div
-	                          v-if="(introLoading || selectedPanAuxLoading || panDropdownLoading || smartPanMockLoading || (tmdbMovieMode && isSmartPanActive && tmdbMovieSmartResolving)) && rawListItems.length === 0"
+	                          v-if="(introLoading || selectedPanAuxLoading || panDropdownLoading || smartPanMockLoading || tmdbEpisodesLoading || (tmdbMovieMode && isSmartPanActive && tmdbMovieSmartResolving)) && rawListItems.length === 0"
 	                          class="tv-center-loading"
 	                        >
 	                          <div class="tv-spinner" aria-hidden="true"></div>
@@ -467,9 +530,7 @@
 			                              :class="{
 			                              'raw-list__row--active':
 			                                it.kind !== 'dir' &&
-			                                (it.index === selectedEpisodeIndex ||
-			                                  (selectedEpisodeIndex < 0 && playingPanKey === selectedPanKey && playingEpisodeIndex === it.index) ||
-			                                  (playingSmartEpisodeNo > 0 && episodeGlobalNoOf(it) === playingSmartEpisodeNo)),
+			                                isEpisodeActive(it.index, it),
 			                            }"
 			                            :title="it.text"
 			                            @click="onRawListItemClick(it)"
@@ -479,24 +540,31 @@
 	                        </div>
                       </div>
 
+                      <div
+                        id="episodeButtons"
+                        ref="episodeButtonsEl"
+                        class="relative flex flex-wrap gap-3 overflow-y-auto flex-1 content-start pb-4"
+                        v-show="!rawListMode"
+                      >
 	                      <div
-	                        id="episodeButtons"
-	                        class="relative flex flex-wrap gap-3 overflow-y-auto flex-1 content-start pb-4"
-	                        v-show="!rawListMode"
+	                        v-if="(introLoading || panDropdownLoading) && !smartListAvailable && groupedDisplayedEpisodes.length === 0"
+	                        class="tv-episode-overlay"
+	                        aria-hidden="true"
 	                      >
-	                        <div
-	                          v-if="(introLoading || panDropdownLoading) && !smartListAvailable && groupedDisplayedEpisodes.length === 0"
-	                          class="tv-episode-overlay"
-	                          aria-hidden="true"
-	                        >
-	                          <div class="tv-episode-overlay__inner">
-	                            <div class="tv-spinner" aria-hidden="true"></div>
-	                            <div class="tv-center-loading__text">加载中...</div>
-	                          </div>
+	                        <div class="tv-episode-overlay__inner">
+	                          <div class="tv-spinner" aria-hidden="true"></div>
+	                          <div class="tv-center-loading__text">加载中...</div>
 	                        </div>
-	                        <div v-else-if="doubanEpisodesLoading && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay" aria-hidden="true">
-	                          <div class="tv-episode-overlay__inner">
-	                            <div class="tv-spinner" aria-hidden="true"></div>
+	                      </div>
+	                      <div v-else-if="tmdbEpisodesLoading && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay" aria-hidden="true">
+	                        <div class="tv-episode-overlay__inner">
+	                          <div class="tv-spinner" aria-hidden="true"></div>
+	                          <div class="tv-center-loading__text">加载中...</div>
+	                        </div>
+	                      </div>
+	                      <div v-else-if="doubanEpisodesLoading && groupedDisplayedEpisodes.length === 0" class="tv-episode-overlay" aria-hidden="true">
+	                        <div class="tv-episode-overlay__inner">
+	                          <div class="tv-spinner" aria-hidden="true"></div>
 	                            <div class="tv-center-loading__text">加载中...</div>
 	                          </div>
 	                        </div>
@@ -517,15 +585,20 @@
 			                              v-for="ep in groupedDisplayedEpisodes"
 			                              :key="ep.key"
 			                              type="button"
-			                              class="episode-num-btn flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap font-mono"
-			                              :class="(ep.index === selectedEpisodeIndex ||
-			                                (selectedEpisodeIndex < 0 && playingPanKey === selectedPanKey && playingEpisodeIndex === ep.index) ||
-			                                (playingSmartEpisodeNo > 0 && episodeGlobalNoOf(ep) === playingSmartEpisodeNo))
-			                                ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
-			                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'"
-			                              :title="ep.name"
-			                              @click="selectEpisode(ep.index)"
-			                            >
+			                              class="episode-num-btn relative flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap font-mono"
+                              :class="isEpisodeActive(ep.index, ep)
+                                ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'"
+                              :data-episode-active="isEpisodeActive(ep.index, ep) ? 'true' : 'false'"
+                              :title="ep.name"
+                              @click="selectEpisode(ep.index)"
+                            >
+                              <span
+                                v-if="ep.is4k"
+                                class="absolute -top-1 -right-1 text-[10px] leading-none px-1 py-0.5 rounded bg-green-500 text-white shadow-sm"
+                              >
+                                4K
+                              </span>
 	                              {{ ep.displayNo != null ? ep.displayNo : ep.no }}
 	                            </button>
 	                          </template>
@@ -622,7 +695,7 @@
                         </div>
 
                         <button
-                          v-if="sourcesLoading || sourcesError || canLoadMoreSources || sourcesSearchedOnce || sourcesTabItems.length <= 1"
+                          v-if="sourcesLoading || sourcesError || !sourcesSearchedOnce || canLoadMoreSources || sourcesTabItems.length <= 1"
                           type="button"
                           class="source-more-btn flex items-center justify-center gap-2"
                           :class="canLoadMoreSources ? 'cursor-pointer hover:bg-black/5 dark:hover:bg-white/5' : 'cursor-default'"
@@ -638,7 +711,8 @@
                           </template>
                           <template v-else-if="canLoadMoreSources">
                             <span>加载更多</span>
-                            <span class="text-xs text-gray-500 dark:text-gray-400">剩余 {{ sourcesSearchRemainingCount }} 个站点</span>
+                            <span v-if="sourcesSearchRemainingCount > 0" class="text-xs text-gray-500 dark:text-gray-400">剩余 {{ sourcesSearchRemainingCount }} 个站点</span>
+                            <span v-else class="text-xs text-gray-500 dark:text-gray-400">继续搜索站点</span>
                           </template>
                           <template v-else>
                             <span>暂无更多</span>
@@ -759,6 +833,9 @@ const props = defineProps({
   contentKey: { type: String, default: '' },
   tmdbId: { type: Number, default: 0 },
 	tmdbType: { type: String, default: '' },
+  switchOnlyToken: { type: Number, default: 0 },
+  autoPlayResetToken: { type: Number, default: 0 },
+  openFromSearch: { type: Number, default: 0 },
 });
 
 const tmdbMode = computed(() => {
@@ -876,18 +953,37 @@ const debugEnabled = computed(() => {
   }
 });
 
+watch(
+  () => debugEnabled.value,
+  (on) => {
+    if (!on) return;
+    try {
+      if (typeof window === 'undefined') return;
+      window.__tvDebug = {
+        selectedPanAuxLoading,
+        selectedEpisodes,
+        rawListItems,
+        groupedDisplayedEpisodes,
+        tmdbSmartEpisodeCount,
+        tmdbSmartEpisodes,
+        doubanSmartListAvailable,
+        doubanSeasonMeta,
+        episodeMatchByIndex,
+      };
+    } catch (_e) {}
+  },
+  { immediate: true }
+);
+
 const smartDebugEvents = ref([]);
 const formatSmartLogTs = (ms) => {
   try {
     const d = new Date(Number.isFinite(Number(ms)) ? Number(ms) : Date.now());
     const pad = (n) => String(Number.isFinite(Number(n)) ? Math.floor(Number(n)) : 0).padStart(2, '0');
-    const y = d.getFullYear();
-    const m = pad(d.getMonth() + 1);
-    const day = pad(d.getDate());
     const hh = pad(d.getHours());
     const mm = pad(d.getMinutes());
     const ss = pad(d.getSeconds());
-    return `${y}/${m}/${day} ${hh}:${mm}:${ss}`;
+    return `${hh}:${mm}:${ss}`;
   } catch (_e) {
     return '';
   }
@@ -899,17 +995,46 @@ const smartConsoleLog = (evt) => {
     const t = evt.type != null ? String(evt.type) : '';
     if (!t) return;
     const ts = formatSmartLogTs(evt.at);
+    const mod = evt.module != null ? String(evt.module) : '';
+    const tag = mod ? mod : 'smart';
 
     const pick = (k) => (evt[k] != null ? String(evt[k]) : '');
     const siteKey = pick('siteKey') || pick('siteId') || '';
     const siteName = pick('siteName') || '';
     const panFlag = pick('panFlag') || pick('flag') || pick('label') || '';
+    const query = pick('query') || '';
+    const queryKey = pick('queryKey') || '';
+    const queryLoose = pick('queryLoose') || '';
+    const queryKeyLoose = pick('queryKeyLoose') || '';
+    const runtimeKey = pick('runtimeKey') || '';
+    const searchSeq = pick('searchSeq') || '';
+    const fromHistory = pick('fromHistory') || '';
+    const fromProps = pick('fromProps') || '';
     const provider = pick('provider') || '';
     const showName = pick('showName') || '';
     const rawName = pick('rawName') || '';
     const spiderApi = pick('spiderApi') || pick('spider') || '';
     const videoId = pick('videoId') || '';
     const want = pick('want') || '';
+    const reason = pick('reason') || '';
+    const ok = pick('ok') || '';
+    const vodLen = pick('vodLen') || '';
+    const keys = pick('keys') || '';
+    const count = pick('count') || '';
+    const total = pick('total') || '';
+    const matched = pick('matched') || '';
+    const len = pick('len') || '';
+    const sample = pick('sample') || '';
+    const mode = pick('mode') || '';
+    const panKey = pick('panKey') || '';
+    const tmdbCount = pick('tmdbCount') || '';
+    const tmdbLen = pick('tmdbLen') || '';
+    const doubanAvail = pick('doubanAvail') || '';
+    const doubanSeasons = pick('doubanSeasons') || '';
+    const doubanCounts = pick('doubanCounts') || '';
+    const queue = pick('queue') || '';
+    const done = pick('done') || '';
+    const loading = pick('loading') || '';
     const quality = pick('quality') || '';
     const ms = pick('ms') || '';
     const episodes = pick('episodes') || '';
@@ -918,6 +1043,39 @@ const smartConsoleLog = (evt) => {
 
     const parts = [];
     if (want) parts.push(`want=${want}`);
+    if (reason) parts.push(`reason=${reason}`);
+    if (ok) parts.push(`ok=${ok}`);
+    if (vodLen) parts.push(`vodLen=${vodLen}`);
+    if (keys) parts.push(`keys=${keys}`);
+    if (count) parts.push(`count=${count}`);
+    if (total) parts.push(`total=${total}`);
+    if (matched) parts.push(`matched=${matched}`);
+    const has = (k) => Object.prototype.hasOwnProperty.call(evt, k);
+    if (has('head')) parts.push(`head=${head}`);
+    if (has('tail')) parts.push(`tail=${tail}`);
+    if (len) parts.push(`len=${len}`);
+    if (sample) parts.push(`sample=${sample}`);
+    if (mode) parts.push(`mode=${mode}`);
+    if (panKey) parts.push(`panKey=${panKey}`);
+    if (tmdbCount) parts.push(`tmdbCount=${tmdbCount}`);
+    if (tmdbLen) parts.push(`tmdbLen=${tmdbLen}`);
+    if (doubanAvail !== '') parts.push(`doubanAvail=${doubanAvail}`);
+    if (doubanSeasons) parts.push(`doubanSeasons=${doubanSeasons}`);
+    if (doubanCounts) parts.push(`doubanCounts=${doubanCounts}`);
+    if (has('maxSeason')) parts.push(`maxSeason=${maxSeason}`);
+    if (has('maxEpisode')) parts.push(`maxEpisode=${maxEpisode}`);
+    if (has('seasonCounts')) parts.push(`seasonCounts=${seasonCounts}`);
+    if (queue) parts.push(`queue=${queue}`);
+    if (done) parts.push(`done=${done}`);
+    if (loading) parts.push(`loading=${loading}`);
+    if (query) parts.push(`query=${query}`);
+    if (queryKey) parts.push(`queryKey=${queryKey}`);
+    if (queryLoose) parts.push(`queryLoose=${queryLoose}`);
+    if (queryKeyLoose) parts.push(`queryKeyLoose=${queryKeyLoose}`);
+    if (runtimeKey) parts.push(`runtimeKey=${runtimeKey}`);
+    if (searchSeq) parts.push(`searchSeq=${searchSeq}`);
+    if (fromHistory) parts.push(`fromHistory=${fromHistory}`);
+    if (fromProps) parts.push(`fromProps=${fromProps}`);
     if (siteKey) parts.push(`site=${siteKey}${siteName ? `(${siteName})` : ''}`);
     if (panFlag) parts.push(`panFlag=${panFlag}`);
     if (provider) parts.push(`provider=${provider}`);
@@ -931,7 +1089,7 @@ const smartConsoleLog = (evt) => {
     if (url) parts.push(`url=${url}`);
     if (err) parts.push(`err=${err}`);
 
-    const line = `${ts ? `${ts} ` : ''}[smart][${t}]${parts.length ? ` ${parts.join(' ')}` : ''}`;
+    const line = `${ts ? `${ts} ` : ''}[${tag}][${t}]${parts.length ? ` ${parts.join(' ')}` : ''}`;
     // eslint-disable-next-line no-console
     console.log(line);
   } catch (_e) {}
@@ -951,8 +1109,49 @@ const smartDebugLog = (type, payload) => {
   } catch (_e) {}
 };
 
+const playDebugLog = (type, payload) => {
+  try {
+    if (!debugEnabled.value) return;
+    const t = typeof type === 'string' ? type.trim() : '';
+    if (!t) return;
+    const data = payload && typeof payload === 'object' ? payload : payload != null ? { value: payload } : {};
+    const ts = formatSmartLogTs(Date.now());
+    const reason = data && data.reason != null ? String(data.reason) : '';
+    const tag = /^(resume_|autoplay|auto_)/i.test(reason) ? 'auto_select' : 'play';
+    const picks = [
+      'reason',
+      'prev',
+      'next',
+      'idx',
+      'total',
+      'len',
+      'wantedSeason',
+      'wantedEpisode',
+      'wantedIndex',
+      'tmdbSmart',
+      'doubanSmart',
+      'panKey',
+      'mode',
+      'head',
+      'tail',
+      'maxSeason',
+      'maxEpisode',
+      'seasonCounts',
+      'sample',
+    ];
+    const parts = [];
+    picks.forEach((k) => {
+      if (data[k] != null && data[k] !== '') parts.push(`${k}=${String(data[k])}`);
+    });
+    const line = `${ts ? `${ts} ` : ''}[${tag}][${t}]${parts.length ? ` ${parts.join(' ')}` : ''}`;
+    // eslint-disable-next-line no-console
+    console.log(line);
+  } catch (_e) {}
+};
+
 const playerStatsSiteName = ref('');
 const playerStatsPanName = ref('');
+const currentPlayingPanFlag = ref('');
 const playerStatsPathName = ref('');
 const playerStatsRawFileName = ref('');
 const playerStatsExtra = computed(() => {
@@ -1160,9 +1359,7 @@ const openWithThirdPartyPlayer = (player) => {
   } catch (_e) {}
 };
 
-const AGG_STORAGE_KEY = 'tv:search:aggregate:sources:v3';
 const aggregatedSources = ref([]);
-const aggregatedFromStorage = ref(false);
 
 const toCircledIndex = (nRaw) => {
   const n = Number.isFinite(Number(nRaw)) ? Math.floor(Number(nRaw)) : 0;
@@ -1224,7 +1421,7 @@ const getAggregatedSourceDisplayMeta = ({ siteKey = '', spiderApi = '', videoId 
     const hit = aggregatedSourceDisplayMetaMap.value && aggregatedSourceDisplayMetaMap.value.get ? aggregatedSourceDisplayMetaMap.value.get(key) : null;
     if (hit) return hit;
   }
-  const siteName = sk || fallback || '站点';
+  const siteName = fallback || sk || '站点';
   return { siteName, sourceTitle: '', sourceTitleMarked: '', siteTitleLabel: siteName };
 };
 
@@ -1260,14 +1457,23 @@ const topLeftTitle = computed(() => {
   return cleaned || base || '未命名';
 });
 
+const lockedContentKey = ref('');
+const buildContentKeyBase = () => {
+  const propKey = typeof props.contentKey === 'string' ? props.contentKey.trim() : '';
+  if (propKey) return propKey;
+  const tmdbId = Number(props.tmdbId || 0);
+  const tmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+  if (tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie')) {
+    return `tmdb:${tmdbType}:${Math.floor(tmdbId)}`;
+  }
+  const cleaned = applyAggregateCleanRules(props.videoTitle || '');
+  const base = (cleaned || props.videoTitle || '').trim();
+  return base;
+};
 const getStableContentKey = () => {
-  const fromProps = normalizeForAggKey(props.contentKey || '');
-  if (fromProps) return fromProps;
-  const fromHistory = normalizeForAggKey(resumeHistory.value && resumeHistory.value.contentKey ? resumeHistory.value.contentKey : '');
-  if (fromHistory) return fromHistory;
-  const base = computeHistoryContentKey(props.videoTitle || '');
-  if (base) return base;
-  return normalizeForAggKey(props.videoTitle || '');
+  const locked = String(lockedContentKey.value || '').trim();
+  if (locked) return locked;
+  return buildContentKeyBase();
 };
 
 const getSourcesSearchQuery = () => {
@@ -1277,115 +1483,101 @@ const getSourcesSearchQuery = () => {
     if (cleanedTMDBTitle) return cleanedTMDBTitle;
     if (tmdbTitle) return tmdbTitle;
   }
+  try {
+    const display = typeof displayTitle !== 'undefined' && displayTitle.value ? String(displayTitle.value).trim() : '';
+    const cleanedDisplay = applyAggregateCleanRules(display || '');
+    if (cleanedDisplay) return cleanedDisplay;
+    if (display) return display;
+  } catch (_e) {}
   const cleaned = applyAggregateCleanRules(props.videoTitle || '');
   if (cleaned) return cleaned;
   const fromHistory = resumeHistory.value && typeof resumeHistory.value.contentKey === 'string' ? resumeHistory.value.contentKey.trim() : '';
-  if (fromHistory) return fromHistory;
+  if (fromHistory && !/^tmdb:/i.test(fromHistory)) return fromHistory;
   const fromProps = typeof props.contentKey === 'string' ? props.contentKey.trim() : '';
-  if (fromProps) return fromProps;
+  if (fromProps && !/^tmdb:/i.test(fromProps)) return fromProps;
   return (props.videoTitle || '').trim();
 };
 
-const getAggregateStorageGroupKey = () => {
-  if (tmdbMode.value && tmdbMovieMode.value) {
-    const qRaw = getSourcesSearchQuery();
-    const qBase = applyAggregateCleanRules(qRaw || '') || qRaw;
-    const qKey = normalizeForAggKey(qBase || '');
-    if (qKey) return qKey;
-  }
-  return getStableContentKey();
-};
-
-const getAggregateStorageGroupKeys = () => {
-  const out = [];
-  const push = (v) => {
-    const k = typeof v === 'string' ? v.trim() : '';
-    if (!k) return;
-    if (!out.includes(k)) out.push(k);
-  };
-  if (tmdbMode.value && tmdbMovieMode.value) {
-    push(getAggregateStorageGroupKey());
-    push(getStableContentKey());
-    const id = Number(props.tmdbId || 0);
-    if (Number.isFinite(id) && id > 0) push(`tmdb_movie_${Math.floor(id)}`);
-    return out;
-  }
-  push(getStableContentKey());
-  return out;
-};
-
 const loadAggregatedSourcesFromStorage = () => {
-  const titleKeys = getAggregateStorageGroupKeys();
-  if (!titleKeys.length) {
-    if (!(tmdbMode.value && Array.isArray(aggregatedSources.value) && aggregatedSources.value.length > 0)) {
-      aggregatedSources.value = [];
-    }
-    aggregatedFromStorage.value = false;
-    return;
-  }
+  // Aggregate sources are runtime-only (no browser storage cache).
+};
+
+const SEARCH_AGG_RUNTIME_KEY = '__tvSearchAggregateState';
+const SEARCH_AGG_EVENT = 'tv:search-aggregate-state';
+const fromSearchEntry = computed(
+  () => Number.isFinite(Number(props.openFromSearch)) && Number(props.openFromSearch) > 0
+);
+
+const readSearchAggregateState = () => {
   try {
-    const raw = sessionStorage.getItem(AGG_STORAGE_KEY);
-    const parsed = raw && raw.trim() ? JSON.parse(raw) : null;
-    const groups = parsed && parsed.version === 4 && parsed.groups && typeof parsed.groups === 'object' ? parsed.groups : null;
-    let group = null;
-    let hitKey = '';
-    if (groups) {
-      for (let i = 0; i < titleKeys.length; i += 1) {
-        const k = titleKeys[i];
-        const g = groups[k] && typeof groups[k] === 'object' ? groups[k] : null;
-        if (g) {
-          group = g;
-          hitKey = k;
-          break;
-        }
-      }
-    }
-    if (!group) {
-      if (!(tmdbMode.value && Array.isArray(aggregatedSources.value) && aggregatedSources.value.length > 0)) {
-        aggregatedSources.value = [];
-      }
-      aggregatedFromStorage.value = false;
-      return;
-    }
-    const sources = Array.isArray(group.sources) ? group.sources : [];
-    const uniq = new Set();
-    aggregatedSources.value = sources
-      .map((s) => ({
-        siteKey: s && s.siteKey ? String(s.siteKey) : '',
-        spiderApi: s && s.spiderApi ? String(s.spiderApi) : '',
-        siteName: s && s.siteName ? String(s.siteName) : '',
-        videoId: s && s.videoId ? String(s.videoId) : '',
-        videoTitle: s && s.videoTitle ? String(s.videoTitle) : '',
-        videoPoster: s && s.videoPoster ? String(s.videoPoster) : '',
-        videoRemark: s && s.videoRemark ? String(s.videoRemark) : '',
-        __noNoiseMatch: !!(s && s.__noNoiseMatch),
-        __score: Number(s && s.__score) || 0,
-        __seq: Number(s && s.__seq) || 0,
-        seasonHint: Number(s && s.seasonHint) || 0,
-        __seasonTitleMatch: Number(s && s.__seasonTitleMatch) || 0,
-      }))
-      .filter((s) => {
-        if (!s.siteKey || !s.spiderApi || !s.videoId) return false;
-        const k = `${s.siteKey}::${s.videoId}`;
-        if (uniq.has(k)) return false;
-        uniq.add(k);
-        return true;
-      });
-    aggregatedFromStorage.value = aggregatedSources.value.length > 0;
-    if (group && hitKey && titleKeys.length > 1 && groups) {
-      const merged = { ...groups };
-      titleKeys.forEach((k) => {
-        if (!k) return;
-        merged[k] = group;
-      });
-      sessionStorage.setItem(AGG_STORAGE_KEY, JSON.stringify({ version: 4, q: hitKey, groups: merged, lastKey: hitKey }));
-    }
+    if (typeof window === 'undefined') return null;
+    const raw = window[SEARCH_AGG_RUNTIME_KEY];
+    return raw && typeof raw === 'object' ? raw : null;
   } catch (_e) {
-    if (!(tmdbMode.value && Array.isArray(aggregatedSources.value) && aggregatedSources.value.length > 0)) {
-      aggregatedSources.value = [];
-    }
-    aggregatedFromStorage.value = false;
+    return null;
   }
+};
+
+const pickSearchAggregateGroup = (state) => {
+  const groups = state && state.groups && typeof state.groups === 'object' ? state.groups : null;
+  if (!groups) return null;
+  const tryKeys = [];
+  const stable = getStableContentKey();
+  if (stable) tryKeys.push(stable);
+  const propKey = normalizeForAggKey(props.contentKey || '');
+  if (propKey && !tryKeys.includes(propKey)) tryKeys.push(propKey);
+  const titleKey = normalizeForAggKey(applyAggregateCleanRules(props.videoTitle || '') || props.videoTitle || '');
+  if (titleKey && !tryKeys.includes(titleKey)) tryKeys.push(titleKey);
+  for (let i = 0; i < tryKeys.length; i += 1) {
+    const k = tryKeys[i];
+    const hit = groups[k];
+    if (hit && typeof hit === 'object') return hit;
+  }
+  return null;
+};
+
+const applyAggregatedSourcesFromSearchState = (stateInput = null) => {
+  if (!fromSearchEntry.value) return false;
+  const state = stateInput && typeof stateInput === 'object' ? stateInput : readSearchAggregateState();
+  if (!state || typeof state !== 'object') return false;
+
+  const group = pickSearchAggregateGroup(state);
+  const sourcesRaw = group && Array.isArray(group.sources) ? group.sources : [];
+  const skipSet = smartSkipSiteKeySet.value;
+  const needSkipByTMDB = !!tmdbMode.value;
+  const nextSources = sourcesRaw
+    .map((s) => ({
+      siteKey: s && s.siteKey ? String(s.siteKey).trim() : '',
+      spiderApi: s && s.spiderApi ? String(s.spiderApi).trim() : '',
+      siteName: s && s.siteName ? String(s.siteName).trim() : '',
+      videoId: s && s.videoId ? String(s.videoId).trim() : '',
+      videoTitle: s && s.videoTitle ? String(s.videoTitle) : '',
+      videoPoster: s && s.videoPoster ? String(s.videoPoster) : '',
+      videoRemark: s && s.videoRemark ? String(s.videoRemark) : '',
+    }))
+    .filter((s) => {
+      if (!needSkipByTMDB) return true;
+      return !(s.siteKey && skipSet.has(s.siteKey));
+    })
+    .filter((s) => s.siteKey && s.spiderApi && s.videoId);
+
+  aggregatedSources.value = nextSources;
+  sourcesSearchRuntime.outUniq = new Set(nextSources.map((s) => `${s.siteKey}::${s.videoId}`));
+  sourcesSearchRuntime.insertSeq = nextSources.length;
+  sourcesSearchRuntime.queue = [];
+  sourcesSearchRuntime.key = '';
+
+  const totalRaw = Number(state.total);
+  const doneRaw = Number(state.done);
+  const total = Number.isFinite(totalRaw) && totalRaw > 0 ? Math.floor(totalRaw) : 0;
+  const done = Number.isFinite(doneRaw) && doneRaw >= 0 ? Math.floor(doneRaw) : 0;
+  const running = state.running === true && (total <= 0 ? true : done < total);
+  sourcesSearchedOnce.value = true;
+  sourcesSearchDone.value = !running;
+  sourcesLoading.value = running;
+  sourcesSearchRemainingCount.value = running ? Math.max(0, total - done) : 0;
+  if (!running) sourcesError.value = '';
+  return true;
 };
 
 const sourcesLoading = ref(false);
@@ -1399,6 +1591,401 @@ const sourcesSearchRuntime = {
   queue: [],
   outUniq: new Set(),
   insertSeq: 0,
+  looseCandidates: [],
+  looseUniq: new Set(),
+};
+
+const smartDetailWarmupState = {
+  running: false,
+  inFlight: 0,
+  queue: [],
+  seen: new Set(),
+  done: new Set(),
+  paused: false,
+};
+
+const smartDetailWarmupLimit = () => {
+  const raw = effectiveBootstrapSettings.value && effectiveBootstrapSettings.value.searchThreadCount;
+  const n = Number(raw);
+  const base = Number.isFinite(n) && n > 0 ? Math.floor(n) : 5;
+  return Math.max(3, Math.min(12, base * 2));
+};
+
+const isSmartDetailWarmupComplete = () => {
+  try {
+    const total = smartDetailWarmupState.seen.size;
+    if (!total) return false;
+    if (smartDetailWarmupState.queue.length) return false;
+    if (smartDetailWarmupState.inFlight > 0) return false;
+    return smartDetailWarmupState.done.size >= total;
+  } catch (_e) {
+    return false;
+  }
+};
+
+const enqueueDetailWarmup = (src, reason = 'smart_search_match') => {
+  if (!tmdbMode.value || tmdbMovieMode.value) return;
+  if (!src || !src.siteKey || !src.spiderApi || !src.videoId) return;
+  const key = smartBuildSourceKey(src);
+  if (!key) return;
+  const existing = tmdbSmartDetailCache.get(key) || null;
+  if (existing && (existing.ok === false || (existing.episodeMap && existing.episodeMapLoose && existing.pans))) {
+    smartDetailWarmupState.seen.add(key);
+    smartDetailWarmupState.done.add(key);
+    return;
+  }
+  if (smartDetailWarmupState.seen.has(key)) return;
+  smartDetailWarmupState.seen.add(key);
+  smartDetailWarmupState.queue.push({ src, reason });
+  if (!smartDetailWarmupState.running) {
+    smartDetailWarmupState.running = true;
+    void (async () => {
+      try {
+        while (true) {
+          if (smartDetailWarmupState.paused) {
+            await new Promise((r) => setTimeout(r, 120));
+            continue;
+          }
+          const limit = smartDetailWarmupLimit();
+          while (smartDetailWarmupState.inFlight < limit && smartDetailWarmupState.queue.length) {
+            const task = smartDetailWarmupState.queue.shift();
+            if (!task || !task.src) continue;
+            smartDetailWarmupState.inFlight += 1;
+            Promise.resolve()
+              .then(() => ensureTMDBSmartDetailCacheEntry(task.src, { reason: task.reason, module: 'smart' }))
+              .catch(() => null)
+              .finally(() => {
+                try {
+                  const k = smartBuildSourceKey(task.src);
+                  if (k) smartDetailWarmupState.done.add(k);
+                } catch (_e) {}
+                smartDetailWarmupState.inFlight = Math.max(0, smartDetailWarmupState.inFlight - 1);
+              });
+          }
+          if (!smartDetailWarmupState.queue.length && smartDetailWarmupState.inFlight <= 0) break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      } finally {
+        smartDetailWarmupState.running = false;
+      }
+    })();
+  }
+};
+
+const pauseSmartDetailWarmup = () => {
+  smartDetailWarmupState.paused = true;
+};
+
+const resumeSmartDetailWarmup = () => {
+  smartDetailWarmupState.paused = false;
+  if (smartDetailWarmupState.queue.length && !smartDetailWarmupState.running) {
+    smartDetailWarmupState.running = true;
+    void (async () => {
+      try {
+        while (true) {
+          if (smartDetailWarmupState.paused) {
+            await new Promise((r) => setTimeout(r, 120));
+            continue;
+          }
+          const limit = smartDetailWarmupLimit();
+          while (smartDetailWarmupState.inFlight < limit && smartDetailWarmupState.queue.length) {
+            const task = smartDetailWarmupState.queue.shift();
+            if (!task || !task.src) continue;
+            smartDetailWarmupState.inFlight += 1;
+            Promise.resolve()
+              .then(() => ensureTMDBSmartDetailCacheEntry(task.src, { reason: task.reason, module: 'smart' }))
+              .catch(() => null)
+              .finally(() => {
+                try {
+                  const k = smartBuildSourceKey(task.src);
+                  if (k) smartDetailWarmupState.done.add(k);
+                } catch (_e) {}
+                smartDetailWarmupState.inFlight = Math.max(0, smartDetailWarmupState.inFlight - 1);
+              });
+          }
+          if (!smartDetailWarmupState.queue.length && smartDetailWarmupState.inFlight <= 0) break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      } finally {
+        smartDetailWarmupState.running = false;
+      }
+    })();
+  }
+};
+
+const ensureFullSearchProgress = async ({
+  untilDone = false,
+  stepOnly = false,
+  budgetMs = 0,
+  pauseMs = 80,
+} = {}) => {
+  if (fromSearchEntry.value) return false;
+  const startAt = Date.now();
+  let progressed = false;
+  while (true) {
+    if (sourcesError.value) break;
+    const searching = sourcesLoading.value || (!sourcesSearchDone.value && !sourcesSearchedOnce.value);
+    if (!sourcesLoading.value && (!sourcesSearchDone.value || !sourcesSearchedOnce.value)) {
+      const beforeQueue = sourcesSearchRuntime.queue.length;
+      const beforeCount = aggregatedSources.value.length;
+      try {
+        await fetchAggregatedSourcesExactMatches({ append: true });
+      } catch (_e) {
+        break;
+      }
+      const afterQueue = sourcesSearchRuntime.queue.length;
+      const afterCount = aggregatedSources.value.length;
+      progressed = progressed || afterQueue !== beforeQueue || afterCount !== beforeCount;
+      if (stepOnly) break;
+      if (untilDone && !sourcesSearchDone.value) continue;
+      break;
+    }
+    if (!searching) break;
+    if (stepOnly) break;
+    if (budgetMs > 0 && Date.now() - startAt >= budgetMs) break;
+    await new Promise((r) => setTimeout(r, Math.max(30, Math.min(240, pauseMs))));
+  }
+  return progressed;
+};
+
+const kickoffFullSearchIfNeeded = ({ detailWarmup = true } = {}) => {
+  if (fromSearchEntry.value) return false;
+  if (sourcesLoading.value) return false;
+  if (sourcesSearchDone.value && sourcesSearchedOnce.value) return false;
+  void fetchAggregatedSourcesExactMatches({ append: true, detailWarmup });
+  return true;
+};
+
+const runSmartCandidateLoop = async ({
+  deadlineAt = 0,
+  allowHistoryOnce = null,
+  pickPrimary = null,
+  pickAfterSearchDone = null,
+  considerFallback = null,
+  allowDowngradeNow = null,
+  onTimeoutFallback = null,
+} = {}) => {
+  const hasPendingPanMock = () => {
+    try {
+      const entries = Array.from(tmdbSmartDetailCache.values());
+      return entries.some(
+        (e) => e && e.ok !== false && e.panMockEnabled === true && e.panMockResolved !== true && !!e.panMockInFlight
+      );
+    } catch (_e) {
+      return false;
+    }
+  };
+  const pickPrimaryFn = typeof pickPrimary === 'function' ? pickPrimary : null;
+  const pickAfterFn = typeof pickAfterSearchDone === 'function' ? pickAfterSearchDone : null;
+  const considerFn = typeof considerFallback === 'function' ? considerFallback : null;
+  const allowDowngradeFn = typeof allowDowngradeNow === 'function' ? allowDowngradeNow : null;
+  const onTimeoutFn = typeof onTimeoutFallback === 'function' ? onTimeoutFallback : null;
+  const computeDetailProgress = () => {
+    try {
+      const sources = Array.isArray(aggregatedSources.value) ? aggregatedSources.value : [];
+      const total = sources.length;
+      let done = 0;
+      const pendingList = [];
+      sources.forEach((src) => {
+        const key = smartBuildSourceKey(src);
+        if (!key) return;
+        const entry = tmdbSmartDetailCache.get(key) || null;
+        const inFlight = tmdbSmartDetailInFlight.has(key);
+        const completed = !!(
+          entry &&
+          (entry.ok === false ||
+            (entry.__detailFetched === true &&
+              (!entry.panMockEnabled || entry.panMockResolved === true)))
+        );
+        if (completed) {
+          done += 1;
+          return;
+        }
+        if (!completed && !inFlight) {
+          // not requested yet
+        }
+        const name =
+          (src && src.siteName ? String(src.siteName) : '') ||
+          (src && src.siteKey ? String(src.siteKey) : '') ||
+          '';
+        const vid = src && src.videoId != null ? String(src.videoId) : '';
+        pendingList.push(`${name || src.siteKey || 'site'}${vid ? `:${vid}` : ''}`);
+      });
+      const pending = Math.max(0, total - done);
+      return { total, done, pending, pendingList };
+    } catch (_e) {
+      return { total: 0, done: 0, pending: 0, pendingList: [] };
+    }
+  };
+  for (let round = 0; round < 200; round += 1) {
+    if (round === 0) {
+      runSmartCandidateLoop.__lastDetailProgressSig = '';
+      runSmartCandidateLoop.__lastDetailDoneCount = -1;
+    }
+    if (deadlineAt && Date.now() >= deadlineAt) {
+      return onTimeoutFn ? onTimeoutFn() : null;
+    }
+    if (round === 0 && allowHistoryOnce) {
+      const early = await allowHistoryOnce();
+      if (early && early.ep && early.ep.url) return early;
+    }
+    if (
+      (!aggregatedSources.value || !aggregatedSources.value.length) &&
+      !sourcesSearchDone.value &&
+      !fromSearchEntry.value
+    ) {
+      kickoffFullSearchIfNeeded({ detailWarmup: true });
+      await new Promise((r) => setTimeout(r, 120));
+      continue;
+    }
+  const detailDone = isSmartDetailWarmupComplete();
+  if (debugEnabled.value) {
+    const prog = computeDetailProgress();
+    const sig = `${prog.done}/${prog.total}`;
+    const lastDone = Number.isFinite(Number(runSmartCandidateLoop.__lastDetailDoneCount))
+      ? Number(runSmartCandidateLoop.__lastDetailDoneCount)
+      : -1;
+    if (prog.done > lastDone || (prog.done === prog.total && lastDone !== prog.total)) {
+      runSmartCandidateLoop.__lastDetailProgressSig = sig;
+      runSmartCandidateLoop.__lastDetailDoneCount = prog.done;
+      try {
+        const payload = {
+          module: 'smart',
+          total: prog.total,
+          done: prog.done,
+          pending: prog.pending,
+        };
+        if (prog.pending <= 5) payload.pendingSites = prog.pendingList.join(',') || '';
+        else if (prog.pending > 5) payload.pendingSites = prog.pendingList.slice(0, 5).join(',') || '';
+        smartDebugLog('smart_detail_done', payload);
+      } catch (_e) {}
+    }
+  }
+    if (pickPrimaryFn) {
+      const res = await pickPrimaryFn({ detailDone });
+      if (res && res.cand && res.cand.ep && res.cand.ep.url) {
+        if (res.stop) {
+          if (debugEnabled.value) {
+            try {
+              smartDebugLog('smart_match_done', { module: 'smart', reason: 'primary_stop' });
+            } catch (_e) {}
+          }
+          return res.cand;
+        }
+        if (considerFn) considerFn(res.cand);
+      }
+    }
+    if (sourcesSearchDone.value) {
+      if (!detailDone && !isSmartDetailWarmupComplete()) {
+        await new Promise((r) => setTimeout(r, 120));
+        continue;
+      }
+      if (hasPendingPanMock()) {
+        await waitForAnyPanMockUpdate(320);
+        continue;
+      }
+      if (pickAfterFn) {
+        const res = await pickAfterFn({ detailDone });
+        if (res && res.cand && res.cand.ep && res.cand.ep.url) {
+          if (res.stop) {
+            if (debugEnabled.value) {
+              try {
+                smartDebugLog('smart_match_done', { module: 'smart', reason: 'after_done_stop' });
+              } catch (_e) {}
+            }
+            return res.cand;
+          }
+          if (considerFn) considerFn(res.cand);
+        }
+      }
+      releaseLowPriorityHold();
+      if (allowDowngradeFn && allowDowngradeFn()) {
+        if (debugEnabled.value) {
+          try {
+            smartDebugLog('smart_match_done', { module: 'smart', reason: 'downgrade' });
+          } catch (_e) {}
+        }
+        return onTimeoutFn ? onTimeoutFn() : null;
+      }
+      return null;
+    }
+    const progressed = await ensureFullSearchProgress({ stepOnly: true, pauseMs: 120 });
+    if (!progressed) {
+      const waited = await waitForAnyPanMockUpdate(320);
+      if (!waited) await new Promise((r) => setTimeout(r, 120));
+    }
+  }
+  releaseLowPriorityHold();
+  return onTimeoutFn ? onTimeoutFn() : null;
+};
+
+const runSmartPickPipeline = async ({
+  candidates,
+  fetchPick,
+  poolSize = 5,
+  perSiteSerial = true,
+  returnOnFirstHit = false,
+  stopWhen = null,
+  compareBest = null,
+} = {}) => {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (!list.length) return null;
+  const sizeRaw = Number(poolSize);
+  const pool = Number.isFinite(sizeRaw) && sizeRaw > 0 ? Math.max(1, Math.floor(sizeRaw)) : 1;
+  const inFlight = new Map();
+  const busySites = new Set();
+  const pending = list.map((_c, idx) => idx);
+  let bestOverall = null;
+
+  const launch = (idx) => {
+    const src = list[idx];
+    const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
+    if (perSiteSerial && sKey) busySites.add(sKey);
+    const p = Promise.resolve()
+      .then(() => fetchPick(src))
+      .then((value) => ({ idx, value: value || null }))
+      .catch(() => ({ idx, value: null }));
+    inFlight.set(idx, p);
+  };
+
+  const tryLaunchMore = () => {
+    while (inFlight.size < pool) {
+      let launched = false;
+      for (let i = 0; i < pending.length; i += 1) {
+        const idx = pending[i];
+        const src = list[idx];
+        const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
+        if (perSiteSerial && sKey && busySites.has(sKey)) continue;
+        pending.splice(i, 1);
+        launch(idx);
+        launched = true;
+        break;
+      }
+      if (!launched) break;
+    }
+  };
+
+  while (inFlight.size || pending.length) {
+    tryLaunchMore();
+    if (!inFlight.size) break;
+    const settled = await Promise.race(Array.from(inFlight.values()));
+    const idx = settled && Number.isFinite(Number(settled.idx)) ? Number(settled.idx) : -1;
+    if (idx >= 0) {
+      const src = list[idx];
+      const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
+      if (perSiteSerial && sKey) busySites.delete(sKey);
+      inFlight.delete(idx);
+    }
+
+    const hit = settled && settled.value ? settled.value : null;
+    if (hit) {
+      if (!bestOverall) bestOverall = hit;
+      else if (typeof compareBest === 'function' && compareBest(bestOverall, hit) > 0) bestOverall = hit;
+      if (typeof stopWhen === 'function' && stopWhen(hit)) return hit;
+      if (returnOnFirstHit) return hit;
+    }
+  }
+  return bestOverall;
 };
 
 const lowPriorityHoldRelease = ref(null);
@@ -1440,15 +2027,32 @@ const consumeClickPauseIfAny = (opts = {}) => {
   } catch (_e) {}
 };
 
-const invalidateSourcesSearch = () => {
+const invalidateSourcesSearch = (reason = '') => {
   sourcesSearchState.seq += 1;
   sourcesLoading.value = false;
   sourcesSearchDone.value = false;
   sourcesSearchRemainingCount.value = 0;
+  aggregatedSources.value = [];
   sourcesSearchRuntime.key = '';
   sourcesSearchRuntime.queue = [];
   sourcesSearchRuntime.outUniq = new Set();
   sourcesSearchRuntime.insertSeq = 0;
+  sourcesSearchRuntime.looseCandidates = [];
+  sourcesSearchRuntime.looseUniq = new Set();
+  smartDetailWarmupState.running = false;
+  smartDetailWarmupState.inFlight = 0;
+  smartDetailWarmupState.queue = [];
+  smartDetailWarmupState.seen = new Set();
+  smartDetailWarmupState.done = new Set();
+  if (debugEnabled.value) {
+    try {
+      smartDebugLog('smart_search_reset', {
+        module: 'smart',
+        reason: String(reason || ''),
+        searchSeq: sourcesSearchState.seq,
+      });
+    } catch (_e) {}
+  }
 };
 
 const fetchUserSitesCached = async (ttlMs = 15 * 1000) => {
@@ -1481,13 +2085,42 @@ const normalizeSearchList = (data) => {
     .filter((it) => it && it.name);
 };
 
+const smartSkipSiteKeySet = computed(() => {
+  const raw = effectiveBootstrapSettings.value ? effectiveBootstrapSettings.value.smartSkipSiteKeys : null;
+  const list = Array.isArray(raw) ? raw : [];
+  return new Set(
+    list
+      .map((k) => (typeof k === 'string' ? k.trim() : ''))
+      .filter(Boolean)
+  );
+});
+
 const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
+  if (fromSearchEntry.value) return;
   if (sourcesLoading.value) return;
   const appendMode = !!(opts && typeof opts === 'object' && opts.append === true);
+  const detailWarmupEnabled = !(opts && typeof opts === 'object' && opts.detailWarmup === false);
   const qRaw = getSourcesSearchQuery();
   const isTMDBMovieSourceMatchMode = !!(tmdbMode.value && tmdbMovieMode.value);
   const qBase = applyAggregateCleanRules(qRaw || '') || qRaw;
-  const qKey = isTMDBMovieSourceMatchMode ? normalizeForAggKey(qBase) : getStableContentKey();
+  const qKey = normalizeForAggKey(qBase);
+  if (debugEnabled.value) {
+    try {
+      const queryLoose = stripSeasonMarkers(qRaw || '');
+      const queryKeyLoose = normalizeForAggKey(queryLoose || '');
+      smartDebugLog('smart_search_query', {
+        module: 'smart',
+        query: qRaw || '',
+        queryKey: qKey || '',
+        queryLoose: queryLoose || '',
+        queryKeyLoose: queryKeyLoose || '',
+        runtimeKey: `${qKey || ''}::${qRaw || ''}`,
+        searchSeq: sourcesSearchState.seq,
+        fromHistory: resumeHistory.value && typeof resumeHistory.value.contentKey === 'string' ? resumeHistory.value.contentKey.trim() : '',
+        fromProps: typeof props.contentKey === 'string' ? props.contentKey.trim() : '',
+      });
+    } catch (_e) {}
+  }
   if (!qRaw || !qKey) return;
 
   const stripSeasonMarkers = (s) => {
@@ -1594,12 +2227,22 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
     aggregatedSources.value = list;
   };
 
-  const pendingAppend = [];
-  const insertAgg = appendMode
-    ? (entry) => {
-        pendingAppend.push(entry);
-      }
-    : insertAggSorted;
+  const insertAgg = (entry) => {
+    insertAggSorted(entry);
+    if (debugEnabled.value) {
+      try {
+        smartDebugLog('smart_search_add', {
+          module: 'smart',
+          siteKey: entry && entry.siteKey ? String(entry.siteKey) : '',
+          spiderApi: entry && entry.spiderApi ? String(entry.spiderApi) : '',
+          videoId: entry && entry.videoId ? String(entry.videoId) : '',
+          total: Array.isArray(aggregatedSources.value) ? aggregatedSources.value.length : 0,
+          runtimeKey: sourcesSearchRuntime && sourcesSearchRuntime.key ? String(sourcesSearchRuntime.key) : '',
+          searchSeq: sourcesSearchState.seq,
+        });
+      } catch (_e) {}
+    }
+  };
 
   sourcesSearchState.seq += 1;
   const seqAtCall = sourcesSearchState.seq;
@@ -1625,9 +2268,13 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
       });
       sourcesSearchRuntime.outUniq = uniq;
       sourcesSearchRuntime.insertSeq = maxSeq;
+      sourcesSearchRuntime.looseCandidates = [];
+      sourcesSearchRuntime.looseUniq = new Set();
     } else {
       sourcesSearchRuntime.outUniq = new Set();
       sourcesSearchRuntime.insertSeq = 0;
+      sourcesSearchRuntime.looseCandidates = [];
+      sourcesSearchRuntime.looseUniq = new Set();
       aggregatedSources.value = [];
     }
     sourcesSearchDone.value = false;
@@ -1676,7 +2323,14 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
     const data = await fetchUserSitesCached();
     if (seqAtCall !== sourcesSearchState.seq) return;
     const sites = Array.isArray(data && data.sites) ? data.sites : [];
-    const enabledSites = sites.filter((s) => s && s.enabled !== false && s.search !== false && s.api && !isConfigCenterSite(s));
+    const skipSet = smartSkipSiteKeySet.value;
+    const enableSmartSkipForThisSearch = !!tmdbMode.value;
+    const enabledSites = sites.filter((s) => {
+      if (!s || s.enabled === false || s.search === false || !s.api || isConfigCenterSite(s)) return false;
+      const k = s && typeof s.key === 'string' ? s.key.trim() : '';
+      if (enableSmartSkipForThisSearch && k && skipSet.has(k)) return false;
+      return true;
+    });
 
     const apiBase = resolveCatApiBaseForPlay();
     const tvUser = props.bootstrap?.user?.username || '';
@@ -1709,6 +2363,7 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
           action: 'search',
           spiderApi: site.api,
           payload: { wd: qRaw, page: 1 },
+          timeoutMs: 10_000,
         });
         if (seqAtCall !== sourcesSearchState.seq) return;
         const items = normalizeSearchList(raw);
@@ -1723,12 +2378,47 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
           const okKey = isTMDBMovieSourceMatchMode
             ? movieTitleMatchedBySearchResult(rawTitle)
             : ((key && key === qKey) || (qKeyLoose && looseKey && looseKey === qKeyLoose));
-          if (!okKey) return;
+          const score = computeMatchScore(rawTitle);
+          if (!okKey) {
+            // Keep a small loose-match pool for fallback when no exact match is found.
+            if (score >= 650) {
+              const siteKey = site && site.key ? String(site.key) : '';
+              const spiderApi = site && site.api ? String(site.api) : '';
+              const videoId = it && it.id ? String(it.id) : '';
+              if (siteKey && spiderApi && videoId) {
+                const uniq = `${siteKey}::${videoId}`;
+                if (!sourcesSearchRuntime.looseUniq.has(uniq)) {
+                  sourcesSearchRuntime.looseUniq.add(uniq);
+                  const seasonHint =
+                    extractSeasonHintFromText(rawTitle) ||
+                    extractSeasonHintFromText(it && it.remark ? String(it.remark) : '') ||
+                    0;
+                  const seasonTitleMatch = wantedSeason > 0 && seasonHint === wantedSeason ? 1 : 0;
+                  sourcesSearchRuntime.looseCandidates.push({
+                    siteKey,
+                    spiderApi,
+                    siteName: site && site.name ? String(site.name) : siteKey,
+                    videoId,
+                    videoTitle: rawTitle,
+                    videoPoster: it && it.pic ? String(it.pic) : '',
+                    videoRemark: it && it.remark ? String(it.remark) : '',
+                    __noNoiseMatch: false,
+                    __score: Number.isFinite(Number(score)) ? Number(score) : 0,
+                    __seq: (sourcesSearchRuntime.insertSeq += 1),
+                    seasonHint,
+                    __seasonTitleMatch: seasonTitleMatch,
+                    __looseMatch: 1,
+                  });
+                }
+              }
+            }
+            return;
+          }
           matchedCount += 1;
           const noNoiseExact = normalizeForAggKey(rawTitle) === qKey;
           const noNoiseLoose = qKeyLoose && normalizeForAggKey(stripSeasonMarkers(rawTitle)) === qKeyLoose;
           const noNoiseMatch = !!(noNoiseExact || noNoiseLoose);
-          const score = computeMatchScore(rawTitle);
+          // score already computed above
           const seasonHint = extractSeasonHintFromText(rawTitle) || extractSeasonHintFromText(it && it.remark ? String(it.remark) : '') || 0;
           const seasonTitleMatch = wantedSeason > 0 && seasonHint === wantedSeason ? 1 : 0;
           const siteKey = site && site.key ? String(site.key) : '';
@@ -1753,8 +2443,18 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
             __seasonTitleMatch: seasonTitleMatch,
           };
           insertAgg(entry);
+          if (detailWarmupEnabled) enqueueDetailWarmup(entry, 'smart_search_match');
           pushed = true;
         });
+        if (debugEnabled.value && !isTMDBMovieSourceMatchMode) {
+          smartDebugLog('smart_search_site', {
+            module: 'smart',
+            siteKey: site && site.key ? String(site.key) : '',
+            siteName: site && site.name ? String(site.name) : '',
+            total: items.length,
+            matched: matchedCount,
+          });
+        }
         if (isTMDBMovieSourceMatchMode) {
           smartDebugLog('movie_search_filter', {
             siteKey: site && site.key ? String(site.key) : '',
@@ -1775,41 +2475,44 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
     sourcesSearchedOnce.value = true;
     sourcesSearchDone.value = sourcesSearchRuntime.queue.length === 0;
     sourcesSearchRemainingCount.value = sourcesSearchRuntime.queue.length;
-
-    if (appendMode && pendingAppend.length) {
-      const current = Array.isArray(aggregatedSources.value) ? aggregatedSources.value : [];
-      const sorted = pendingAppend
-        .slice()
-        .sort((a, b) => {
-          const ak = a && a.siteKey ? String(a.siteKey) : '';
-          const bk = b && b.siteKey ? String(b.siteKey) : '';
-          const ao = siteOrderMap.has(ak) ? siteOrderMap.get(ak) : 999999;
-          const bo = siteOrderMap.has(bk) ? siteOrderMap.get(bk) : 999999;
-          if (ao !== bo) return ao - bo;
-          const aq = Number(a && a.__seq) || 0;
-          const bq = Number(b && b.__seq) || 0;
-          return aq - bq;
+    if (debugEnabled.value && sourcesSearchDone.value) {
+      try {
+        smartDebugLog('smart_search_done', {
+          module: 'smart',
+          total: Array.isArray(aggregatedSources.value) ? aggregatedSources.value.length : 0,
+          queue: sourcesSearchRuntime && Array.isArray(sourcesSearchRuntime.queue) ? sourcesSearchRuntime.queue.length : 0,
+          searchSeq: sourcesSearchState.seq,
         });
-      aggregatedSources.value = current.concat(sorted);
+      } catch (_e) {}
+    }
+    if (
+      sourcesSearchDone.value &&
+      (!aggregatedSources.value || !aggregatedSources.value.length) &&
+      Array.isArray(sourcesSearchRuntime.looseCandidates) &&
+      sourcesSearchRuntime.looseCandidates.length
+    ) {
+      const loose = sourcesSearchRuntime.looseCandidates.slice();
+      loose.sort((a, b) => {
+        const as = Number(a && a.__score) || 0;
+        const bs = Number(b && b.__score) || 0;
+        if (as !== bs) return bs - as;
+        return (a.siteName || a.siteKey || '').localeCompare(b.siteName || b.siteKey || '', 'zh');
+      });
+      const top = loose.slice(0, 12);
+      top.forEach((entry) => {
+        insertAgg(entry);
+        if (detailWarmupEnabled) enqueueDetailWarmup(entry, 'smart_search_fallback');
+      });
+      sourcesSearchRuntime.looseCandidates = [];
+      sourcesSearchRuntime.looseUniq = new Set();
+      if (debugEnabled.value) {
+        smartDebugLog('smart_search_fallback', {
+          module: 'smart',
+          count: top.length,
+        });
+      }
     }
 
-    try {
-      const prevRaw = sessionStorage.getItem(AGG_STORAGE_KEY) || '';
-      const prev = prevRaw && prevRaw.trim() ? JSON.parse(prevRaw) : null;
-      const groups =
-        prev && prev.version === 4 && prev.groups && typeof prev.groups === 'object'
-          ? { ...prev.groups }
-          : {};
-      const payload = { sources: aggregatedSources.value, updatedAt: Date.now(), q: qRaw };
-      groups[qKey] = payload;
-      const stableKey = getStableContentKey();
-      if (stableKey) groups[stableKey] = payload;
-      if (isTMDBMovieSourceMatchMode) {
-        const id = Number(props.tmdbId || 0);
-        if (Number.isFinite(id) && id > 0) groups[`tmdb_movie_${Math.floor(id)}`] = payload;
-      }
-      sessionStorage.setItem(AGG_STORAGE_KEY, JSON.stringify({ version: 4, q: qRaw, groups, lastKey: qKey }));
-    } catch (_e) {}
   } catch (e) {
     if (seqAtCall === sourcesSearchState.seq) {
       sourcesError.value = e && e.message ? String(e.message) : '换源搜索失败';
@@ -1831,6 +2534,10 @@ const exitPlay = () => {
     playerBuffering.value = false;
     playerPlaybackStarted.value = false;
     playerFirstFrameReady.value = false;
+    currentPlayingEpisodeUrl.value = '';
+    currentPlayingEpisodeRawName.value = '';
+    currentPlayingEpisodeMatchKey.value = '';
+    currentPlaybackResumeIdentity.value = '';
     if (playerFirstFrameTimer) {
       window.clearTimeout(playerFirstFrameTimer);
       playerFirstFrameTimer = 0;
@@ -1861,9 +2568,13 @@ const resetForNewVideo = () => {
   playingPanKey.value = '';
   playingEpisodeIndex.value = -1;
   playingTMDBSubPanKey.value = '';
+  currentPlayingEpisodeUrl.value = '';
+  currentPlayingEpisodeRawName.value = '';
+  currentPlayingEpisodeMatchKey.value = '';
+  currentPlaybackResumeIdentity.value = '';
   selectedPan.value = '';
   panDropdownOpen.value = false;
-  selectedEpisodeIndex.value = 0;
+  setEpisodeIndex(-1, 'resetForNewVideo');
   selectedEpisodeGroup.value = '';
   selectedSeason.value = 0;
   episodeGroupMoreOpen.value = false;
@@ -1914,6 +2625,10 @@ const resetForNewSource = () => {
   playingPanKey.value = '';
   playingEpisodeIndex.value = -1;
   playingTMDBSubPanKey.value = '';
+  currentPlayingEpisodeUrl.value = '';
+  currentPlayingEpisodeRawName.value = '';
+  currentPlayingEpisodeMatchKey.value = '';
+  currentPlaybackResumeIdentity.value = '';
   selectedPan.value = '';
   panDropdownOpen.value = false;
   selectedEpisodeGroup.value = '';
@@ -1936,7 +2651,44 @@ const resetForNewSource = () => {
   };
 };
 
+const resetEpisodeListForSourceSwitch = () => {
+  selectedPan.value = '';
+  panDropdownOpen.value = false;
+  selectedEpisodeGroup.value = '';
+  selectedSeason.value = 0;
+  setEpisodeIndex(-1, 'resetEpisodeListForSourceSwitch');
+  episodeGroupMoreOpen.value = false;
+  introLoading.value = false;
+  introError.value = '';
+  autoPickedEpisodeFromVideoId.value = false;
+  detail.value = {
+    ...detail.value,
+    playFrom: '',
+    playUrl: '',
+    panMockEnabled: false,
+    panMockResolving: false,
+    panMockResolved: false,
+    panMockResolvedByKey: {},
+    panMockListErrors: {},
+    panMock189AccessByShareId: {},
+  };
+};
+
 const cleanupFns = [];
+
+onMounted(() => {
+  try {
+    if (typeof window === 'undefined') return;
+    const onSearchAggregateState = (e) => {
+      if (!fromSearchEntry.value) return;
+      const state = e && e.detail && e.detail.state && typeof e.detail.state === 'object' ? e.detail.state : null;
+      applyAggregatedSourcesFromSearchState(state);
+    };
+    window.addEventListener(SEARCH_AGG_EVENT, onSearchAggregateState);
+    cleanupFns.push(() => window.removeEventListener(SEARCH_AGG_EVENT, onSearchAggregateState));
+    applyAggregatedSourcesFromSearchState();
+  } catch (_e) {}
+});
 
 const isIos = ref(false);
 onMounted(() => {
@@ -1963,6 +2715,7 @@ const episodeDescending = ref(false);
 const sourcesListEl = ref(null);
 const activeSourceCardEl = ref(null);
 const rawListViewEl = ref(null);
+const episodeButtonsEl = ref(null);
 const RAW_LIST_PAGE_SIZE = 20;
 const rawListPage = ref(0);
 const setActiveSourceCardEl = (el) => {
@@ -1994,7 +2747,29 @@ const scrollSourcesToActive = async (opts = {}) => {
 onBeforeUpdate(() => {
   activeSourceCardEl.value = null;
 });
-const selectedEpisodeIndex = ref(0);
+const selectedEpisodeIndexRef = ref(-1);
+const setEpisodeIndex = (next, reason = '') => {
+  const prev = selectedEpisodeIndexRef.value;
+  selectedEpisodeIndexRef.value = next;
+  if (debugEnabled.value) {
+    try {
+      playDebugLog('setEpisodeIndex', {
+        prev,
+        next,
+        reason: String(reason || ''),
+        panKey: String(selectedPanKey.value || ''),
+      });
+    } catch (_e) {}
+  }
+};
+const selectedEpisodeIndex = computed({
+  get() {
+    return selectedEpisodeIndexRef.value;
+  },
+  set(next) {
+    setEpisodeIndex(next, 'setter');
+  },
+});
 const autoPickedEpisodeFromVideoId = ref(false);
 const playLoading = ref(false);
 const playError = ref('');
@@ -2012,16 +2787,28 @@ const playingPanKey = ref('');
 const playingEpisodeIndex = ref(-1);
 const playingSmartEpisodeNo = ref(0);
 const playingTMDBSubPanKey = ref('');
+const currentPlayingEpisodeUrl = ref('');
+const currentPlayingEpisodeRawName = ref('');
+const currentPlayingEpisodeMatchKey = ref('');
+const currentPlaybackResumeIdentity = ref('');
 const initialAutoPlayTriggered = ref(false);
+const initialAutoPlayInFlight = ref(false);
+let autoSourceFallbackSeq = 0;
+const autoSourceFallbackTried = new Set();
+const autoFallbackActive = ref(false);
 const selectedPan = ref('');
 const panDropdownOpen = ref(false);
 const panDropdownEl = ref(null);
+const siteSourceDropdownOpen = ref(false);
+const siteSourceDropdownEl = ref(null);
 	const tmdbPanDropdownOpen = ref(false);
 	const tmdbPanDropdownEl = ref(null);
 	const tmdbSelectedSitePanKey = ref('');
 	const resumeHistory = ref(null);
 	const resumeHistoryLoaded = ref(false);
-	const resumeHistoryApplied = ref(false);
+  const resumeHistoryApplied = ref(false);
+  // null = unknown (history loading), true = found, false = not found
+  const resumeHistoryFound = ref(null);
   const resumeWanted = ref(null); // { season, episode, indexFallback, playbackItemId, updatedAt }
   const resumeAppliedEpisodeCount = ref(0);
 	const resumeHistoryState = { seq: 0, key: '', inFlight: null };
@@ -2876,6 +3663,25 @@ const orderedSiteSources = computed(() => {
     });
 });
 
+const formatSiteSourceLabel = (src) => {
+  const site = src && src.siteName ? String(src.siteName).trim() : '';
+  const title = src && src.sourceTitle ? String(src.sourceTitle).trim() : '';
+  if (site && title) return `${site}-${title}`;
+  return site || title || '站点';
+};
+
+const selectedSiteSourceLabel = computed(() => {
+  const list = Array.isArray(orderedSiteSources.value) ? orderedSiteSources.value : [];
+  const active = list.find((s) => s && s.active) || list[0] || null;
+  return active ? formatSiteSourceLabel(active) : '暂无数据';
+});
+
+const selectSiteSourceFromEpisodes = async (src) => {
+  siteSourceDropdownOpen.value = false;
+  if (!src || src.active) return;
+  await switchAggregatedSource(src);
+};
+
 const sourcesTabItems = computed(() => {
   const buildSmartSwitchItems = () => {
     try {
@@ -3370,6 +4176,8 @@ const switchAggregatedSource = async (src) => {
           contentKey: getStableContentKey(),
           tmdbId: metaId || (tmdbMode.value ? Number(props.tmdbId || 0) : 0),
           tmdbType: metaType || (tmdbMode.value ? String(props.tmdbType || '').trim().toLowerCase() : ''),
+          switchOnly: true,
+          switchOnlyToken: Date.now(),
         },
       })
     );
@@ -3377,16 +4185,22 @@ const switchAggregatedSource = async (src) => {
 };
 
 const canLoadMoreSources = computed(() => {
+  if (fromSearchEntry.value) return false;
   if (sourcesLoading.value) return false;
   if (sourcesError.value) return false;
+  if (!sourcesSearchedOnce.value) return true;
   if (tmdbMode.value) return sourcesSearchRemainingCount.value > 0 && sourcesSearchDone.value === false;
-  if (!sourcesSearchedOnce.value) return false;
   return sourcesSearchRemainingCount.value > 0 && sourcesSearchDone.value === false;
 });
 
 const loadMoreSources = async () => {
+  if (fromSearchEntry.value) return;
   if (!canLoadMoreSources.value) return;
-  await fetchAggregatedSourcesExactMatches({ append: true });
+  // Run through all remaining site-search batches in one click.
+  while (canLoadMoreSources.value && !sourcesError.value) {
+    await fetchAggregatedSourcesExactMatches({ append: true, detailWarmup: false });
+    if (sourcesSearchDone.value) break;
+  }
 };
 
 const displayTitle = computed(() => {
@@ -3830,17 +4644,47 @@ const smartLimitChars = (text, maxChars) => {
 
 const tmdbSitePanOptions = computed(() => {
   if (!tmdbMode.value) return [];
-  const list = (Array.isArray(aggregatedSources.value) ? aggregatedSources.value : []).map((s) => ({
+  const historySiteKey = resumeHistory.value && typeof resumeHistory.value.siteKey === 'string' ? resumeHistory.value.siteKey.trim() : '';
+  const historySpiderApi = resumeHistory.value && typeof resumeHistory.value.spiderApi === 'string' ? resumeHistory.value.spiderApi.trim() : '';
+  const historyVideoId = resumeHistory.value && typeof resumeHistory.value.videoId === 'string' ? resumeHistory.value.videoId.trim() : '';
+  const currentSiteKey = ((props.siteKey || '').trim() || historySiteKey).trim();
+  const currentSpiderApi = ((resolvedSpiderApiFinal.value || '').trim() || historySpiderApi).trim();
+  const currentVideoId = (((props.siteKey || '').trim() ? (props.videoId || '').trim() : '') || historyVideoId).trim();
+
+  const list = [];
+  if (currentSiteKey && currentSpiderApi && currentVideoId) {
+    list.push({
+      kind: 'site',
+      siteKey: currentSiteKey,
+      spiderApi: currentSpiderApi,
+      siteName: resolvedSiteName.value || currentSiteKey,
+      videoId: currentVideoId,
+      sourceTitle: displayTitle.value || props.videoTitle || '',
+    });
+  }
+
+  (Array.isArray(aggregatedSources.value) ? aggregatedSources.value : []).forEach((s) => {
+    list.push({
+      kind: 'site',
+      siteKey: s && s.siteKey ? String(s.siteKey) : '',
+      spiderApi: s && s.spiderApi ? String(s.spiderApi) : '',
+      siteName: s && s.siteName ? String(s.siteName) : '',
+      videoId: s && s.videoId ? String(s.videoId) : '',
+      sourceTitle: s && s.videoTitle ? String(s.videoTitle) : '',
+    });
+  });
+
+  const normalized = list.map((s) => ({
     kind: 'site',
     siteKey: s && s.siteKey ? String(s.siteKey) : '',
     spiderApi: s && s.spiderApi ? String(s.spiderApi) : '',
     siteName: s && s.siteName ? String(s.siteName) : '',
     videoId: s && s.videoId ? String(s.videoId) : '',
-    sourceTitle: s && s.videoTitle ? String(s.videoTitle) : '',
+    sourceTitle: s && s.sourceTitle ? String(s.sourceTitle) : '',
   }));
   const out = [];
   const seen = new Set();
-  list.forEach((src) => {
+  normalized.forEach((src) => {
     if (!src || src.kind !== 'site') return;
     const siteKey = typeof src.siteKey === 'string' ? src.siteKey.trim() : '';
     const spiderApi = typeof src.spiderApi === 'string' ? src.spiderApi.trim() : '';
@@ -3935,14 +4779,17 @@ const ensureTMDBSitePanLoaded = async (opt) => {
 	    tmdbSitePanCacheVersion.value += 1;
 
     try {
-      const entry = await ensureTMDBSmartDetailCacheEntry({
+      const entry = await ensureTMDBSmartDetailCacheEntry(
+        {
         siteKey: opt.siteKey,
         siteName: opt.siteName,
         spiderApi: opt.spiderApi,
         videoId: opt.videoId,
         videoTitle: opt.siteName,
         videoRemark: '',
-      });
+      },
+        { reason: 'tmdb_site_pan_load', module: 'smart' }
+      );
       const pansRaw = entry && Array.isArray(entry.pans) ? entry.pans : [];
 	      const pans = pansRaw
 	        .map((pan, idx) => {
@@ -4069,23 +4916,39 @@ const legacySmartListEpisodes = computed(() => {
 	  return false;
 	});
 
-	const smartPanEntries = computed(() => {
-	  if (tmdbMode.value) {
-	    const out = [];
-			  // TMDB mode only exposes TMDB/Douban lists. Keep TMDB entry visible even while episodes are still resolving,
-			  // so the UI won't auto-fallthrough to the first site pan option.
-			  out.push({ key: SMART_PAN_KEY, label: TMDB_SMART_PAN_LABEL, episodes: tmdbPrimarySmartEpisodes.value || [] });
-	    // Always keep the "豆瓣" entry visible for TV so users can switch at any time.
-	    // The episode list may be empty until douban meta is fetched / becomes applicable.
-	    if (!tmdbMovieMode.value) {
-	      out.push({
-	        key: DOUBAN_SMART_PAN_KEY,
-	        label: DOUBAN_SMART_PAN_LABEL,
-	        episodes: doubanSmartListAvailable.value ? (doubanSmartEpisodes.value || []) : [],
-	      });
-	    }
+const smartPanActivated = ref(new Set());
+
+const markSmartPanActivated = (key) => {
+  const k = typeof key === 'string' ? key : '';
+  if (!k) return;
+  const cur = smartPanActivated.value;
+  if (cur && cur.has(k)) return;
+  const next = new Set(cur || []);
+  next.add(k);
+  smartPanActivated.value = next;
+};
+
+const smartPanEntries = computed(() => {
+  if (tmdbMode.value) {
+    const out = [];
+    const activated = smartPanActivated.value;
+    const tmdbEps = activated && activated.has(SMART_PAN_KEY) ? (tmdbPrimarySmartEpisodes.value || []) : [];
+    const doubanEps =
+      activated && activated.has(DOUBAN_SMART_PAN_KEY) && doubanSmartListAvailable.value ? (doubanSmartEpisodes.value || []) : [];
+		  // TMDB mode only exposes TMDB/Douban lists. Keep TMDB entry visible even while episodes are still resolving,
+		  // so the UI won't auto-fallthrough to the first site pan option.
+		  out.push({ key: SMART_PAN_KEY, label: TMDB_SMART_PAN_LABEL, episodes: tmdbEps });
+    // Always keep the "豆瓣" entry visible for TV so users can switch at any time.
+    // The episode list may be empty until douban meta is fetched / becomes applicable.
+    if (!tmdbMovieMode.value) {
+      out.push({
+        key: DOUBAN_SMART_PAN_KEY,
+        label: DOUBAN_SMART_PAN_LABEL,
+        episodes: doubanEps,
+      });
+    }
 		    return out;
-	  }
+  }
 	  if (!siteSmartListVisible.value) return [];
 	  // Site mode: keep the "智能列表" entry visible while detail/pan_mock is still resolving.
 	  // If rules cannot extract any episodes after parsing completes, hide it and fall through to the first pan source.
@@ -4093,8 +4956,8 @@ const legacySmartListEpisodes = computed(() => {
 	  return [{ key: SMART_PAN_KEY, label: SITE_SMART_LIST_LABEL, episodes: eps }];
 	});
 
-	const smartListAvailable = computed(() => smartPanEntries.value.length > 0);
-	const defaultSmartPanKey = computed(() => (smartPanEntries.value[0] && smartPanEntries.value[0].key ? String(smartPanEntries.value[0].key) : ''));
+const smartListAvailable = computed(() => smartPanEntries.value.length > 0);
+const defaultSmartPanKey = computed(() => (smartPanEntries.value[0] && smartPanEntries.value[0].key ? String(smartPanEntries.value[0].key) : ''));
 
 const selectedPanKey = computed(() => {
   if (selectedPan.value) return selectedPan.value;
@@ -4102,14 +4965,22 @@ const selectedPanKey = computed(() => {
   return panDropdownOptions.value[0]?.key || '';
 });
 
-	const isSmartPanActive = computed(() => smartListAvailable.value && isSmartPanKey(selectedPanKey.value));
+const isSmartPanActive = computed(() => smartListAvailable.value && isSmartPanKey(selectedPanKey.value));
 
-	const doubanEpisodesLoading = computed(() => {
-	  if (!tmdbMode.value) return false;
-	  if (tmdbMovieMode.value) return false;
-	  if (selectedPanKey.value !== DOUBAN_SMART_PAN_KEY) return false;
-	  return !!(doubanSeasonFetchState && doubanSeasonFetchState.inFlight);
-	});
+const tmdbEpisodesLoading = computed(() => {
+  if (!tmdbMode.value) return false;
+  if (tmdbMovieMode.value) return false;
+  if (!isSmartPanActive.value) return false;
+  if (tmdbSmartListAvailable.value) return false;
+  return !!(tmdbFetchState && tmdbFetchState.inFlight);
+});
+
+const doubanEpisodesLoading = computed(() => {
+  if (!tmdbMode.value) return false;
+  if (tmdbMovieMode.value) return false;
+  if (selectedPanKey.value !== DOUBAN_SMART_PAN_KEY) return false;
+  return !!(doubanSeasonFetchState && doubanSeasonFetchState.inFlight);
+});
 
 const maxPanEpisodeCount = computed(() => {
   const list = sitePanOptions.value;
@@ -4184,9 +5055,14 @@ const normalizeContentKeyForPanPref = (s) => {
 };
 
 const EP_VIEW_MODE_STORAGE_PREFIX = 'meowfilm_episode_view_mode::';
+const EP_META_MODE_STORAGE_PREFIX = 'meowfilm_episode_meta_mode::';
 const episodeViewModeStorageKey = computed(() => {
-  const k = computeHistoryContentKey(displayTitle.value) || normalizeContentKeyForPanPref(displayTitle.value);
+  const k = getStableContentKey() || computeHistoryContentKey(displayTitle.value) || normalizeContentKeyForPanPref(displayTitle.value);
   return k ? `${EP_VIEW_MODE_STORAGE_PREFIX}${k}` : '';
+});
+const episodeMetaModeStorageKey = computed(() => {
+  const k = getStableContentKey() || computeHistoryContentKey(displayTitle.value) || normalizeContentKeyForPanPref(displayTitle.value);
+  return k ? `${EP_META_MODE_STORAGE_PREFIX}${k}` : '';
 });
 const readEpisodeViewMode = () => {
   try {
@@ -4212,6 +5088,70 @@ const writeEpisodeViewMode = (mode) => {
     }
     window.localStorage.setItem(key, v);
   } catch (_e) {}
+};
+
+const readEpisodeMetaMode = () => {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return '';
+    const key = episodeMetaModeStorageKey.value;
+    if (!key) return '';
+    const v = String(window.localStorage.getItem(key) || '').trim().toLowerCase();
+    if (v === 'tmdb' || v === 'douban') return v;
+    return '';
+  } catch (_e) {
+    return '';
+  }
+};
+
+const writeEpisodeMetaMode = (mode) => {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    const key = episodeMetaModeStorageKey.value;
+    if (!key) return;
+    const v = String(mode || '').trim().toLowerCase();
+    if (v !== 'tmdb' && v !== 'douban') {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, v);
+  } catch (_e) {}
+};
+
+const episodeMetaMode = ref('tmdb');
+watch(
+  () => episodeMetaModeStorageKey.value,
+  () => {
+    const saved = readEpisodeMetaMode();
+    episodeMetaMode.value = saved === 'douban' || saved === 'tmdb' ? saved : 'tmdb';
+  },
+  { immediate: true }
+);
+
+const episodeMetaModeEffective = computed(() => {
+  const mode = String(episodeMetaMode.value || '').toLowerCase();
+  if (!tmdbMode.value || tmdbMovieMode.value) return 'tmdb';
+  if (!isTMDBSitePanKey(selectedPanKey.value)) return 'tmdb';
+  return mode === 'douban' ? 'douban' : 'tmdb';
+});
+
+watch(
+  () => episodeMetaModeEffective.value,
+  (mode) => {
+    if (mode !== 'douban') return;
+    try {
+      void ensureDoubanSeasonMetaFetchedIfNeeded();
+    } catch (_e) {}
+  }
+);
+
+const episodeMetaModeLabel = computed(() => (episodeMetaModeEffective.value === 'douban' ? '豆瓣' : 'TMDB'));
+
+const toggleEpisodeMetaMode = () => {
+  if (!tmdbMode.value || tmdbMovieMode.value) return;
+  if (!isTMDBSitePanKey(selectedPanKey.value)) return;
+  const next = episodeMetaModeEffective.value === 'douban' ? 'tmdb' : 'douban';
+  episodeMetaMode.value = next;
+  writeEpisodeMetaMode(next);
 };
 
 watch(
@@ -4249,10 +5189,14 @@ const toggleRawList = (e) => {
   } catch (_e) {}
 };
 
-	const selectPan = (key, opts = {}) => {
-	  const k = typeof key === 'string' ? key : '';
-	  if (!k) return;
-	  const fromUser = !!(opts && typeof opts === 'object' && opts.fromUser);
+const selectPan = (key, opts = {}) => {
+  const k = typeof key === 'string' ? key : '';
+  if (!k) return;
+  const fromUser = !!(opts && typeof opts === 'object' && opts.fromUser);
+  if (fromUser) {
+    autoPlaySuppressedByUser.value = true;
+    autoFallbackActive.value = false;
+  }
 	  if (isSmartPanKey(k) && !smartListAvailable.value) return;
 	  if (isSmartPanKey(k)) {
 	    const ok = (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).some((s) => s && s.key === k);
@@ -4286,7 +5230,7 @@ const toggleRawList = (e) => {
       tmdbSelectedSitePanKey.value = '';
       const opt =
         (Array.isArray(tmdbSitePanOptions.value) ? tmdbSitePanOptions.value : []).find((o) => o && o.key === k) || null;
-      if (opt) void ensureTMDBSitePanLoaded(opt);
+      if (fromUser && opt) void ensureTMDBSitePanLoaded(opt);
     }
   }
 
@@ -4300,11 +5244,11 @@ const toggleRawList = (e) => {
     })();
     const total = src && Array.isArray(src.episodes) ? src.episodes.length : 0;
     if (total && playingEpisodeIndex.value < total) {
-      selectedEpisodeIndex.value = playingEpisodeIndex.value;
+      setEpisodeIndex(playingEpisodeIndex.value, 'selectPan_keepPlaying');
       return;
     }
   }
-  selectedEpisodeIndex.value = -1;
+  setEpisodeIndex(-1, 'selectPan_reset');
 };
 
 const selectedPanSource = computed(() => {
@@ -4351,7 +5295,11 @@ const selectedEpisodes = computed(() => {
 const selectedPanAuxLoading = computed(() => {
   const src = selectedPanSource.value;
   if (!src) return false;
-  if (src.kind === 'tmdb_site_pan') return !!src.loading;
+  if (src.kind === 'tmdb_site_pan') {
+    const cached = readTMDBSitePanCacheEntry(src.key);
+    if (!cached) return true;
+    return !!src.loading;
+  }
   return !!src.loading;
 });
 
@@ -4394,21 +5342,6 @@ const selectTMDBSitePan = (key) => {
 onMounted(() => {
   // Register TMDB-site-pan watchers after mount to avoid TDZ issues (they depend on TMDB computeds declared later).
   try {
-    const stopEnsureLoaded = watch(
-      () => `${tmdbMode.value ? '1' : '0'}|${selectedPanKey.value}`,
-      () => {
-        if (!tmdbMode.value) return;
-        const k = selectedPanKey.value;
-        if (!isTMDBSitePanKey(k)) return;
-        const opt =
-          (Array.isArray(tmdbSitePanOptions.value) ? tmdbSitePanOptions.value : []).find((o) => o && o.key === k) || null;
-        if (!opt) return;
-        void ensureTMDBSitePanLoaded(opt);
-      },
-      { immediate: true }
-    );
-    cleanupFns.push(stopEnsureLoaded);
-
     const stopFillSubPan = watch(
       () => `${tmdbMode.value ? '1' : '0'}|${selectedPanKey.value}|${tmdbSitePanCacheVersion.value}`,
       () => {
@@ -4425,6 +5358,205 @@ onMounted(() => {
       { immediate: true }
     );
     cleanupFns.push(stopFillSubPan);
+  } catch (_e) {}
+
+  try {
+    const stopAutoLoadSitePan = watch(
+      () => `${tmdbMode.value ? '1' : '0'}|${selectedPanKey.value}|${tmdbSitePanCacheVersion.value}`,
+      () => {
+        if (!tmdbMode.value) return;
+        const k = selectedPanKey.value;
+        if (!isTMDBSitePanKey(k)) return;
+        const opt =
+          (Array.isArray(tmdbSitePanOptions.value) ? tmdbSitePanOptions.value : []).find((o) => o && o.key === k) || null;
+        if (!opt) return;
+        const cached = readTMDBSitePanCacheEntry(k);
+        if (cached && cached.ok === true && Array.isArray(cached.pans)) return;
+        void ensureTMDBSitePanLoaded(opt);
+      },
+      { immediate: true }
+    );
+    cleanupFns.push(stopAutoLoadSitePan);
+  } catch (_e) {}
+
+  try {
+    const stopSmartPanActivated = watch(
+      () => `${getStableContentKey()}|${selectedPanKey.value}`,
+      () => {
+        smartPanActivated.value = new Set();
+        const k = selectedPanKey.value;
+        if (isSmartPanKey(k)) markSmartPanActivated(k);
+      },
+      { immediate: true }
+    );
+    cleanupFns.push(stopSmartPanActivated);
+
+    const stopSmartPanActivatedBySelect = watch(
+      () => selectedPanKey.value,
+      () => {
+        const k = selectedPanKey.value;
+        if (isSmartPanKey(k)) markSmartPanActivated(k);
+      },
+      { immediate: true }
+    );
+    cleanupFns.push(stopSmartPanActivatedBySelect);
+  } catch (_e) {}
+
+  try {
+    const stopMetaState = watch(
+      () =>
+        [
+          debugEnabled.value ? '1' : '0',
+          episodeMetaModeEffective.value,
+          tmdbSmartEpisodeCount.value,
+          tmdbSmartEpisodes.value.length,
+          doubanSmartListAvailable.value ? '1' : '0',
+          doubanSeasonMeta.value && Array.isArray(doubanSeasonMeta.value.seasons) ? doubanSeasonMeta.value.seasons.length : 0,
+          selectedPanKey.value,
+        ].join('|'),
+      () => {
+        if (!debugEnabled.value) return;
+        try {
+          const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+          const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
+          smartDebugLog('meta_state', {
+            module: 'play',
+            mode: String(episodeMetaModeEffective.value || ''),
+            panKey: String(selectedPanKey.value || ''),
+            tmdbCount: Number(tmdbSmartEpisodeCount.value) || 0,
+            tmdbLen: Array.isArray(tmdbSmartEpisodes.value) ? tmdbSmartEpisodes.value.length : 0,
+            doubanAvail: doubanSmartListAvailable.value ? 1 : 0,
+            doubanSeasons: seasons.length,
+            doubanCounts: seasons.slice(0, 6).map((s) => `${Number(s && s.season) || 0}:${Number(s && s.episodeCount) || 0}`).join(','),
+          });
+          if (typeof window !== 'undefined') {
+            window.__tvDebug = {
+              ...(window.__tvDebug || {}),
+              tmdbSmartEpisodeCount,
+              tmdbSmartEpisodes,
+              doubanSmartListAvailable,
+              doubanSeasonMeta,
+            };
+          }
+        } catch (_e) {}
+      },
+      { immediate: true }
+    );
+    cleanupFns.push(stopMetaState);
+  } catch (_e) {}
+
+  try {
+    const stopMatchSample = watch(
+      () =>
+        [
+          debugEnabled.value ? '1' : '0',
+          episodeMetaModeEffective.value,
+          selectedPanKey.value,
+          Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value.length : 0,
+        ].join('|'),
+      () => {
+        if (!debugEnabled.value) return;
+        try {
+          const sample = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value.slice(0, 10) : [];
+          smartDebugLog('match_sample', {
+            module: 'play',
+            mode: String(episodeMetaModeEffective.value || ''),
+            panKey: String(selectedPanKey.value || ''),
+            len: Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value.length : 0,
+            sample: sample.map((m) => `${Number(m && m.season) || 0}-${Number(m && m.episode) || 0}`).join(','),
+          });
+          if (selectedPanSource.value && selectedPanSource.value.kind === 'tmdb_site_pan') {
+            const all = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value : [];
+            const seasonCounts = {};
+            let maxSeason = 0;
+            let maxEpisode = 0;
+            all.forEach((m) => {
+              const s = Number.isFinite(Number(m && m.season)) ? Math.floor(Number(m.season)) : 0;
+              const e = Number.isFinite(Number(m && m.episode)) ? Math.floor(Number(m.episode)) : 0;
+              if (s > maxSeason) maxSeason = s;
+              if (e > maxEpisode) maxEpisode = e;
+              const k = String(s);
+              seasonCounts[k] = (seasonCounts[k] || 0) + 1;
+            });
+            const tailSample = all.slice(-10).map((m) => `${Number(m && m.season) || 0}-${Number(m && m.episode) || 0}`).join(',');
+            const entry = readTMDBSitePanSmartEntry();
+            const keys = [];
+            if (entry && entry.episodeMap && typeof entry.episodeMap.forEach === 'function') {
+              entry.episodeMap.forEach((_v, k) => {
+                if (Number.isFinite(Number(k))) keys.push(Math.floor(Number(k)));
+              });
+            }
+            keys.sort((a, b) => a - b);
+            const head = keys.slice(0, 30);
+            const tail = keys.length > 30 ? keys.slice(-5) : [];
+            playDebugLog('match_keys', {
+              module: 'play',
+              mode: String(episodeMetaModeEffective.value || ''),
+              panKey: String(selectedPanKey.value || ''),
+              total: keys.length,
+              head: head.join(','),
+              tail: tail.join(','),
+            });
+            playDebugLog('match_stats', {
+              module: 'play',
+              mode: String(episodeMetaModeEffective.value || ''),
+              panKey: String(selectedPanKey.value || ''),
+              maxSeason,
+              maxEpisode,
+              seasonCounts: Object.keys(seasonCounts)
+                .sort((a, b) => Number(a) - Number(b))
+                .map((k) => `${k}:${seasonCounts[k]}`)
+                .join(','),
+              tail: tailSample,
+            });
+            const list = Array.isArray(allDisplayedEpisodes.value) ? allDisplayedEpisodes.value : [];
+            const listSeasonCounts = {};
+            let listMaxSeason = 0;
+            list.forEach((it) => {
+              const s = Number.isFinite(Number(it && it.season)) ? Math.floor(Number(it.season)) : 0;
+              if (s > listMaxSeason) listMaxSeason = s;
+              const k = String(s);
+              listSeasonCounts[k] = (listSeasonCounts[k] || 0) + 1;
+            });
+            const tabs = Array.isArray(seasonTabs.value) ? seasonTabs.value : [];
+            playDebugLog('match_list', {
+              module: 'play',
+              mode: String(episodeMetaModeEffective.value || ''),
+              panKey: String(selectedPanKey.value || ''),
+              total: list.length,
+              maxSeason: listMaxSeason,
+              seasonCounts: Object.keys(listSeasonCounts)
+                .sort((a, b) => Number(a) - Number(b))
+                .map((k) => `${k}:${listSeasonCounts[k]}`)
+                .join(','),
+              head: tabs.map((t) => `${t && t.season != null ? t.season : ''}`).join(','),
+            });
+            const grouped = Array.isArray(groupedDisplayedEpisodes.value) ? groupedDisplayedEpisodes.value : [];
+            const groupedSeasonCounts = {};
+            grouped.forEach((it) => {
+              const s = Number.isFinite(Number(it && it.season)) ? Math.floor(Number(it.season)) : 0;
+              const k = String(s);
+              groupedSeasonCounts[k] = (groupedSeasonCounts[k] || 0) + 1;
+            });
+            playDebugLog('match_group', {
+              module: 'play',
+              mode: String(episodeMetaModeEffective.value || ''),
+              panKey: String(selectedPanKey.value || ''),
+              total: grouped.length,
+              seasonCounts: Object.keys(groupedSeasonCounts)
+                .sort((a, b) => Number(a) - Number(b))
+                .map((k) => `${k}:${groupedSeasonCounts[k]}`)
+                .join(','),
+            });
+          }
+          if (typeof window !== 'undefined') {
+            window.__tvDebug = { ...(window.__tvDebug || {}), episodeMatchByIndex };
+          }
+        } catch (_e) {}
+      },
+      { immediate: true }
+    );
+    cleanupFns.push(stopMatchSample);
   } catch (_e) {}
 });
 
@@ -4539,14 +5671,15 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
 const panMockProviderFromFlag = (flag) => {
   const s = typeof flag === 'string' ? flag.trim() : '';
   if (!s) return '';
-  const headSeg = (s.split('-')[0] || '').trim();
-  if (!headSeg) return '';
-  const head2 = Array.from(headSeg).slice(0, 2).join('');
-  if (head2 === '天意') return '189';
-  if (head2 === '逸动') return '139';
-  if (head2 === '夸父') return 'quark';
-  if (head2 === '优夕') return 'uc';
-  if (head2 === '百度') return 'baidu';
+  // pan_mock routing must use fixed flag recognition and must NOT depend on user-config aliases.
+  if (!s.includes('-')) return '';
+  const head = String((s.split('-')[0] || '')).trim();
+  if (!head) return '';
+  if (head.includes('百度')) return 'baidu';
+  if (head.includes('夸父')) return 'quark';
+  if (head.includes('优夕')) return 'uc';
+  if (head.includes('天意')) return '189';
+  if (head.includes('逸动')) return '139';
   return '';
 };
 
@@ -4750,14 +5883,14 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
       const passcode = req && req.passcode ? String(req.passcode).trim() : '';
       const accessCode = req && req.accessCode ? String(req.accessCode).trim() : '';
 
-	      let data = null;
-	      try {
-	        if (provider === 'quark') data = await call('/api/pan/quark/list', { flag: flag || label, passcode });
-	        else if (provider === 'uc') data = await call('/api/pan/uc/list', { flag: flag || label, passcode });
-	        else if (provider === 'baidu') data = await call('/api/pan/baidu/list', { flag: flag || label, pwd: passcode });
-	        else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label, passcode: passcode || '' });
-	        else if (provider === '189') data = await call('/api/pan/189/list', { flag: flag || label, accessCode });
-	      } catch (e) {
+      let data = null;
+      try {
+        if (provider === 'quark') data = await call('/api/pan/quark/list', { flag: flag || label, passcode });
+        else if (provider === 'uc') data = await call('/api/pan/uc/list', { flag: flag || label, passcode });
+        else if (provider === 'baidu') data = await call('/api/pan/baidu/list', { flag: flag || label, pwd: passcode });
+        else if (provider === '139') data = await call('/api/pan/139/list', { flag: flag || label, passcode: passcode || '' });
+        else if (provider === '189') data = await call('/api/pan/189/list', { flag: flag || label, accessCode });
+      } catch (e) {
 	        const msg = e && e.message ? String(e.message) : '请求失败';
 	        smartDebugLog('pan_list_err', { provider, label, flag, ms: Math.max(0, Date.now() - startedAt), err: msg });
 	        errorByKey.set(`${provider}::${label}`, msg);
@@ -4766,7 +5899,7 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
 	      }
 	      if (!data) return;
 
-			      const vod = typeof data.vod_play_url === 'string' ? String(data.vod_play_url || '').trim() : '';
+			      const vod = extractPanListVodPlayUrl(data);
 			      if (!vod) {
 	            smartDebugLog('pan_list_empty', { provider, label, flag, ms: Math.max(0, Date.now() - startedAt) });
 			        errorByKey.set(`${provider}::${label}`, PAN_MOCK_EMPTY_VOD_MARK);
@@ -5468,7 +6601,6 @@ const extractEpisodeCandidateTexts = (ep) => {
     if (!v) return;
     if (!out.includes(v)) out.push(v);
   };
-
   if (layers.fileName) push(layers.fileName);
   if (!rawLooksUseful && !layers.fileName && displayName) push(displayName);
   rawNames.forEach((n) => push(n));
@@ -5838,14 +6970,7 @@ const smartPanEpisodes = computed(() => {
   const { keywordTokens } = compiledSmartSourcePriorityTokenGroups.value || {};
 
   const labelTokenIdxOf = (label) => {
-    if (allowAnyPan) return 0;
-    const s = smartPanMatchLabelText(label);
-    if (!s) return -1;
-    for (let i = 0; i < panTokenOrder.length; i += 1) {
-      const t = panTokenOrder[i];
-      if (t && s.includes(t)) return i;
-    }
-    return -1;
+    return smartPanTokenIdxOfLabel(label, panTokenOrder, { allowAny: allowAnyPan });
   };
 
   const candidatePans = [];
@@ -6081,13 +7206,7 @@ const smartMovieEpisodes = computed(() => {
   const candidates = [];
   const panTokenOrder = compiledSmartPanMatchTokens.value;
   const labelTokenIdxOf = (label) => {
-    const s = smartPanMatchLabelText(label);
-    if (!s) return -1;
-    for (let i = 0; i < panTokenOrder.length; i += 1) {
-      const t = panTokenOrder[i];
-      if (t && s.includes(t)) return i;
-    }
-    return -1;
+    return smartPanTokenIdxOfLabel(label, panTokenOrder);
   };
   pans.forEach((pan, panIdx) => {
     const eps = pan && Array.isArray(pan.episodes) ? pan.episodes : [];
@@ -6431,11 +7550,12 @@ const tmdbSmartEpisodeCount = computed(() => {
   if (base <= 0) {
     const picked = Math.max(0, extra);
     if (picked > 0) return picked;
-    // Fallback: expose a minimal list so "TMDB/豆瓣" smart entries can appear even before meta is ready.
-    return 1;
+    // No placeholder episodes; wait for TMDB/Douban meta to be ready.
+    return 0;
   }
   return Math.max(0, base);
 });
+
 
 	const tmdbSmartEpisodes = computed(() => {
 	  const total = tmdbSmartEpisodeCount.value;
@@ -6572,6 +7692,96 @@ const extractStrictSeasonHintFromPathLikeText = (text) => {
   return 0;
 };
 
+const computeGlobalNoFromMatch = (match, idx) => {
+  const s = match && Number.isFinite(Number(match.season)) ? Math.floor(Number(match.season)) : 0;
+  const e = match && Number.isFinite(Number(match.episode)) ? Math.floor(Number(match.episode)) : 0;
+  if (s > 0 && e > 0) {
+    const g = tmdbGlobalEpisodeNoOf(s, e);
+    if (g > 0) return g;
+  }
+  if (e > 0) return e;
+  return idx + 1;
+};
+
+const buildGlobalNoMapFromMatches = (matches) => {
+  if (!Array.isArray(matches) || !matches.length) return [];
+  const map = new Map();
+  const unique = [];
+  for (let i = 0; i < matches.length; i += 1) {
+    const m = matches[i];
+    const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+    const e = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+    if (s <= 0 || e <= 0) continue;
+    const key = `${s}:${e}`;
+    if (!map.has(key)) {
+      map.set(key, 0);
+      unique.push({ season: s, episode: e, key });
+    }
+  }
+  unique.sort((a, b) => (a.season === b.season ? a.episode - b.episode : a.season - b.season));
+  let g = 0;
+  unique.forEach((it) => {
+    g += 1;
+    map.set(it.key, g);
+  });
+  const out = new Array(matches.length);
+  for (let i = 0; i < matches.length; i += 1) {
+    const m = matches[i];
+    const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+    const e = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+    if (s > 0 && e > 0) {
+      const key = `${s}:${e}`;
+      out[i] = map.get(key) || 0;
+    } else {
+      out[i] = i + 1;
+    }
+  }
+  return out;
+};
+
+const readTMDBSitePanSmartEntry = () => {
+  if (!selectedPanSource.value || selectedPanSource.value.kind !== 'tmdb_site_pan') return null;
+  const key = selectedPanSource.value && selectedPanSource.value.key ? String(selectedPanSource.value.key) : '';
+  if (!key) return null;
+  const cache = readTMDBSitePanCacheEntry(key);
+  const sourceKey = cache && cache.sourceKey ? String(cache.sourceKey) : '';
+  if (!sourceKey) return null;
+  return tmdbSmartDetailCache.get(sourceKey) || null;
+};
+
+const buildTMDBSitePanBestGlobalByUrl = (entry) => {
+  if (!entry) return null;
+  const explicit =
+    smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.explicit)
+      ? smartSourceExtractPrioritySetting.value.explicit
+      : [];
+  const orderKeys =
+    smartSourceExtractPrioritySetting.value && Array.isArray(smartSourceExtractPrioritySetting.value.order)
+      ? smartSourceExtractPrioritySetting.value.order
+      : ['网盘'];
+  const bestByUrl = new Map();
+  const bestGlobalByUrl = new Map();
+  const pushList = (globalNo, list) => {
+    if (!Array.isArray(list) || !list.length) return;
+    list.forEach((cand) => {
+      const url = cand && cand.ep && cand.ep.url ? String(cand.ep.url) : '';
+      if (!url) return;
+      const prev = bestByUrl.get(url) || null;
+      const better = !prev || smartCompareCandidates(prev, cand, { explicit, orderKeys }) > 0;
+      if (!better) return;
+      bestByUrl.set(url, cand);
+      const gNext = Number.isFinite(Number(globalNo)) && Number(globalNo) > 0 ? Math.floor(Number(globalNo)) : 0;
+      if (gNext > 0) bestGlobalByUrl.set(url, gNext);
+    });
+  };
+  try {
+    if (entry.episodeMap && typeof entry.episodeMap.forEach === 'function') {
+      entry.episodeMap.forEach((list, keyNo) => pushList(keyNo, list));
+    }
+  } catch (_e) {}
+  return bestGlobalByUrl;
+};
+
 // For magic matching:
 // - raw list ALWAYS shows all episodes (no filtering)
 // - episode buttons ONLY show episodes that match a rule (extracting season/episode)
@@ -6579,29 +7789,68 @@ const episodeMatchByIndex = computed(() => {
   if (tmdbSmartListAvailable.value && isTMDBSitePanKey(selectedPanKey.value) && rawListMode.value) return [];
   const eps = selectedEpisodes.value;
   if (!eps.length) return [];
+
   const rules = compiledMagicEpisodeRules.value;
-  if (!rules.length) {
+  const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
+
+  const buildMatchesByRules = () => {
+    if (!rules.length) {
+      return eps.map((ep, idx) => {
+        const tmdbSeason = ep && Number.isFinite(Number(ep.__tmdbSeason)) ? Math.floor(Number(ep.__tmdbSeason)) : 0;
+        const tmdbEp = ep && Number.isFinite(Number(ep.__tmdbSeasonEpisode)) ? Math.floor(Number(ep.__tmdbSeasonEpisode)) : 0;
+        if (tmdbSeason > 0 && tmdbEp > 0) return { season: tmdbSeason, episode: tmdbEp };
+        return { season: 0, episode: idx + 1 };
+      });
+    }
     return eps.map((ep, idx) => {
       const tmdbSeason = ep && Number.isFinite(Number(ep.__tmdbSeason)) ? Math.floor(Number(ep.__tmdbSeason)) : 0;
       const tmdbEp = ep && Number.isFinite(Number(ep.__tmdbSeasonEpisode)) ? Math.floor(Number(ep.__tmdbSeasonEpisode)) : 0;
       if (tmdbSeason > 0 && tmdbEp > 0) return { season: tmdbSeason, episode: tmdbEp };
-      return { season: 0, episode: idx + 1 };
+      const candidates = [];
+      if (ep && ep.name != null) candidates.push(String(ep.name));
+      if (ep && ep.url != null) {
+        const rawNames = extractRawNamesFromEpisodeUrl(String(ep.url));
+        if (rawNames[0]) candidates.push(rawNames[0]);
+      }
+      return normalizeMaybeGlobalSeasonEpisode(extractSeasonEpisodeFromCandidates(candidates, rules, cleanRules));
+    });
+  };
+
+  const metaMode = episodeMetaModeEffective.value;
+  if (selectedPanSource.value && selectedPanSource.value.kind === 'tmdb_site_pan' && (metaMode === 'tmdb' || metaMode === 'douban')) {
+    const entry = readTMDBSitePanSmartEntry();
+    const globalByUrl = buildTMDBSitePanBestGlobalByUrl(entry);
+    const tmdbHasMultiSeason = (() => {
+      const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+      const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
+      return real.length >= 2;
+    })();
+    const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+
+    return eps.map((ep, idx) => {
+      const url = ep && ep.url ? String(ep.url) : '';
+      const gFromUrl = globalByUrl && url ? globalByUrl.get(url) || 0 : 0;
+      const g = Number.isFinite(Number(gFromUrl)) && Number(gFromUrl) > 0 ? Math.floor(Number(gFromUrl)) : idx + 1;
+
+      if (metaMode === 'tmdb') {
+        if (tmdbHasMultiSeason) {
+          const mapped = tmdbSeasonEpisodeOfGlobal(g);
+          const ms = mapped && Number.isFinite(Number(mapped.season)) ? Math.floor(Number(mapped.season)) : 0;
+          const me = mapped && Number.isFinite(Number(mapped.episode)) ? Math.floor(Number(mapped.episode)) : 0;
+          if (ms > 0 && me > 0) return { season: ms, episode: me };
+        }
+        return { season: 0, episode: g };
+      }
+
+      const mapped = doubanSeasonEpisodeOfGlobal(g, dm);
+      const ds = mapped && Number.isFinite(Number(mapped.season)) ? Math.floor(Number(mapped.season)) : 0;
+      const de = mapped && Number.isFinite(Number(mapped.episode)) ? Math.floor(Number(mapped.episode)) : 0;
+      if (ds > 0 && de > 0) return { season: ds, episode: de };
+      return { season: 0, episode: g };
     });
   }
-  const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
 
-  return eps.map((ep, idx) => {
-    const tmdbSeason = ep && Number.isFinite(Number(ep.__tmdbSeason)) ? Math.floor(Number(ep.__tmdbSeason)) : 0;
-    const tmdbEp = ep && Number.isFinite(Number(ep.__tmdbSeasonEpisode)) ? Math.floor(Number(ep.__tmdbSeasonEpisode)) : 0;
-    if (tmdbSeason > 0 && tmdbEp > 0) return { season: tmdbSeason, episode: tmdbEp };
-    const candidates = [];
-    if (ep && ep.name != null) candidates.push(String(ep.name));
-    if (ep && ep.url != null) {
-      const rawNames = extractRawNamesFromEpisodeUrl(String(ep.url));
-      if (rawNames[0]) candidates.push(rawNames[0]);
-    }
-    return normalizeMaybeGlobalSeasonEpisode(extractSeasonEpisodeFromCandidates(candidates, rules, cleanRules));
-  });
+  return buildMatchesByRules();
 });
 
 const pickResumeEpisodeIndex = ({ wantedSeason = 0, wantedEpisode = 0, wantedIndex = 0 } = {}) => {
@@ -6703,8 +7952,80 @@ const allDisplayedEpisodes = computed(() => {
   const eps = selectedEpisodes.value;
   const total = eps.length;
   if (!total) return [];
+  const isTmdbSitePan = tmdbMode.value && isTMDBSitePanKey(selectedPanKey.value);
+  const useMetaMapping = isTmdbSitePan && (episodeMetaModeEffective.value === 'tmdb' || episodeMetaModeEffective.value === 'douban');
+  const entry = useMetaMapping ? readTMDBSitePanSmartEntry() : null;
+  const globalByUrl = useMetaMapping ? buildTMDBSitePanBestGlobalByUrl(entry) : null;
   const matches = episodeMatchByIndex.value;
   const hasMagic = hasMagicEpisodeRules.value;
+  const suppressUnrecognized = tmdbMode.value;
+  const tmdbMaxGlobal =
+    tmdbMode.value && isTmdbSitePan
+      ? (() => {
+          if (episodeMetaModeEffective.value === 'douban') {
+            const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+            const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
+            const sum = seasons.reduce((acc, it) => {
+              const n = Number.isFinite(Number(it && it.episodeCount)) ? Math.floor(Number(it.episodeCount)) : 0;
+              return acc + (n > 0 ? n : 0);
+            }, 0);
+            if (sum > 0) return sum;
+          }
+          return Math.max(0, Number(tmdbSmartEpisodeCount.value) || 0);
+        })()
+      : 0;
+  const canUseMatchGlobal =
+    tmdbMode.value && !isTmdbSitePan && Array.isArray(matches) && matches.length === total;
+  const globalMap = canUseMatchGlobal ? buildGlobalNoMapFromMatches(matches) : null;
+
+  if (useMetaMapping && entry && tmdbMaxGlobal > 0) {
+    const cache = readTMDBSitePanCacheEntry(selectedPanKey.value);
+    const pans = cache && Array.isArray(cache.pans) ? cache.pans : [];
+    const subKey = typeof playingTMDBSubPanKey.value === 'string' ? playingTMDBSubPanKey.value : '';
+    const picked = (subKey && pans.find((p) => p && p.key === subKey)) || pans[0] || null;
+    const panLabel = picked && picked.label != null ? String(picked.label) : '';
+    const tmdbHasMultiSeason = (() => {
+      const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+      const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
+      return real.length >= 2;
+    })();
+    const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+    const items = [];
+    for (let g = 1; g <= tmdbMaxGlobal; g += 1) {
+      const list = entry.episodeMap && entry.episodeMap.get ? entry.episodeMap.get(g) : null;
+      const cands = Array.isArray(list) ? list.filter(Boolean) : [];
+      if (!cands.length) continue;
+      const filtered = panLabel ? cands.filter((c) => smartMatchPan(c, panLabel)) : cands;
+      if (!filtered.length) continue;
+      const mapped =
+        episodeMetaModeEffective.value === 'douban'
+          ? doubanSeasonEpisodeOfGlobal(g, dm)
+          : tmdbHasMultiSeason
+            ? tmdbSeasonEpisodeOfGlobal(g)
+            : { season: 0, episode: g };
+      const season = mapped && Number.isFinite(Number(mapped.season)) ? Number(mapped.season) : 0;
+      const no = mapped && Number.isFinite(Number(mapped.episode)) ? Number(mapped.episode) : g;
+      filtered.forEach((cand, idx) => {
+        const ep = cand && cand.ep ? cand.ep : null;
+        const url = ep && ep.url ? String(ep.url) : '';
+        const name = ep && ep.name ? String(ep.name) : `第${no}集`;
+        const feat = smartComputeCandidateFeatures(cand);
+        const is4k = feat && Number(feat.qualityRank) === 3;
+        items.push({
+          key: `${g}-${idx}-${url}`,
+          index: items.length,
+          no,
+          season,
+          name,
+          url,
+          unmatched: false,
+          displayNo: no,
+          is4k,
+        });
+      });
+    }
+    if (items.length) return items;
+  }
 
   const items = [];
   let unmatchedCount = 0;
@@ -6712,28 +8033,86 @@ const allDisplayedEpisodes = computed(() => {
     const ep = eps[idx];
     const url = (ep && ep.url ? String(ep.url) : '').trim();
     const name = (ep && ep.name ? String(ep.name) : '').trim() || `第${idx + 1}集`;
+    const rawNames = url ? extractRawNamesFromEpisodeUrl(url) : [];
+    const hay = `${name} ${rawNames.join(' ')}`.trim();
+    const is4k = smartQualityRankOf(smartGuessQuality(hay)) === 3;
     const m = matches && matches[idx] && typeof matches[idx] === 'object' ? matches[idx] : { season: 0, episode: 0 };
-    const season = Number.isFinite(Number(m.season)) ? Number(m.season) : 0;
-    const no = Number.isFinite(Number(m.episode)) ? Number(m.episode) : 0;
+    let season = Number.isFinite(Number(m.season)) ? Number(m.season) : 0;
+    let no = Number.isFinite(Number(m.episode)) ? Number(m.episode) : 0;
+    let gFromUrl = 0;
+    if (useMetaMapping && globalByUrl) {
+      const urlKey = url || (ep && ep.url ? String(ep.url) : '');
+      if (urlKey && globalByUrl.has(urlKey)) gFromUrl = Number(globalByUrl.get(urlKey)) || 0;
+    }
+    if (useMetaMapping && (!Number.isFinite(gFromUrl) || gFromUrl <= 0)) {
+      // In tmdb/douban display mode, only show episodes that are matched into the global mapping.
+      // Unmatched files should stay in raw list, not in tmdb/douban episode buttons.
+      continue;
+    }
+    if (tmdbMaxGlobal > 0) {
+      const g = (globalMap && Number.isFinite(Number(globalMap[idx])) && Number(globalMap[idx]) > 0)
+        ? Number(globalMap[idx])
+        : (useMetaMapping
+          ? (Number.isFinite(gFromUrl) && gFromUrl > 0
+            ? gFromUrl
+            : (episodeMetaModeEffective.value === 'douban'
+              ? (doubanGlobalEpisodeNoOf(season, no, doubanSeasonMeta.value) || (Number.isFinite(no) && no > 0 ? no : idx + 1))
+              : (tmdbGlobalEpisodeNoOf(season, no) || (Number.isFinite(no) && no > 0 ? no : idx + 1))))
+          : (canUseMatchGlobal ? computeGlobalNoFromMatch(m, idx) : (
+            season > 0 && no > 0
+              ? tmdbGlobalEpisodeNoOf(season, no)
+              : Number.isFinite(no) && no > 0
+              ? no
+              : idx + 1
+          )));
+      if (g > tmdbMaxGlobal) continue;
+      if (useMetaMapping && (episodeMetaModeEffective.value === 'tmdb' || episodeMetaModeEffective.value === 'douban')) {
+        if (episodeMetaModeEffective.value === 'douban') {
+          const mapped = doubanSeasonEpisodeOfGlobal(g, doubanSeasonMeta.value);
+          season = mapped && Number.isFinite(Number(mapped.season)) ? Number(mapped.season) : 0;
+          no = mapped && Number.isFinite(Number(mapped.episode)) ? Number(mapped.episode) : g;
+        } else {
+          const tmdbHasMultiSeason = (() => {
+            const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+            const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
+            return real.length >= 2;
+          })();
+          if (tmdbHasMultiSeason) {
+            const mapped = tmdbSeasonEpisodeOfGlobal(g);
+            season = mapped && Number.isFinite(Number(mapped.season)) ? Number(mapped.season) : 0;
+            no = mapped && Number.isFinite(Number(mapped.episode)) ? Number(mapped.episode) : g;
+          } else {
+            season = 0;
+            no = g;
+          }
+        }
+      }
+    }
 
     if (hasMagic) {
       if (!Number.isFinite(no) || no <= 0) {
-        unmatchedCount += 1;
-        items.push({
-          key: `${idx}-${url}`,
-          index: idx,
-          no: 0,
-          season,
-          name,
-          url,
-          unmatched: true,
-          displayNo: unmatchedCount,
-        });
+        if (suppressUnrecognized) {
+          const fallbackNo = idx + 1;
+          items.push({ key: `${idx}-${url}`, index: idx, no: fallbackNo, season, name, url, unmatched: false, displayNo: fallbackNo, is4k });
+        } else {
+          unmatchedCount += 1;
+          items.push({
+            key: `${idx}-${url}`,
+            index: idx,
+            no: 0,
+            season,
+            name,
+            url,
+            unmatched: true,
+            displayNo: unmatchedCount,
+            is4k,
+          });
+        }
         continue;
       }
-      items.push({ key: `${idx}-${url}`, index: idx, no, season, name, url, unmatched: false, displayNo: no });
+      items.push({ key: `${idx}-${url}`, index: idx, no, season, name, url, unmatched: false, displayNo: no, is4k });
     } else {
-      items.push({ key: `${idx}-${url}`, index: idx, no: idx + 1, season: 0, name, url, unmatched: false, displayNo: idx + 1 });
+      items.push({ key: `${idx}-${url}`, index: idx, no: idx + 1, season: 0, name, url, unmatched: false, displayNo: idx + 1, is4k });
     }
   }
 
@@ -6741,7 +8120,7 @@ const allDisplayedEpisodes = computed(() => {
 
   if (hasMagic) {
     const recognized = items.filter((it) => it && !it.unmatched && Number.isFinite(Number(it.no)) && Number(it.no) > 0);
-    const unrecognized = items.filter((it) => it && it.unmatched);
+    const unrecognized = suppressUnrecognized ? [] : items.filter((it) => it && it.unmatched);
 
     const seasonSet = new Set();
     recognized.forEach((it) => {
@@ -6792,6 +8171,47 @@ watch(
 );
 
 	  const seasonTabs = computed(() => {
+	    if (tmdbMode.value && isTMDBSitePanKey(selectedPanKey.value)) {
+	      if (episodeMetaModeEffective.value === 'douban') {
+	        const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+	        const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
+	        const real = seasons
+	          .map((s) => ({
+	            season: Number.isFinite(Number(s && s.season)) ? Math.floor(Number(s.season)) : 0,
+	            label:
+	              s && typeof s.displayLabel === 'string' && String(s.displayLabel).trim()
+	                ? String(s.displayLabel).trim()
+	                : '',
+	          }))
+	          .filter((s) => s.season > 0)
+	          .sort((a, b) => a.season - b.season);
+	        if (real.length >= 2) {
+	          const cn = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+	          return real.map((s) => ({
+	            key: `S${s.season}`,
+	            season: s.season,
+	            label: s.label || (s.season <= 10 ? `第${cn[s.season]}季` : `第${s.season}季`),
+	          }));
+	        }
+	      } else {
+	        const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+	        const real = seasons
+	          .map((s) => ({
+	            season: Number.isFinite(Number(s && s.season)) ? Math.floor(Number(s.season)) : 0,
+	          }))
+	          .filter((s) => s.season > 0)
+	          .sort((a, b) => a.season - b.season);
+	        if (real.length >= 2) {
+	          const cn = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+	          return real.map((s) => ({
+	            key: `S${s.season}`,
+	            season: s.season,
+	            label: s.season <= 10 ? `第${cn[s.season]}季` : `第${s.season}季`,
+	          }));
+	        }
+	      }
+	    }
+
 	    const list = allDisplayedEpisodes.value;
 	    if (!list.length) return [];
 		  const doubanLabelBySeason = (() => {
@@ -6810,10 +8230,10 @@ watch(
 		    });
 		    return map.size ? map : null;
 		  })();
-	  const set = new Set();
-	  let hasZeroSeason = false;
-	  let hasSpecialSeason0 = false;
-	  const specialRe = /S0{1,2}\s*E\d{1,5}/i;
+  const set = new Set();
+  let hasZeroSeason = false;
+  let hasSpecialSeason0 = false;
+  const specialRe = /S0{1,2}\s*E\d{1,5}/i;
   list.forEach((it) => {
     const s = it && Number.isFinite(Number(it.season)) ? Number(it.season) : 0;
     if (s > 0) set.add(s);
@@ -6833,6 +8253,11 @@ watch(
     }
   });
   const seasons = Array.from(set).sort((a, b) => a - b);
+  if (tmdbMode.value) {
+    // TMDB mode should not expose season-0/未分季 tabs.
+    hasZeroSeason = false;
+    hasSpecialSeason0 = false;
+  }
   if (seasons.length < 2 && !(seasons.length >= 1 && hasSpecialSeason0)) return [];
 
   const cn = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
@@ -6850,6 +8275,7 @@ watch(
 });
 
 const selectedSeason = ref(0);
+const manualSeasonOverride = ref(false);
 watch(
   () => seasonTabs.value.map((t) => t.key).join(','),
   () => {
@@ -6866,23 +8292,27 @@ watch(
         const hit = tabs.find((t) => t && Number(t.season) === wantSeason) || null;
         if (hit) {
           selectedSeason.value = wantSeason;
+          manualSeasonOverride.value = false;
           return;
         }
       }
       selectedSeason.value = Number(tabs[0].season) || 0;
+      manualSeasonOverride.value = false;
     }
   },
   { immediate: true }
 );
 
-const selectSeason = (season) => {
+const selectSeason = (season, opts = {}) => {
   const n = Number(season);
   if (!Number.isFinite(n)) return;
   selectedSeason.value = n;
   selectedEpisodeGroup.value = '';
+  if (opts && opts.fromUser) manualSeasonOverride.value = true;
 };
 
 const autoSelectSeasonForPlayingEpisode = () => {
+  if (manualSeasonOverride.value) return;
   const panKey = String(selectedPanKey.value || '');
   const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
   if (!g) return;
@@ -6931,6 +8361,21 @@ watch(
     autoSelectSeasonForPlayingEpisode();
   },
   { immediate: true }
+);
+
+watch(
+  () =>
+    [
+      selectedPanKey.value,
+      rawListMode.value ? '1' : '0',
+      episodeMetaModeEffective.value,
+      tmdbSelectedSitePanKey.value,
+      playingSmartEpisodeNo.value,
+      currentPlayingEpisodeUrl.value,
+    ].join('|'),
+  () => {
+    manualSeasonOverride.value = false;
+  }
 );
 
 const displayedEpisodes = computed(() => {
@@ -7036,6 +8481,101 @@ const groupedDisplayedEpisodes = computed(() => {
   }
   return list.filter((ep) => ep && ep.no >= g.startNo && ep.no <= g.endNo);
 });
+
+const syncPlayingEpisodeLocator = () => {
+  if (!playerUrl.value) return;
+  const selectedPan = String(selectedPanKey.value || '');
+  if (isSmartPanKey(selectedPan)) {
+    autoSelectSeasonForPlayingEpisode();
+    try {
+      smartDebugLog('sync_locator_apply', {
+        module: 'play',
+        mode: 'smart',
+        rawList: rawListMode.value ? 1 : 0,
+        panKey: selectedPan,
+        query: `eps=${selectedEpisodes.value.length} seasonTabs=${seasonTabs.value.length}`,
+      });
+    } catch (_e) {}
+    scheduleScrollToPlayingEpisode();
+    return;
+  }
+  const idx = resolvePlayingIndexInCurrentList();
+  if (idx >= 0) {
+    if (Number(selectedEpisodeIndex.value) !== idx) setEpisodeIndex(idx, 'sync_playing_context');
+    syncSeasonForIndex(idx);
+    try {
+      smartDebugLog('sync_locator_apply', {
+        module: 'play',
+        mode: 'site',
+        rawList: rawListMode.value ? 1 : 0,
+        panKey: selectedPan,
+        idx,
+        query: `idx=${idx} eps=${selectedEpisodes.value.length} seasonTabs=${seasonTabs.value.length}`,
+      });
+    } catch (_e) {}
+    scheduleScrollToPlayingEpisode();
+  }
+};
+
+const syncPlayingState = { token: 0, timer: 0 };
+
+const isEpisodeUIReady = () => {
+  if (rawListMode.value) {
+    if (!rawListViewEl.value || rawListItems.value.length === 0) return false;
+    const node = rawListViewEl.value.querySelector('.raw-list__row');
+    return !!node;
+  }
+  if (!episodeButtonsEl.value || groupedDisplayedEpisodes.value.length === 0) return false;
+  const node = episodeButtonsEl.value.querySelector('.episode-num-btn');
+  return !!node;
+};
+
+const scheduleSyncPlayingLocator = () => {
+  if (typeof window === 'undefined') return;
+  syncPlayingState.token += 1;
+  const token = syncPlayingState.token;
+  let tries = 0;
+  const maxTries = 40;
+  try {
+    smartDebugLog('sync_locator_try', {
+      module: 'play',
+      token,
+      rawList: rawListMode.value ? 1 : 0,
+      panKey: String(selectedPanKey.value || ''),
+      query: `loading=${selectedPanAuxLoading.value ? 1 : 0} eps=${selectedEpisodes.value.length} rawItems=${rawListItems.value.length} groupItems=${groupedDisplayedEpisodes.value.length}`,
+    });
+  } catch (_e) {}
+  if (syncPlayingState.timer) {
+    window.clearTimeout(syncPlayingState.timer);
+    syncPlayingState.timer = 0;
+  }
+  const run = () => {
+    if (token !== syncPlayingState.token) return;
+    if (!playerUrl.value) return;
+    if (!isEpisodeUIReady()) {
+      tries += 1;
+      try {
+        smartDebugLog('sync_locator_wait', {
+          module: 'play',
+          token,
+          try: tries,
+          rawList: rawListMode.value ? 1 : 0,
+          panKey: String(selectedPanKey.value || ''),
+          query: `loading=${selectedPanAuxLoading.value ? 1 : 0} eps=${selectedEpisodes.value.length} rawItems=${rawListItems.value.length} groupItems=${groupedDisplayedEpisodes.value.length} seasonTabs=${seasonTabs.value.length}`,
+        });
+      } catch (_e) {}
+      if (tries <= maxTries) {
+        syncPlayingState.timer = window.setTimeout(run, 60);
+      }
+      return;
+    }
+    nextTick(() => {
+      if (token !== syncPlayingState.token) return;
+      syncPlayingEpisodeLocator();
+    });
+  };
+  run();
+};
 
 const episodeGroupTabsEl = ref(null);
 const episodeGroupMoreEl = ref(null);
@@ -7328,8 +8868,7 @@ const guessPreferredPanFromFlag = (flag) => {
   const raw = typeof flag === 'string' ? flag.trim() : '';
   if (!raw) return '';
   if (raw.includes('百度')) return 'baidu';
-  const lower = raw.toLowerCase();
-  if (raw.includes('夸父') || raw.includes('夸克') || lower.includes('quark') || lower.includes('kuafu')) return 'quark';
+  if (raw.includes('夸父')) return 'quark';
   return '';
 };
 
@@ -7893,7 +9432,6 @@ const triggerPendingProxyRetryNow = () => {
 };
 const clearPendingProxyRetryTimer = () => {};
 
-const initialAutoPlayInFlight = ref(false);
 const autoPlaySuppressedByUser = ref(false);
 
 const lastTMDBPlayReportCtx = ref(null);
@@ -7948,10 +9486,21 @@ const fetchTMDBCandidatesFromServer = async ({ tmdbId, type = 'tv', season = 0, 
   }
 };
 
-	const resolveSmartEpisodeNo = (ep) => {
-	  if (!ep) return 0;
-	  const direct = ep && Number.isFinite(Number(ep.__tmdbEpisode)) ? Math.floor(Number(ep.__tmdbEpisode)) : 0;
-	  if (direct > 0) return direct;
+const resolveSmartEpisodeNo = (ep) => {
+  if (!ep) return 0;
+  const direct = ep && Number.isFinite(Number(ep.__tmdbEpisode)) ? Math.floor(Number(ep.__tmdbEpisode)) : 0;
+  if (direct > 0) return direct;
+  const s = ep && Number.isFinite(Number(ep.__tmdbSeason)) ? Math.floor(Number(ep.__tmdbSeason)) : 0;
+  const e = ep && Number.isFinite(Number(ep.__tmdbSeasonEpisode)) ? Math.floor(Number(ep.__tmdbSeasonEpisode)) : 0;
+  if (s > 0 && e > 0) {
+    const gt = tmdbGlobalEpisodeNoOf(s, e);
+    if (gt > 0) return gt;
+    if (String(selectedPanKey.value || '') === DOUBAN_SMART_PAN_KEY) {
+      const gd = doubanGlobalEpisodeNoOf(s, e, doubanSeasonMeta.value);
+      if (gd > 0) return gd;
+    }
+    return e;
+  }
   const url = ep && ep.url != null ? String(ep.url) : '';
   const m = String(url || '').match(/tmdb_ep:(\d{1,5})/i);
   if (m && m[1]) {
@@ -7980,6 +9529,23 @@ const fetchTMDBCandidatesFromServer = async ({ tmdbId, type = 'tv', season = 0, 
 	  return 0;
 	};
 
+const getTMDBEpisodeTotal = () => {
+  if (!tmdbMode.value || tmdbMovieMode.value) return 0;
+  const meta = tmdbMeta.value && typeof tmdbMeta.value === 'object' ? tmdbMeta.value : null;
+  const metaTotal = meta && Number.isFinite(Number(meta.episodeCount)) ? Math.floor(Number(meta.episodeCount)) : 0;
+  if (metaTotal > 0) return metaTotal;
+  const smartTotal = Number.isFinite(Number(tmdbSmartEpisodeCount.value)) ? Math.floor(Number(tmdbSmartEpisodeCount.value)) : 0;
+  return smartTotal > 0 ? smartTotal : 0;
+};
+
+const isSmartEpisodeNoValid = (no) => {
+  const n = Number.isFinite(Number(no)) ? Math.floor(Number(no)) : 0;
+  if (n <= 0) return false;
+  const total = getTMDBEpisodeTotal();
+  if (total > 0 && n > total) return false;
+  return true;
+};
+
 	const tmdbSmartPickCache = new Map();
 	const tmdbSmartPickInFlight = new Map();
 	const tmdbSmartPickCacheVersion = ref(0);
@@ -7988,7 +9554,23 @@ const fetchTMDBCandidatesFromServer = async ({ tmdbId, type = 'tv', season = 0, 
 	const tmdbSmartDetailCache = new Map();
 	const tmdbSmartDetailInFlight = new Map();
 	const tmdbSmartDetailCacheVersion = ref(0);
-	const tmdbSmartLastPickDebug = ref(null);
+const tmdbSmartLastPickDebug = ref(null);
+if (typeof window !== 'undefined') {
+  try {
+    window.__mf_debug = window.__mf_debug || {};
+    window.__mf_debug.tmdbSmartLastPickDebug = null;
+  } catch (_e) {}
+}
+watch(
+  () => tmdbSmartLastPickDebug.value,
+  (v) => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.__mf_debug = window.__mf_debug || {};
+      window.__mf_debug.tmdbSmartLastPickDebug = v || null;
+    } catch (_e) {}
+  }
+);
 
 watch(
   () => tmdbSmartDetailCacheVersion.value,
@@ -7998,8 +9580,9 @@ watch(
 	        if (!cached || cached.ok !== true || !cached.sourceKey) return;
 	        const sourceKey = String(cached.sourceKey || '').trim();
 	        if (!sourceKey) return;
-	        const entry = tmdbSmartDetailCache.get(sourceKey) || null;
-	        if (!entry || entry.ok === false || !Array.isArray(entry.pans)) return;
+        const entry = tmdbSmartDetailCache.get(sourceKey) || null;
+        if (!entry || entry.ok === false || !Array.isArray(entry.pans)) return;
+        if (entry.__listOnly === true || entry.__detailFetched === false) return;
 
 	        const nextPans = entry.pans
 	          .map((pan, idx) => {
@@ -8153,7 +9736,7 @@ const smartDoubanMetaSignature = () => {
   return u > 0 ? u : 0;
 };
 
-const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { fromPanMock = false } = {}) => {
+const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { fromPanMock = false, forceIndex = false } = {}) => {
   if (!entry || entry.ok === false) return;
   const pf = typeof playFrom === 'string' ? playFrom : '';
   const pu = typeof playUrl === 'string' ? playUrl : '';
@@ -8185,7 +9768,7 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
   // TMDB-first mapping: build candidates as soon as TMDB meta is ready.
   // Douban mapping can arrive later and will trigger reindex via smartMaybeReindexTMDBSmartEntry.
   // Do NOT block detail/list API requests; they can keep filling `pans` and `lastPlay*`.
-  if (tmdbMode.value && contentKind.value === 'series' && !isSmartTMDBMetaReadyNow()) {
+  if (!forceIndex && tmdbMode.value && contentKind.value === 'series' && !isSmartTMDBMetaReadyNow()) {
     entry.__indexedTmdbSig = '';
     entry.__indexedDoubanSig = 0;
     finalizeUpdate();
@@ -8194,13 +9777,7 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
 
   const panTokenOrder = compiledSmartPanMatchTokens.value;
   const labelTokenIdxOf = (label) => {
-    const s = smartPanMatchLabelText(label);
-    if (!s) return -1;
-    for (let i = 0; i < panTokenOrder.length; i += 1) {
-      const t = panTokenOrder[i];
-      if (t && s.includes(t)) return i;
-    }
-    return -1;
+    return smartPanTokenIdxOfLabel(label, panTokenOrder);
   };
 
   const srcTitleLower = entry && typeof entry.srcTitleLower === 'string' ? entry.srcTitleLower : '';
@@ -8327,6 +9904,7 @@ const smartRebuildTMDBSmartEntryFromPlaySources = (entry, playFrom, playUrl, { f
         ep,
         rawLower,
         matchSeason: seasonNo,
+        matchEpisode: epNo,
         hasSeasonMarker: !!(hasExplicitSE || seasonFromText > 0 || seasonFromPath),
         searchSeasonHint: 0,
         matchKeyword: computePriorityMatch(rawLower, Array.isArray(keywordTokens) ? keywordTokens : []),
@@ -8597,6 +10175,33 @@ const smartCleanPanToken = (label) => {
   return '';
 };
 
+const smartPanTokenIdxOfLabel = (label, tokenOrder, { allowAny = false } = {}) => {
+  if (allowAny) return 0;
+  const order = Array.isArray(tokenOrder) ? tokenOrder : [];
+  if (!order.length) return -1;
+  const s = smartPanMatchLabelText(label);
+  if (!s) return -1;
+
+  for (let i = 0; i < order.length; i += 1) {
+    const t = String(order[i] || '').trim().toLowerCase();
+    if (t && s.includes(t)) return i;
+  }
+
+  try {
+    const cleaned = smartCleanPanToken(label);
+    const c = String(cleaned || '').trim().toLowerCase();
+    if (c) {
+      for (let i = 0; i < order.length; i += 1) {
+        const t = String(order[i] || '').trim().toLowerCase();
+        if (!t) continue;
+        if (t === c || t.includes(c) || c.includes(t)) return i;
+      }
+    }
+  } catch (_e) {}
+
+  return -1;
+};
+
 const smartNormalizePlayedField = (v) => {
   const s = v != null ? String(v) : '';
   return s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -8758,7 +10363,15 @@ const smartMatchPan = (cand, token) => {
   const t = typeof token === 'string' ? token.trim() : '';
   if (!t) return true;
   const label = cand && cand.panLabel != null ? String(cand.panLabel) : '';
-  return smartPanMatchLabelText(label).includes(t.toLowerCase());
+  const want = t.toLowerCase();
+  const normalized = smartPanMatchLabelText(label);
+  if (normalized.includes(want)) return true;
+  // Respect pan alias mappings: canonical token and aliases should be interchangeable.
+  try {
+    const cleaned = smartCleanPanToken(label);
+    if (cleaned && cleaned.trim().toLowerCase() === want) return true;
+  } catch (_e) {}
+  return false;
 };
 
 const smartMatchQualityMode = (cand, modeKey) => {
@@ -8775,7 +10388,7 @@ const smartMatchQualityMode = (cand, modeKey) => {
   return true;
 };
 
-const ensureTMDBSmartDetailCacheEntry = async (src) => {
+const ensureTMDBSmartDetailCacheEntry = async (src, opts = {}) => {
   const siteKey = src && src.siteKey ? String(src.siteKey) : '';
   const spiderApi = src && src.spiderApi ? String(src.spiderApi) : '';
   const videoId = src && src.videoId ? String(src.videoId) : '';
@@ -8788,7 +10401,7 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
       const nextRetryAt = Number.isFinite(Number(existing.nextRetryAt)) ? Number(existing.nextRetryAt) : 0;
       if (nextRetryAt > 0 && now < nextRetryAt) return existing;
     } else if (existing.episodeMap && existing.episodeMapLoose && existing.pans) {
-      return existing;
+      if (existing.__listOnly !== true && existing.__detailFetched !== false) return existing;
     }
   }
   const inFlight = tmdbSmartDetailInFlight.get(sourceKey) || null;
@@ -8801,14 +10414,28 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
   const tvUser = props.bootstrap?.user?.username || '';
   if (!apiBase) return null;
 
-  const task = (async () => {
-    try {
-      const raw = await requestCatSpider({
+    const task = (async () => {
+      try {
+        if (debugEnabled.value) {
+          const reason = opts && opts.reason != null ? String(opts.reason) : 'site_detail';
+          const module = opts && opts.module ? String(opts.module) : (/^history_/i.test(reason) ? 'history' : 'smart');
+          smartDebugLog('detail_req', {
+            module,
+            reason,
+            siteKey,
+            spiderApi,
+            videoId,
+          });
+        }
+      } catch (_e) {}
+      try {
+        const raw = await requestCatSpider({
         apiBase,
         username: tvUser,
         action: 'detail',
         spiderApi,
         payload: { id: videoId },
+        timeoutMs: 15_000,
       });
       const d = extractDetailFromResponse(raw);
 
@@ -8837,6 +10464,9 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
         __indexedDoubanSig: 0,
         __updateSeq: 0,
         __waiters: new Set(),
+        __listOnly: false,
+        __detailFetched: false,
+        __sourceKey: sourceKey,
       };
 
       tmdbSmartDetailCache.set(sourceKey, entry);
@@ -8863,6 +10493,8 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
 
       const applyPlaySourcesToEntry = (playFrom, playUrl, { fromPanMock = false } = {}) => {
         smartRebuildTMDBSmartEntryFromPlaySources(entry, playFrom, playUrl, { fromPanMock });
+        entry.__detailFetched = true;
+        entry.__listOnly = false;
       };
 
       applyPlaySourcesToEntry(d.playFrom, d.playUrl, { fromPanMock: false });
@@ -9007,7 +10639,15 @@ const ensureTMDBSmartDetailCacheEntry = async (src) => {
 	            } catch (_e) {}
             return resolved;
           })
-          .catch(() => null);
+          .catch(() => {
+            try {
+              entry.panMockResolved = true;
+              entry.panMockInFlight = null;
+              tmdbSmartDetailCache.set(sourceKey, entry);
+              tmdbSmartDetailCacheVersion.value += 1;
+            } catch (_e2) {}
+            return null;
+          });
       } catch (_e) {
         entry.panMockInFlight = null;
       }
@@ -9146,7 +10786,12 @@ const smartPickBestFromList = (
   return pickBest(base);
 };
 
-const smartBuildSourcePool = async () => {
+const smartBuildSourcePool = async (opts = {}) => {
+  const allowBootstrapSearch = !(
+    opts &&
+    typeof opts === 'object' &&
+    opts.allowBootstrapSearch === false
+  );
   const historySiteKey = resumeHistory.value && typeof resumeHistory.value.siteKey === 'string' ? resumeHistory.value.siteKey.trim() : '';
   const historySpider = resumeHistory.value && typeof resumeHistory.value.spiderApi === 'string' ? resumeHistory.value.spiderApi.trim() : '';
   const historyVideoId = resumeHistory.value && typeof resumeHistory.value.videoId === 'string' ? resumeHistory.value.videoId.trim() : '';
@@ -9154,7 +10799,12 @@ const smartBuildSourcePool = async () => {
   const currentSpider = ((resolvedSpiderApiFinal.value || '').trim() || historySpider).trim();
   const currentVideoId = (((props.siteKey || '').trim() ? (props.videoId || '').trim() : '') || historyVideoId).trim();
 
-  if ((!aggregatedSources.value || !aggregatedSources.value.length) && !sourcesLoading.value) {
+  if (
+    allowBootstrapSearch &&
+    (!aggregatedSources.value || !aggregatedSources.value.length) &&
+    !sourcesLoading.value &&
+    !fromSearchEntry.value
+  ) {
     try {
       await fetchAggregatedSourcesExactMatches();
     } catch (_e) {}
@@ -9220,13 +10870,7 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
   const panTokenOrder = compiledSmartPanMatchTokens.value;
 
   const labelTokenIdxOf = (label) => {
-    const s = smartPanMatchLabelText(label);
-    if (!s) return -1;
-    for (let i = 0; i < panTokenOrder.length; i += 1) {
-      const t = panTokenOrder[i];
-      if (t && s.includes(t)) return i;
-    }
-    return -1;
+    return smartPanTokenIdxOfLabel(label, panTokenOrder);
   };
 
   const buildCandidate = (src0, panLabel, ep0) => {
@@ -9341,7 +10985,7 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
     for (let i = 0; i < sources.length; i += 1) {
       if (seqAtCall !== tmdbMovieSmartFetchState.seq) return;
       const src0 = sources[i];
-      const entry = await ensureTMDBSmartDetailCacheEntry(src0);
+      const entry = await ensureTMDBSmartDetailCacheEntry(src0, { reason: 'tmdb_movie_smart', module: 'smart' });
       let picked = pickFromDetailEntry(src0, entry);
       if ((!picked || !picked.ep || !picked.ep.url) && entry && entry.panMockEnabled && entry.panMockResolved !== true) {
         smartDebugLog('movie_wait_panmock', {
@@ -9416,6 +11060,7 @@ const fetchTMDBMovieSmartEpisodesIfNeeded = async () => {
 };
 
 const smartSwitchPickState = { seq: 0, inFlight: null };
+const smartSwitchSearchPumpState = { running: false };
 
 const smartSwitchTo = async ({
   panToken = '',
@@ -9429,7 +11074,12 @@ const smartSwitchTo = async ({
   excludePlayed = false,
 } = {}) => {
   if (!tmdbSmartListAvailable.value) return false;
-  if (playLoading.value) return false;
+  if (playLoading.value || playRequestState.inFlight) {
+    showPlayerToast('正则匹配中，请稍候');
+    return false;
+  }
+  resumeSmartDetailWarmup();
+  kickoffFullSearchIfNeeded({ detailWarmup: true });
 
   const eps = selectedEpisodes.value;
   const idxRaw = Number.isFinite(Number(selectedEpisodeIndex.value)) ? Math.floor(Number(selectedEpisodeIndex.value)) : 0;
@@ -9468,7 +11118,6 @@ const smartSwitchTo = async ({
   const orderMap = smartBuildSiteOrderMap();
   const preferredSite = typeof targetSiteKey === 'string' ? targetSiteKey.trim() : '';
 
-  const concurrency = smartPickConcurrency.value;
   const extractSeasonHintFromText = (text) => {
     const s = typeof text === 'string' ? text.trim() : '';
     if (!s) return 0;
@@ -9506,7 +11155,16 @@ const smartSwitchTo = async ({
 	    return qr === 3;
 	  };
 
-  const pickFromSource = async (src, { allowFetchDetail = false } = {}) => {
+  const pickFromSource = async (
+    src,
+    {
+      allowFetchDetail = false,
+      roundPanToken = panToken,
+      roundPanMode = panMode,
+      roundPreferredPanToken = preferredPanToken,
+      roundQualityMode = qualityMode,
+    } = {}
+  ) => {
     if (!src) return null;
     if (preferredSite && String(src.siteKey || '') !== preferredSite) return null;
     const entry = (() => {
@@ -9515,7 +11173,7 @@ const smartSwitchTo = async ({
       if (hit && hit.ok !== false && hit.episodeMap && hit.episodeMapLoose && hit.pans) return hit;
       return null;
     })();
-    const ensured = !entry && allowFetchDetail ? await ensureTMDBSmartDetailCacheEntry(src) : entry;
+    const ensured = !entry && allowFetchDetail ? await ensureTMDBSmartDetailCacheEntry(src, { reason: 'smart_pick_once', module: 'smart' }) : entry;
     const finalEntry = ensured || null;
     if (!finalEntry || finalEntry.ok === false) return null;
     if (seq !== smartSwitchPickState.seq) return null;
@@ -9552,15 +11210,15 @@ const smartSwitchTo = async ({
       excludeKey,
       excludeIdentity,
       excludePlayedSet: played && played.set ? played.set : null,
-      panToken,
-      panMode,
-      preferredPanToken,
-      qualityMode,
+      panToken: roundPanToken,
+      panMode: roundPanMode,
+      preferredPanToken: roundPreferredPanToken,
+      qualityMode: roundQualityMode,
     });
   };
 
   const buildOrderedSources = async ({ preferSameSite = true } = {}) => {
-    const sources = await smartBuildSourcePool();
+    const sources = await smartBuildSourcePool({ allowBootstrapSearch: false });
     const list = Array.isArray(sources) ? sources.filter((s) => s && s.siteKey && s.spiderApi && s.videoId) : [];
     if (!list.length) return [];
     const sameSiteKey = (preferredSite || currentSiteKey || '').trim();
@@ -9600,86 +11258,205 @@ const smartSwitchTo = async ({
       });
   };
 
-  const pickFromOrderedSources = async ({ allowFetchDetail = false, preferSameSite = true } = {}) => {
+  const pickFromOrderedSources = async ({
+    allowFetchDetail = false,
+    preferSameSite = true,
+    roundPanToken = panToken,
+    roundPanMode = panMode,
+    roundPreferredPanToken = preferredPanToken,
+    roundQualityMode = qualityMode,
+  } = {}) => {
+    const maybeKickHistoryDetail = () => {
+      try {
+        if (!resumeHistory.value || typeof resumeHistory.value !== 'object') return;
+        const siteKey = resumeHistory.value.siteKey || '';
+        const spiderApi = resumeHistory.value.spiderApi || '';
+        const videoId = resumeHistory.value.videoId || '';
+        if (!siteKey || !spiderApi || !videoId) return;
+        const src = {
+          siteKey: String(siteKey),
+          spiderApi: String(spiderApi),
+          siteName:
+            (resumeHistory.value.siteName ? String(resumeHistory.value.siteName) : '') || String(siteKey),
+          videoId: String(videoId),
+          videoTitle: resumeHistory.value.videoTitle ? String(resumeHistory.value.videoTitle) : '',
+          videoRemark: resumeHistory.value.videoRemark ? String(resumeHistory.value.videoRemark) : '',
+        };
+        const key = smartBuildSourceKey(src);
+        if (!key) return;
+        const existing = tmdbSmartDetailCache.get(key) || null;
+        if (existing && existing.__detailFetched === true) return;
+        if (tmdbSmartDetailInFlight.get(key)) return;
+        void ensureTMDBSmartDetailCacheEntry(src, { reason: 'history_background_detail', module: 'history' });
+      } catch (_e) {}
+    };
+    maybeKickHistoryDetail();
 	    const candidates = await buildOrderedSources({ preferSameSite });
 	    if (!candidates.length) return null;
-	    let best = null;
-	    let cursor = 0;
-	    const inFlight = new Map();
 
-    const launch = (idx) => {
-      const src = candidates[idx];
-      const p = Promise.resolve()
-        .then(() => pickFromSource(src, { allowFetchDetail }))
-        .then((value) => ({ idx, value: value || null }))
-        .catch(() => ({ idx, value: null }));
-      inFlight.set(idx, p);
-    };
-
-    const poolSize = Math.max(1, Math.min(concurrency, candidates.length));
-    while (cursor < candidates.length && inFlight.size < poolSize) {
-      launch(cursor);
-      cursor += 1;
-    }
-
-    while (inFlight.size) {
-      const settled = await Promise.race(Array.from(inFlight.values()));
-      const idx = settled && Number.isFinite(Number(settled.idx)) ? Number(settled.idx) : -1;
-      if (idx >= 0) inFlight.delete(idx);
-      if (seq !== smartSwitchPickState.seq) return null;
-
-      const cand = settled && settled.value ? settled.value : null;
-      if (cand) {
-        if (!best || smartCompareCandidates(best, cand, { explicit, orderKeys }) > 0) best = cand;
-        if (isGoodEnough(cand)) return cand;
-      }
-
-      if (cursor < candidates.length) {
-        launch(cursor);
-        cursor += 1;
-      }
-    }
+    // For manual switch/pan/quality actions, open detail requests as wide as current candidates
+    // (bounded for safety) so we don't wait in small fixed batches like 5-by-5.
+    const poolSize = Math.max(1, Math.min(50, candidates.length));
+    const best = await runSmartPickPipeline({
+      candidates,
+      poolSize,
+      perSiteSerial: false,
+      compareBest: (a, b) => smartCompareCandidates(a, b, { explicit, orderKeys }),
+      stopWhen: (cand) => isGoodEnough(cand),
+      fetchPick: (src) =>
+        pickFromSource(src, {
+          allowFetchDetail,
+          roundPanToken,
+          roundPanMode,
+          roundPreferredPanToken,
+          roundQualityMode,
+        }),
+    });
+    if (seq !== smartSwitchPickState.seq) return null;
     return best;
   };
 
-  const tryAdvanceSearchOnce = async () => {
-    if (seq !== smartSwitchPickState.seq) return false;
-    const beforeQueue = sourcesSearchRuntime.queue.length;
-    const beforeCount = aggregatedSources.value.length;
-    if (!sourcesLoading.value) {
+  const startSearchPumpForSwitch = () => {
+    const kind = typeof switchKind === 'string' ? switchKind.trim() : '';
+    const needFullSearch = kind === 'switch' || kind === 'pan' || kind === 'quality';
+    if (!needFullSearch || fromSearchEntry.value) return;
+    if (smartSwitchSearchPumpState.running) return;
+    smartSwitchSearchPumpState.running = true;
+    void (async () => {
       try {
-        await fetchAggregatedSourcesExactMatches();
-      } catch (_e) {}
-    }
-    if (seq !== smartSwitchPickState.seq) return false;
-    return sourcesSearchRuntime.queue.length !== beforeQueue || aggregatedSources.value.length !== beforeCount;
+        for (let i = 0; i < 800; i += 1) {
+          if (fromSearchEntry.value) break;
+          if (sourcesSearchDone.value) break;
+          if (sourcesError.value) break;
+          await ensureFullSearchProgress({ stepOnly: true, pauseMs: 60 });
+        }
+      } finally {
+        smartSwitchSearchPumpState.running = false;
+      }
+    })();
   };
 
+  const currentPanToken = smartCurrentPanToken.value || '';
+  const currentQualityMode = smartCurrentQualityModeKey.value || 'auto';
+  const normalizeModeKey = (v) => {
+    const k = typeof v === 'string' ? v.trim() : '';
+    return k || 'auto';
+  };
+  const selectRoundsByKind = () => {
+    const kind = typeof switchKind === 'string' ? switchKind.trim() : '';
+    if (kind === 'switch') {
+      // 1) any pan + 4K
+      // 2) any pan + any quality
+      return [
+        { panMode: '', panToken: '', preferredPanToken: currentPanToken, qualityMode: '4k', label: 'switch_r1' },
+        { panMode: '', panToken: '', preferredPanToken: '', qualityMode: 'auto', label: 'switch_r2' },
+      ];
+    }
+    if (kind === 'pan') {
+      // 1) selected pan + current quality
+      // 2) selected pan + any quality
+      const selectedPanToken = typeof panToken === 'string' ? panToken.trim() : '';
+      return [
+        { panMode: 'require', panToken: selectedPanToken, preferredPanToken: '', qualityMode: normalizeModeKey(currentQualityMode), label: 'pan_r1' },
+        { panMode: 'require', panToken: selectedPanToken, preferredPanToken: '', qualityMode: 'auto', label: 'pan_r2' },
+      ];
+    }
+    if (kind === 'quality') {
+      // 1) selected quality + current pan
+      // 2) selected quality + any pan
+      const selectedQuality = normalizeModeKey(qualityMode);
+      return [
+        { panMode: 'require', panToken: currentPanToken, preferredPanToken: '', qualityMode: selectedQuality, label: 'quality_r1' },
+        { panMode: '', panToken: '', preferredPanToken: '', qualityMode: selectedQuality, label: 'quality_r2' },
+      ];
+    }
+    return [
+      { panMode, panToken, preferredPanToken, qualityMode: normalizeModeKey(qualityMode), label: 'default' },
+    ];
+  };
+  const roundSpecs = selectRoundsByKind();
+
   let chosen = null;
+  for (let r = 0; r < roundSpecs.length; r += 1) {
+    if (seq !== smartSwitchPickState.seq) return false;
+    const spec = roundSpecs[r];
+    let bestFallback = null;
+    const considerFallback = (cand) => {
+      try {
+        if (!cand || !cand.ep || !cand.ep.url) return;
+        if (!bestFallback || smartCompareCandidates(bestFallback, cand, { explicit, orderKeys }) > 0) bestFallback = cand;
+      } catch (_e) {}
+    };
+    const allowDowngradeNow = () => {
+      try {
+        const queueLen =
+          sourcesSearchRuntime && Array.isArray(sourcesSearchRuntime.queue) ? sourcesSearchRuntime.queue.length : 0;
+        return !!(sourcesSearchDone.value && queueLen <= 0 && !hasPendingPanMock());
+      } catch (_e) {
+        return false;
+      }
+    };
+    const deadlineAt = Date.now() + 18_000;
 
-	  chosen = await pickFromOrderedSources({ allowFetchDetail: !cacheOnly, preferSameSite: true });
+    chosen = await runSmartCandidateLoop({
+      deadlineAt,
+      allowHistoryOnce: null,
+      considerFallback,
+      allowDowngradeNow,
+      onTimeoutFallback: () => (bestFallback && bestFallback.ep && bestFallback.ep.url ? bestFallback : null),
+      pickPrimary: async ({ detailDone }) => {
+        if (seq !== smartSwitchPickState.seq) return null;
+        let cand = await pickFromOrderedSources({
+          allowFetchDetail: !cacheOnly || detailDone,
+          preferSameSite: true,
+          roundPanToken: spec.panToken,
+          roundPanMode: spec.panMode,
+          roundPreferredPanToken: spec.preferredPanToken,
+          roundQualityMode: spec.qualityMode,
+        });
+        if (!cand && cacheOnly) {
+          cand = await pickFromOrderedSources({
+            allowFetchDetail: true,
+            preferSameSite: true,
+            roundPanToken: spec.panToken,
+            roundPanMode: spec.panMode,
+            roundPreferredPanToken: spec.preferredPanToken,
+            roundQualityMode: spec.qualityMode,
+          });
+        }
+        if (!cand && sourcesSearchDone.value) {
+          cand = await pickFromOrderedSources({
+            allowFetchDetail: true,
+            preferSameSite: false,
+            roundPanToken: spec.panToken,
+            roundPanMode: spec.panMode,
+            roundPreferredPanToken: spec.preferredPanToken,
+            roundQualityMode: spec.qualityMode,
+          });
+        }
+        if (!cand || !cand.ep || !cand.ep.url) return null;
+        return { cand, stop: isGoodEnough(cand) };
+      },
+      pickAfterSearchDone: async () => null,
+    });
 
-	  if (!chosen) {
-	    for (let round = 0; round < 200; round += 1) {
-      if (seq !== smartSwitchPickState.seq) return false;
-      if (sourcesSearchDone.value) break;
-      const progressed = await tryAdvanceSearchOnce();
-      if (!progressed && sourcesSearchDone.value) break;
-      chosen = await pickFromOrderedSources({ allowFetchDetail: true, preferSameSite: false });
-      if (chosen && chosen.ep && chosen.ep.url) break;
-      if (!progressed) break;
-	    }
-	  }
+    if (chosen && chosen.ep && chosen.ep.url) break;
+  }
 
   if (!chosen || !chosen.ep || !chosen.ep.url) {
-    showPlayerToast('未匹配到相关片源');
+    const kind = typeof switchKind === 'string' ? switchKind.trim() : '';
+    if (kind === 'pan') showPlayerToast('暂无匹配网盘片源');
+    else if (kind === 'quality') showPlayerToast('暂无匹配画质片源');
+    else showPlayerToast('未匹配到相关片源');
     return false;
   }
 
   tmdbSmartPickCache.set(episodeNo, chosen);
   tmdbSmartPickCacheVersion.value += 1;
+  pauseSmartDetailWarmup();
+  let started = false;
   try {
-	    const started = await requestPlay({ trigger: 'auto' });
+	    started = await requestPlay({ trigger: 'user' });
     if (started && played && played.groupKey && played.set) {
       const id = smartSourceIdentity(chosen);
       if (id) {
@@ -9690,6 +11467,11 @@ const smartSwitchTo = async ({
     if (started) smartSaveManualSwitchHint(episodeNo, chosen, switchKind);
     if (started) smartSaveManualSwitchContentHint(chosen, switchKind);
   } catch (_e) {}
+  if (!started) {
+    resumeSmartDetailWarmup();
+    showPlayerToast('匹配成功但播放启动失败');
+    return false;
+  }
   return true;
 };
 
@@ -9709,6 +11491,8 @@ const smartCurrentPicked = computed(() => {
 });
 
 const smartCurrentPanToken = computed(() => {
+  const currentToken = smartCleanPanToken(currentPlayingPanFlag.value || '');
+  if (currentToken) return currentToken;
   const cand = smartCurrentPicked.value;
   const label = cand && cand.panLabel != null ? String(cand.panLabel) : '';
   const token = smartCleanPanToken(label);
@@ -10106,13 +11890,7 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
       : ['网盘'];
 
   const labelTokenIdxOf = (label) => {
-    const s = smartPanMatchLabelText(label);
-    if (!s) return -1;
-    for (let i = 0; i < panTokenOrder.length; i += 1) {
-      const t = panTokenOrder[i];
-      if (t && s.includes(t)) return i;
-    }
-    return -1;
+    return smartPanTokenIdxOfLabel(label, panTokenOrder);
   };
 
   const comparePanTokenIdx = (a, b) => {
@@ -10236,17 +12014,29 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
   const rules = compiledMagicEpisodeRules.value;
   const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
 
-  const loadOrBuildDetailCache = async (src) => {
+  const loadOrBuildDetailCache = async (src, opts = {}) => {
     const siteKey = src && src.siteKey ? String(src.siteKey) : '';
     const spiderApi = src && src.spiderApi ? String(src.spiderApi) : '';
     const videoId = src && src.videoId ? String(src.videoId) : '';
     if (!siteKey || !spiderApi || !videoId) return null;
-    return await ensureTMDBSmartDetailCacheEntry(src);
+    const reason = opts && typeof opts.reason === 'string' ? opts.reason : 'smart_pick_current_site';
+    const module = opts && typeof opts.module === 'string' ? opts.module : 'smart';
+    return await ensureTMDBSmartDetailCacheEntry(src, { reason, module });
   };
 
   const fetchDetailAndPickEpisode = async (
     src,
-    { requireSeasoned = false, panHints = null, waitPanMockMs = 1200, tier = 0, waitPanMockAll = false } = {}
+    {
+      requireSeasoned = false,
+      panHints = null,
+      panTokenHints = null,
+      waitPanMockMs = 1200,
+      tier = 0,
+      waitPanMockAll = false,
+      detailReason = '',
+      detailModule = '',
+      cacheOnly = false,
+    } = {}
   ) => {
 	    const siteKey = src && src.siteKey ? String(src.siteKey) : '';
 	    const spiderApi = src && src.spiderApi ? String(src.spiderApi) : '';
@@ -10254,7 +12044,13 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
 	    if (!siteKey || !spiderApi || !videoId) return null;
 	    const searchSeasonHint = extractSeasonHintFromSource(src);
 	    try {
-	      const cache = await loadOrBuildDetailCache(src);
+        const sourceKey = smartBuildSourceKey(src);
+	      const cache = cacheOnly
+          ? (tmdbSmartDetailCache.get(sourceKey) || null)
+          : await loadOrBuildDetailCache(src, {
+              reason: detailReason || 'smart_pick_current_site',
+              module: detailModule || 'smart',
+            });
 	      if (!cache || !cache.episodeMap) return null;
 	      if (cache.ok === false) return null;
         const sinceSeq = Number.isFinite(Number(cache.__updateSeq)) ? Number(cache.__updateSeq) : 0;
@@ -10306,6 +12102,19 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
             if (!matchedByPan.length) return null;
             candidatesForNo = matchedByPan;
           }
+          const wantedPanTokenHints = Array.isArray(panTokenHints) ? panTokenHints.filter(Boolean) : [];
+          if (wantedPanTokenHints.length) {
+            const matchedByPanToken = candidatesForNo.filter((c) => {
+              for (let i = 0; i < wantedPanTokenHints.length; i += 1) {
+                const t = String(wantedPanTokenHints[i] || '').trim();
+                if (!t) continue;
+                if (smartMatchPan(c, t)) return true;
+              }
+              return false;
+            });
+            if (!matchedByPanToken.length) return null;
+            candidatesForNo = matchedByPanToken;
+          }
           const best = pickBestMatchByTier(candidatesForNo, tier);
           return best && best.ep && best.ep.url ? best : null;
 	  };
@@ -10352,14 +12161,29 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
     }
   };
 
-  const tryPickFromHistoryPlayFlagList = async ({ requireSeasoned = false, tier = 1, allowMappingWait = false } = {}) => {
+  const tryPickFromHistoryPlayFlagList = async ({ requireSeasoned = false, allowMappingWait = false } = {}) => {
     try {
       const history = resumeHistory.value && typeof resumeHistory.value === 'object' ? resumeHistory.value : null;
       const playFlagRaw = history && typeof history.playFlag === 'string' ? history.playFlag.trim() : '';
-      if (!playFlagRaw) return null;
-      if (!playFlagRaw.includes('-')) return null;
+      if (!playFlagRaw) {
+        if (debugEnabled.value) {
+          smartDebugLog('history_list_skip', { module: 'history', reason: 'no_playflag' });
+        }
+        return null;
+      }
+      if (!playFlagRaw.includes('-')) {
+        if (debugEnabled.value) {
+          smartDebugLog('history_list_skip', { module: 'history', reason: 'playflag_no_sep', playFlag: playFlagRaw });
+        }
+        return null;
+      }
       const provider = panMockProviderFromFlag(playFlagRaw);
-      if (!provider) return null;
+      if (!provider) {
+        if (debugEnabled.value) {
+          smartDebugLog('history_list_skip', { module: 'history', reason: 'provider_missing', playFlag: playFlagRaw });
+        }
+        return null;
+      }
 
       const callPanList = async () => {
         const call = async (path, body) => {
@@ -10384,10 +12208,55 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
         return null;
       };
 
-      const listData = await callPanList();
-      const vod = listData && typeof listData.vod_play_url === 'string' ? String(listData.vod_play_url || '').trim() : '';
-      if (!vod) return null;
-
+      if (debugEnabled.value) {
+        smartDebugLog('history_list_req', { module: 'history', playFlag: playFlagRaw, panFlag: playFlagRaw, provider });
+      }
+      let listData = null;
+      try {
+        listData = await callPanList();
+      } catch (e) {
+        if (debugEnabled.value) {
+          smartDebugLog('history_list_err', {
+            module: 'history',
+            reason: 'request_failed',
+            playFlag: playFlagRaw,
+            provider,
+            err: e && e.message ? String(e.message) : 'request_failed',
+          });
+        }
+        return null;
+      }
+      try {
+        if (debugEnabled.value) {
+          const keys =
+            listData && typeof listData === 'object'
+              ? Object.keys(listData).slice(0, 12)
+              : [];
+          smartDebugLog('history_list_resp', {
+            module: 'history',
+            provider,
+            playFlag: playFlagRaw,
+            ok: listData && typeof listData === 'object' && listData.ok === true ? 1 : 0,
+            vodLen:
+              listData && typeof listData === 'object' && typeof listData.vod_play_url === 'string'
+                ? String(listData.vod_play_url || '').trim().length
+                : 0,
+            keys: keys.join(','),
+          });
+        }
+      } catch (_e) {}
+      const vod = extractPanListVodPlayUrl(listData);
+      if (!vod) {
+        if (debugEnabled.value) {
+          smartDebugLog('history_list_skip', {
+            module: 'history',
+            reason: 'vod_missing_field',
+            playFlag: playFlagRaw,
+            provider,
+          });
+        }
+        return null;
+      }
       const siteKey = historySiteKey || '';
       const spiderApi = historySpider || '';
       const siteName = (history && history.siteName ? String(history.siteName) : '') || siteKey || '';
@@ -10396,6 +12265,35 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
       const videoRemark = history && history.videoRemark ? String(history.videoRemark) : '';
       const src = { siteKey, spiderApi, siteName, videoId, videoTitle, videoRemark };
 
+      try {
+        if (debugEnabled.value) {
+          smartDebugLog('history_list', {
+            module: 'history',
+            siteKey,
+            spiderApi,
+            videoId,
+            playFlag: playFlagRaw,
+            panFlag: playFlagRaw,
+            provider,
+            episodes: (() => {
+              try {
+                const tmp = { pans: [], episodeMap: new Map(), episodeMapLoose: new Map() };
+                smartRebuildTMDBSmartEntryFromPlaySources(tmp, playFlagRaw, vod, { fromPanMock: true, forceIndex: true });
+                let max = 0;
+                (Array.isArray(tmp.pans) ? tmp.pans : []).forEach((p) => {
+                  const n = p && Array.isArray(p.episodes) ? p.episodes.length : 0;
+                  if (n > max) max = n;
+                });
+                return max;
+              } catch (_e) {
+                return 0;
+              }
+            })(),
+          });
+        }
+      } catch (_e) {}
+
+      const resolveKey = provider ? `${provider}::${String(playFlagRaw || '').trim()}` : '';
       const entry = {
         ok: true,
         siteKey: src.siteKey,
@@ -10407,65 +12305,177 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
         pans: [],
         panMockEnabled: true,
         panMockResolved: true,
-        panMockResolvedByKey: {},
+        panMockResolvedByKey: resolveKey ? { [resolveKey]: true } : {},
         panMockListErrors: {},
         episodeMap: new Map(),
         episodeMapLoose: new Map(),
         __waiters: new Set(),
         __updateSeq: 0,
+        __listOnly: true,
+        __detailFetched: false,
+        __sourceKey: '',
       };
-      smartRebuildTMDBSmartEntryFromPlaySources(entry, playFlagRaw, vod, { fromPanMock: true });
-      const pickFromEntry = () => {
+      smartRebuildTMDBSmartEntryFromPlaySources(entry, playFlagRaw, vod, { fromPanMock: true, forceIndex: true });
+      try {
+        const sourceKey = smartBuildSourceKey(src);
+        if (sourceKey) {
+          entry.__sourceKey = sourceKey;
+          tmdbSmartDetailCache.set(sourceKey, entry);
+          tmdbSmartDetailCacheVersion.value += 1;
+        }
+      } catch (_e) {}
+      const pickFromEntry = (tag = '') => {
         try {
           smartMaybeReindexTMDBSmartEntry(entry);
         } catch (_e) {}
+        const wantEpisodeNo = Number.isFinite(Number(want)) ? Math.floor(Number(want)) : 0;
         const tmdbHasMultiSeasonNow = (() => {
           const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
           const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
           return real.length >= 2;
         })();
-        const wantedInSeason = tmdbHasMultiSeasonNow ? tmdbSeasonEpisodeOfGlobal(want) : { season: 0, episode: want };
+        const wantedInSeason = tmdbHasMultiSeasonNow ? tmdbSeasonEpisodeOfGlobal(wantEpisodeNo) : { season: 0, episode: wantEpisodeNo };
         const seasonNoWanted =
           wantedInSeason && Number.isFinite(Number(wantedInSeason.season)) ? Math.floor(Number(wantedInSeason.season)) : 0;
         const seasonEpWanted =
           wantedInSeason && Number.isFinite(Number(wantedInSeason.episode)) ? Math.floor(Number(wantedInSeason.episode)) : 0;
-        const requireSeasonedEffective = !!(requireSeasoned && tmdbHasMultiSeasonNow);
+        // History first-list path should not enforce extra season-marker filtering.
+        const requireSeasonedEffective = false;
         let candidates = smartGetCandidatesFromEntry(entry, {
-          episodeNo: want,
+          episodeNo: wantEpisodeNo,
           seasonNo: seasonNoWanted > 0 ? seasonNoWanted : preferSeasonNo,
-          seasonEpisodeNo: seasonEpWanted > 0 ? seasonEpWanted : want,
+          seasonEpisodeNo: seasonEpWanted > 0 ? seasonEpWanted : wantEpisodeNo,
           requireSeasoned: requireSeasonedEffective,
         });
         if ((!candidates || !candidates.length) && requireSeasonedEffective) {
           candidates = smartGetCandidatesFromEntry(entry, {
-            episodeNo: want,
+            episodeNo: wantEpisodeNo,
             seasonNo: seasonNoWanted > 0 ? seasonNoWanted : preferSeasonNo,
-            seasonEpisodeNo: seasonEpWanted > 0 ? seasonEpWanted : want,
+            seasonEpisodeNo: seasonEpWanted > 0 ? seasonEpWanted : wantEpisodeNo,
             requireSeasoned: false,
           });
         }
-        const picked = pickBestMatchByTier(candidates, tier);
+        // History first-list path must not depend on pan-rule tiering.
+        // It only matches by extracted episodes/filename/quality logic.
+        const picked = pickBestMatch(candidates);
+        if (debugEnabled.value) {
+          try {
+            const pansCount = Array.isArray(entry.pans) ? entry.pans.length : 0;
+            const epCount = (() => {
+              try {
+                let max = 0;
+                (Array.isArray(entry.pans) ? entry.pans : []).forEach((p) => {
+                  const n = p && Array.isArray(p.episodes) ? p.episodes.length : 0;
+                  if (n > max) max = n;
+                });
+                return max;
+              } catch (_e) {
+                return 0;
+              }
+            })();
+            smartDebugLog('history_list_pick', {
+              module: 'history',
+              tag: tag || 'pick',
+              want: wantEpisodeNo,
+              season: seasonNoWanted,
+              seasonEp: seasonEpWanted,
+              pans: pansCount,
+              episodes: epCount,
+              candidates: Array.isArray(candidates) ? candidates.length : 0,
+              picked: picked && picked.ep && picked.ep.url ? 1 : 0,
+            });
+          } catch (_e) {}
+        }
         return picked && picked.ep && picked.ep.url ? picked : null;
       };
-      const pickedNow = pickFromEntry();
+
+      // Round 1: try with current TMDB mapping state (no extra request here).
+      let pickedNow = pickFromEntry('round1');
       if (pickedNow) return pickedNow;
+
+      // Round 2: wait existing mapping pipeline (TMDB + Douban) and re-match once.
+      // IMPORTANT: do not initiate extra requests here; reuse outer mappingReadyPromise chain.
       if (allowMappingWait) {
-        // First round must complete TMDB/Douban mapping before degrading to lower tiers.
         try {
           await mappingReadyPromise;
         } catch (_e) {}
-        return pickFromEntry();
+        pickedNow = pickFromEntry('round2');
+        if (pickedNow) return pickedNow;
       }
+
+      // Fallback: directly pick by history index / wanted episode from the resolved list
+      // to avoid unnecessary detail requests when list already matches.
+      try {
+        const pans = Array.isArray(entry.pans) ? entry.pans : [];
+        if (pans.length) {
+          const wantIdxRaw = history && Number.isFinite(Number(history.episodeIndex)) ? Number(history.episodeIndex) : NaN;
+          const wantIdx = Number.isFinite(wantIdxRaw) && wantIdxRaw >= 0 ? Math.floor(wantIdxRaw) : -1;
+          const wantNo = Number.isFinite(Number(want)) ? Math.floor(Number(want)) : 0;
+          const preferLabel = normalizeReplayPanLabel(playFlagRaw || '');
+          const preferPan =
+            (preferLabel ? pans.find((p) => normalizeReplayPanLabel(p && p.label) === preferLabel) : null) || pans[0];
+          const episodes = preferPan && Array.isArray(preferPan.episodes) ? preferPan.episodes : [];
+          const idx =
+            wantIdx >= 0 && wantIdx < episodes.length
+              ? wantIdx
+              : wantNo > 0 && wantNo - 1 < episodes.length
+                ? wantNo - 1
+                : -1;
+          if (idx >= 0) {
+            const ep = episodes[idx];
+            if (ep && ep.url) {
+              const panLabel = preferPan && preferPan.label ? String(preferPan.label) : '';
+              const panTokenIdx = smartPanTokenIdxOfLabel(panLabel, compiledSmartPanMatchTokens.value);
+              return {
+                siteKey: src.siteKey || '',
+                spiderApi: src.spiderApi || '',
+                siteName: src.siteName || '',
+                videoId: src.videoId || '',
+                panLabel,
+                panTokenIdx,
+                ep,
+                matchSeason: 0,
+                hasSeasonMarker: 0,
+                searchSeasonHint: preferSeasonNo || 0,
+              };
+            }
+          }
+        }
+      } catch (_e) {}
       return null;
     } catch (_e) {
       return null;
     }
   };
 
-  const tryPickOnce = async ({ requireSeasoned = false, poolSize: poolSizeOverride, panHints = null, returnOnFirstHit = false } = {}) => {
+  const tryPickOnce = async ({
+    requireSeasoned = false,
+    poolSize: poolSizeOverride,
+    panHints = null,
+    returnOnFirstHit = false,
+    tier = 0,
+    cacheOnly = false,
+  } = {}) => {
 	    const candidates = buildCandidates();
+      if (debugEnabled.value) {
+        try {
+          const first = candidates[0] || {};
+          smartDebugLog('smart_search_candidates', {
+            module: 'smart',
+            count: candidates.length,
+            total: Array.isArray(aggregatedSources.value) ? aggregatedSources.value.length : 0,
+            queue: sourcesSearchRuntime && Array.isArray(sourcesSearchRuntime.queue) ? sourcesSearchRuntime.queue.length : 0,
+            done: sourcesSearchDone.value ? 1 : 0,
+            loading: sourcesLoading.value ? 1 : 0,
+            runtimeKey: sourcesSearchRuntime && sourcesSearchRuntime.key ? String(sourcesSearchRuntime.key) : '',
+            searchSeq: sourcesSearchState.seq,
+            siteKey: first.siteKey || '',
+            spiderApi: first.spiderApi || '',
+            videoId: first.videoId || '',
+          });
+        } catch (_e) {}
+      }
 	    if (!candidates.length) return null;
-	    let bestOverall = null;
 	    const siteCount = (() => {
 	      const uniqSites = new Set();
 	      candidates.forEach((c) => {
@@ -10478,72 +12488,40 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
 	    const poolNum = Number(poolSizeOverride);
 	    const poolSize =
 	      Number.isFinite(poolNum) && poolNum > 0 ? Math.max(1, Math.min(desiredPoolSizeBase, Math.floor(poolNum))) : desiredPoolSizeBase;
-	    const inFlight = new Map();
-	    const busySites = new Set();
-	    const pending = candidates.map((_c, idx) => idx);
-
-	    const launch = (idx) => {
-	      const src = candidates[idx];
-	      const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
-	      if (sKey) busySites.add(sKey);
-	      const p = Promise.resolve()
-		        .then(() => fetchDetailAndPickEpisode(src, { requireSeasoned, panHints }))
-	        .then((value) => ({ idx, value: value || null }))
-	        .catch(() => ({ idx, value: null }));
-	      inFlight.set(idx, p);
-	    };
-
-	    const tryLaunchMore = () => {
-	      while (inFlight.size < poolSize) {
-	        let launched = false;
-	        for (let i = 0; i < pending.length; i += 1) {
-	          const idx = pending[i];
-	          const src = candidates[idx];
-	          const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
-	          if (sKey && busySites.has(sKey)) continue;
-	          pending.splice(i, 1);
-	          launch(idx);
-	          launched = true;
-	          break;
-	        }
-	        if (!launched) break;
-	      }
-	    };
-
-	    while (inFlight.size || pending.length) {
-	      tryLaunchMore();
-	      if (!inFlight.size) break;
-	      const settled = await Promise.race(Array.from(inFlight.values()));
-	      const idx = settled && Number.isFinite(Number(settled.idx)) ? Number(settled.idx) : -1;
-	      if (idx >= 0) {
-	        const src = candidates[idx];
-	        const sKey = src && src.siteKey != null ? String(src.siteKey) : '';
-	        if (sKey) busySites.delete(sKey);
-	        inFlight.delete(idx);
-	      }
-
-	      const hit = settled && settled.value ? settled.value : null;
-	      if (hit) {
-	        if (!bestOverall || compareSmartMatch(bestOverall, hit) > 0) bestOverall = hit;
-          if (returnOnFirstHit) {
-            if (is4kCandidate(hit)) maybeCache4kPick(hit);
-            return hit;
-          }
-	        const feat = smartComputeCandidateFeatures(hit);
-	        if (feat && Number(feat.qualityRank) === 3) {
-	          maybeCache4kPick(hit);
-	          return hit;
-	        }
-	      }
-
-	      tryLaunchMore();
-	    }
-
+    const bestOverall = await runSmartPickPipeline({
+      candidates,
+      poolSize,
+      perSiteSerial: true,
+      returnOnFirstHit,
+      stopWhen: (hit) => {
+        if (returnOnFirstHit) return true;
+        const feat = smartComputeCandidateFeatures(hit);
+        return !!(feat && Number(feat.qualityRank) === 3);
+      },
+      compareBest: compareSmartMatch,
+      fetchPick: (src) =>
+        fetchDetailAndPickEpisode(src, {
+          requireSeasoned,
+          panHints,
+          tier,
+          cacheOnly,
+        }),
+    });
+    if (bestOverall && is4kCandidate(bestOverall)) maybeCache4kPick(bestOverall);
     return bestOverall;
   };
 
   const tryPickFromCurrentSiteOnly = async (
-    { requireSeasoned = false, panHints = null, waitPanMockMs = 1200, tier = 0, waitPanMockAll = false } = {}
+    {
+      requireSeasoned = false,
+      panHints = null,
+      panTokenHints = null,
+      waitPanMockMs = 1200,
+      tier = 0,
+      waitPanMockAll = false,
+      detailReason = '',
+      detailModule = '',
+    } = {}
   ) => {
     try {
       if (!currentSiteKey || !currentSpider || !currentVideoId) return null;
@@ -10553,7 +12531,16 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
         spiderApi: currentSpider,
         videoId: currentVideoId,
       };
-      const best = await fetchDetailAndPickEpisode(src, { requireSeasoned, panHints, waitPanMockMs, tier, waitPanMockAll });
+      const best = await fetchDetailAndPickEpisode(src, {
+        requireSeasoned,
+        panHints,
+        panTokenHints,
+        waitPanMockMs,
+        tier,
+        waitPanMockAll,
+        detailReason,
+        detailModule,
+      });
       if (best && best.ep && best.ep.url) {
         maybeCache4kPick(best);
         return best;
@@ -10656,207 +12643,247 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
     }
   };
 
-  // Strict first round:
-  // - Only return 4K/2160p candidates.
-  // - Keep the best non-4K candidate as fallback.
-  // - Only allow downgrade when search is done AND all pending pan_mock lists have resolved (or deadline reached).
-  let bestFallback = null;
-  const considerFallback = (cand) => {
-    try {
-      if (!cand || !cand.ep || !cand.ep.url) return;
-      if (isExcluded(cand)) return;
-      if (is4kCandidate(cand)) return;
-      if (!bestFallback || compareSmartMatch(bestFallback, cand) > 0) bestFallback = cand;
-    } catch (_e) {}
-  };
-  const allowDowngradeNow = () => {
-    try {
-      const queueLen =
-        sourcesSearchRuntime && Array.isArray(sourcesSearchRuntime.queue) ? sourcesSearchRuntime.queue.length : 0;
-      return !!(sourcesSearchDone.value && queueLen <= 0 && !hasPendingPanMock());
-    } catch (_e) {
-      return false;
-    }
-  };
+  const resolveSmartCandidate = async ({ allowHistory = true } = {}) => {
+    // Strict first round:
+    // - Only return 4K/2160p candidates.
+    // - Keep the best non-4K candidate as fallback.
+    // - Only allow downgrade when search is done AND all pending pan_mock lists have resolved (or deadline reached).
+    let bestFallback = null;
+    const considerFallback = (cand) => {
+      try {
+        if (!cand || !cand.ep || !cand.ep.url) return;
+        if (isExcluded(cand)) return;
+        if (is4kCandidate(cand)) return;
+        if (!bestFallback || compareSmartMatch(bestFallback, cand) > 0) bestFallback = cand;
+      } catch (_e) {}
+    };
+    const allowDowngradeNow = () => {
+      try {
+        const queueLen =
+          sourcesSearchRuntime && Array.isArray(sourcesSearchRuntime.queue) ? sourcesSearchRuntime.queue.length : 0;
+        return !!(sourcesSearchDone.value && queueLen <= 0 && !hasPendingPanMock());
+      } catch (_e) {
+        return false;
+      }
+    };
 
-			      for (let round = 0; round < 200; round += 1) {
-          if (Date.now() >= deadlineAt) {
-            if (bestFallback && bestFallback.ep && bestFallback.ep.url) return bestFallback;
-            return null;
+    const allowHistoryOnce = !allowHistory
+      ? null
+      : async () => {
+          const requireSeasoned =
+            contentKind.value === 'series' &&
+            (() => {
+              const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+              const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
+              return real.length >= 2;
+            })();
+          const historyRequireSeasoned = manualSwitchHint ? false : requireSeasoned;
+          const historyListPicked = await tryPickFromHistoryPlayFlagList({
+            requireSeasoned: historyRequireSeasoned,
+            allowMappingWait: true,
+          });
+          if (historyListPicked && historyListPicked.ep && historyListPicked.ep.url) {
+            const f = smartComputeCandidateFeatures(historyListPicked);
+            try {
+              tmdbSmartLastPickDebug.value = {
+                want,
+                requireSeasoned,
+                cands: buildPickCandidateSnapshot(),
+                pickKind: 'history_playflag_list',
+                siteKey: historyListPicked.siteKey || '',
+                siteName: historyListPicked.siteName || '',
+                spiderApi: historyListPicked.spiderApi || '',
+                videoId: historyListPicked.videoId || '',
+                panLabel: historyListPicked.panLabel || '',
+                epName: historyListPicked.ep && historyListPicked.ep.name != null ? String(historyListPicked.ep.name) : '',
+                epUrl: historyListPicked.ep && historyListPicked.ep.url != null ? String(historyListPicked.ep.url) : '',
+                matchSeason: Number.isFinite(Number(historyListPicked.matchSeason)) ? Math.floor(Number(historyListPicked.matchSeason)) : 0,
+                hasSeasonMarker: historyListPicked.hasSeasonMarker ? 1 : 0,
+                searchSeasonHint: Number.isFinite(Number(historyListPicked.searchSeasonHint))
+                  ? Math.floor(Number(historyListPicked.searchSeasonHint))
+                  : 0,
+                quality: f && f.quality ? String(f.quality) : '',
+                tierRank: f && Number.isFinite(Number(f.tierRank)) ? Number(f.tierRank) : 0,
+              };
+            } catch (_e) {}
+            return historyListPicked;
           }
-			      const requireSeasoned =
-			        contentKind.value === 'series' &&
-			      (() => {
-			        const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
-			        const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
-			        return real.length >= 2;
-			      })();
-				    if (round === 0) {
-            const historyRequireSeasoned = manualSwitchHint ? false : requireSeasoned;
-            const historyListPicked = await tryPickFromHistoryPlayFlagList({
-              requireSeasoned: historyRequireSeasoned,
-              tier: 1,
-              allowMappingWait: true,
-            });
-            if (historyListPicked && historyListPicked.ep && historyListPicked.ep.url) {
-              const f = smartComputeCandidateFeatures(historyListPicked);
+
+          if (currentSiteKey && currentSpider && currentVideoId) {
+            const history = resumeHistory.value && typeof resumeHistory.value === 'object' ? resumeHistory.value : null;
+            const historyPlayFlag = history && typeof history.playFlag === 'string' ? history.playFlag.trim() : '';
+            const historyPanHintNorm = normalizeReplayPanLabel(historyPlayFlag || '');
+            const historyPanTokenHint = smartCleanPanToken(historyPlayFlag || '');
+
+            let historyDetailPicked =
+              historyPlayFlag
+                ? await tryPickFromCurrentSiteOnly({
+                    requireSeasoned: historyRequireSeasoned,
+                    panHints: historyPanHintNorm ? [historyPanHintNorm] : null,
+                    panTokenHints: historyPanTokenHint ? [historyPanTokenHint] : null,
+                    waitPanMockMs: 3600,
+                    tier: 0,
+                    waitPanMockAll: true,
+                    detailReason: 'history_current_site',
+                    detailModule: 'history',
+                  })
+                : null;
+
+            if (!historyDetailPicked || !historyDetailPicked.ep || !historyDetailPicked.ep.url) {
+              historyDetailPicked = await tryPickFromCurrentSiteOnly({
+                requireSeasoned: historyRequireSeasoned,
+                panHints: null,
+                panTokenHints: null,
+                waitPanMockMs: 1200,
+                tier: 1,
+                waitPanMockAll: true,
+                detailReason: 'history_current_site_fallback',
+                detailModule: 'history',
+              });
+            }
+            if (!historyDetailPicked || !historyDetailPicked.ep || !historyDetailPicked.ep.url) {
+              try {
+                await mappingReadyPromise;
+              } catch (_e) {}
+              historyDetailPicked = await tryPickFromCurrentSiteOnly({
+                requireSeasoned: historyRequireSeasoned,
+                panHints: null,
+                panTokenHints: null,
+                waitPanMockMs: 1200,
+                tier: 1,
+                waitPanMockAll: true,
+                detailReason: 'history_current_site_fallback',
+                detailModule: 'history',
+              });
+            }
+            if (historyDetailPicked && historyDetailPicked.ep && historyDetailPicked.ep.url) {
+              const f = smartComputeCandidateFeatures(historyDetailPicked);
               try {
                 tmdbSmartLastPickDebug.value = {
                   want,
                   requireSeasoned,
                   cands: buildPickCandidateSnapshot(),
-                  pickKind: 'history_playflag_list',
-                  siteKey: historyListPicked.siteKey || '',
-                  siteName: historyListPicked.siteName || '',
-                  spiderApi: historyListPicked.spiderApi || '',
-                  videoId: historyListPicked.videoId || '',
-                  panLabel: historyListPicked.panLabel || '',
-                  epName: historyListPicked.ep && historyListPicked.ep.name != null ? String(historyListPicked.ep.name) : '',
-                  epUrl: historyListPicked.ep && historyListPicked.ep.url != null ? String(historyListPicked.ep.url) : '',
-                  matchSeason: Number.isFinite(Number(historyListPicked.matchSeason)) ? Math.floor(Number(historyListPicked.matchSeason)) : 0,
-                  hasSeasonMarker: historyListPicked.hasSeasonMarker ? 1 : 0,
-                  searchSeasonHint: Number.isFinite(Number(historyListPicked.searchSeasonHint))
-                    ? Math.floor(Number(historyListPicked.searchSeasonHint))
+                  pickKind: 'history_site_detail',
+                  siteKey: historyDetailPicked.siteKey || '',
+                  siteName: historyDetailPicked.siteName || '',
+                  spiderApi: historyDetailPicked.spiderApi || '',
+                  videoId: historyDetailPicked.videoId || '',
+                  panLabel: historyDetailPicked.panLabel || '',
+                  epName: historyDetailPicked.ep && historyDetailPicked.ep.name != null ? String(historyDetailPicked.ep.name) : '',
+                  epUrl: historyDetailPicked.ep && historyDetailPicked.ep.url != null ? String(historyDetailPicked.ep.url) : '',
+                  matchSeason: Number.isFinite(Number(historyDetailPicked.matchSeason)) ? Math.floor(Number(historyDetailPicked.matchSeason)) : 0,
+                  hasSeasonMarker: historyDetailPicked.hasSeasonMarker ? 1 : 0,
+                  searchSeasonHint: Number.isFinite(Number(historyDetailPicked.searchSeasonHint))
+                    ? Math.floor(Number(historyDetailPicked.searchSeasonHint))
                     : 0,
                   quality: f && f.quality ? String(f.quality) : '',
                   tierRank: f && Number.isFinite(Number(f.tierRank)) ? Number(f.tierRank) : 0,
                 };
               } catch (_e) {}
-              return historyListPicked;
+              return historyDetailPicked;
             }
+          }
+          return null;
+        };
 
-            if (currentSiteKey && currentSpider && currentVideoId) {
-              const manualPanHintNorm = normalizeReplayPanLabel(manualPanLabel || '');
-              const manualPanHints = manualPanHintNorm ? [manualPanHintNorm] : [];
-              let historyDetailPicked = await tryPickFromCurrentSiteOnly({
-                requireSeasoned: historyRequireSeasoned,
-                panHints: manualPanHints,
-                waitPanMockMs: manualPanHints.length ? 3600 : 1200,
-                tier: 1,
-                waitPanMockAll: true,
-              });
-              if (!historyDetailPicked || !historyDetailPicked.ep || !historyDetailPicked.ep.url) {
-                try {
-                  await mappingReadyPromise;
-                } catch (_e) {}
-                historyDetailPicked = await tryPickFromCurrentSiteOnly({
-                  requireSeasoned: historyRequireSeasoned,
-                  panHints: manualPanHints,
-                  waitPanMockMs: manualPanHints.length ? 3600 : 1200,
-                  tier: 1,
-                  waitPanMockAll: true,
-                });
-              }
-              if ((!historyDetailPicked || !historyDetailPicked.ep || !historyDetailPicked.ep.url) && manualPanHints.length) {
-                historyDetailPicked = await tryPickFromCurrentSiteOnly({
-                  requireSeasoned: historyRequireSeasoned,
-                  panHints: null,
-                  waitPanMockMs: 1200,
-                  tier: 1,
-                  waitPanMockAll: true,
-                });
-              }
-              if (historyDetailPicked && historyDetailPicked.ep && historyDetailPicked.ep.url) {
-                const f = smartComputeCandidateFeatures(historyDetailPicked);
-                try {
-                  tmdbSmartLastPickDebug.value = {
-                    want,
-                    requireSeasoned,
-                    cands: buildPickCandidateSnapshot(),
-                    pickKind: 'history_site_detail',
-                    siteKey: historyDetailPicked.siteKey || '',
-                    siteName: historyDetailPicked.siteName || '',
-                    spiderApi: historyDetailPicked.spiderApi || '',
-                    videoId: historyDetailPicked.videoId || '',
-                    panLabel: historyDetailPicked.panLabel || '',
-                    epName: historyDetailPicked.ep && historyDetailPicked.ep.name != null ? String(historyDetailPicked.ep.name) : '',
-                    epUrl: historyDetailPicked.ep && historyDetailPicked.ep.url != null ? String(historyDetailPicked.ep.url) : '',
-                    matchSeason: Number.isFinite(Number(historyDetailPicked.matchSeason)) ? Math.floor(Number(historyDetailPicked.matchSeason)) : 0,
-                    hasSeasonMarker: historyDetailPicked.hasSeasonMarker ? 1 : 0,
-                    searchSeasonHint: Number.isFinite(Number(historyDetailPicked.searchSeasonHint))
-                      ? Math.floor(Number(historyDetailPicked.searchSeasonHint))
-                      : 0,
-                    quality: f && f.quality ? String(f.quality) : '',
-                    tierRank: f && Number.isFinite(Number(f.tierRank)) ? Number(f.tierRank) : 0,
-                  };
-                } catch (_e) {}
-                return historyDetailPicked;
-              }
-            }
-		    }
-		    const best = await tryPickOnce({ requireSeasoned });
-		    if (best && best.ep && best.ep.url) {
-		      try {
-		        tmdbSmartLastPickDebug.value = {
-	          want,
-	          requireSeasoned,
+    return await runSmartCandidateLoop({
+      deadlineAt,
+      allowHistoryOnce,
+      considerFallback,
+      allowDowngradeNow,
+      onTimeoutFallback: () =>
+        bestFallback && bestFallback.ep && bestFallback.ep.url && (allowDowngradeNow() || Date.now() >= deadlineAt)
+          ? bestFallback
+          : null,
+      pickPrimary: async ({ detailDone }) => {
+        const requireSeasoned =
+          contentKind.value === 'series' &&
+          (() => {
+            const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+            const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
+            return real.length >= 2;
+          })();
+        const tierNow = detailDone ? 1 : 0;
+        const best = await tryPickOnce({ requireSeasoned, tier: tierNow, cacheOnly: !detailDone });
+        if (!best || !best.ep || !best.ep.url) return null;
+        try {
+          tmdbSmartLastPickDebug.value = {
+            want,
+            requireSeasoned,
             cands: buildPickCandidateSnapshot(),
-	          siteKey: best.siteKey || '',
-	          siteName: best.siteName || '',
-	          spiderApi: best.spiderApi || '',
-	          videoId: best.videoId || '',
-	          panLabel: best.panLabel || '',
-	          epName: best.ep && best.ep.name != null ? String(best.ep.name) : '',
-	          epUrl: best.ep && best.ep.url != null ? String(best.ep.url) : '',
-	          matchSeason: Number.isFinite(Number(best.matchSeason)) ? Math.floor(Number(best.matchSeason)) : 0,
-	          hasSeasonMarker: best.hasSeasonMarker ? 1 : 0,
-	          searchSeasonHint: Number.isFinite(Number(best.searchSeasonHint)) ? Math.floor(Number(best.searchSeasonHint)) : 0,
-	        };
-	      } catch (_e) {}
-	      if (is4kCandidate(best)) return best;
-	      considerFallback(best);
-	    }
-	    if (sourcesSearchDone.value) {
-	      if (hasPendingPanMock()) {
-	        await waitForAnyPanMockUpdate(320);
-	        continue;
-	      }
-	      if (requireSeasoned) {
-	        const relaxed = await tryPickOnce({ requireSeasoned: false });
-	        if (relaxed && relaxed.ep && relaxed.ep.url) {
-	          try {
-	            tmdbSmartLastPickDebug.value = {
-	              want,
-	              requireSeasoned: false,
+            siteKey: best.siteKey || '',
+            siteName: best.siteName || '',
+            spiderApi: best.spiderApi || '',
+            videoId: best.videoId || '',
+            panLabel: best.panLabel || '',
+            epName: best.ep && best.ep.name != null ? String(best.ep.name) : '',
+            epUrl: best.ep && best.ep.url != null ? String(best.ep.url) : '',
+            matchSeason: Number.isFinite(Number(best.matchSeason)) ? Math.floor(Number(best.matchSeason)) : 0,
+            hasSeasonMarker: best.hasSeasonMarker ? 1 : 0,
+            searchSeasonHint: Number.isFinite(Number(best.searchSeasonHint)) ? Math.floor(Number(best.searchSeasonHint)) : 0,
+          };
+        } catch (_e) {}
+        return { cand: best, stop: is4kCandidate(best) };
+      },
+      pickAfterSearchDone: async ({ detailDone }) => {
+        if (!detailDone) return null;
+        const requireSeasoned =
+          contentKind.value === 'series' &&
+          (() => {
+            const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+            const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
+            return real.length >= 2;
+          })();
+        if (requireSeasoned) {
+          const relaxed = await tryPickOnce({ requireSeasoned: false, tier: 2, cacheOnly: false });
+          if (relaxed && relaxed.ep && relaxed.ep.url) {
+            try {
+              tmdbSmartLastPickDebug.value = {
+                want,
+                requireSeasoned: false,
                 cands: buildPickCandidateSnapshot(),
-	              siteKey: relaxed.siteKey || '',
-	              siteName: relaxed.siteName || '',
-	              spiderApi: relaxed.spiderApi || '',
-	              videoId: relaxed.videoId || '',
-	              panLabel: relaxed.panLabel || '',
-	              epName: relaxed.ep && relaxed.ep.name != null ? String(relaxed.ep.name) : '',
-	              epUrl: relaxed.ep && relaxed.ep.url != null ? String(relaxed.ep.url) : '',
-	              matchSeason: Number.isFinite(Number(relaxed.matchSeason)) ? Math.floor(Number(relaxed.matchSeason)) : 0,
-	              hasSeasonMarker: relaxed.hasSeasonMarker ? 1 : 0,
-	              searchSeasonHint: Number.isFinite(Number(relaxed.searchSeasonHint)) ? Math.floor(Number(relaxed.searchSeasonHint)) : 0,
-	            };
-	          } catch (_e) {}
-	          if (is4kCandidate(relaxed)) return relaxed;
-	          considerFallback(relaxed);
-	        }
-	      }
-	      releaseLowPriorityHold();
-	      if (allowDowngradeNow()) {
-	        if (bestFallback && bestFallback.ep && bestFallback.ep.url) return bestFallback;
-	        return null;
-	      }
-	      return null;
-	    }
-    const beforeQueue = sourcesSearchRuntime.queue.length;
-    const beforeCount = aggregatedSources.value.length;
-    if (!sourcesLoading.value) await fetchAggregatedSourcesExactMatches();
-    const progressed = !(sourcesSearchRuntime.queue.length === beforeQueue && aggregatedSources.value.length === beforeCount);
-    if (!progressed) {
-      // Search may not advance every tick; keep going.
-      // Also give pan_mock list updates some time to arrive.
-      const waited = await waitForAnyPanMockUpdate(320);
-      if (!waited) await new Promise((r) => setTimeout(r, 120));
-    }
-  }
+                siteKey: relaxed.siteKey || '',
+                siteName: relaxed.siteName || '',
+                spiderApi: relaxed.spiderApi || '',
+                videoId: relaxed.videoId || '',
+                panLabel: relaxed.panLabel || '',
+                epName: relaxed.ep && relaxed.ep.name != null ? String(relaxed.ep.name) : '',
+                epUrl: relaxed.ep && relaxed.ep.url != null ? String(relaxed.ep.url) : '',
+                matchSeason: Number.isFinite(Number(relaxed.matchSeason)) ? Math.floor(Number(relaxed.matchSeason)) : 0,
+                hasSeasonMarker: relaxed.hasSeasonMarker ? 1 : 0,
+                searchSeasonHint: Number.isFinite(Number(relaxed.searchSeasonHint)) ? Math.floor(Number(relaxed.searchSeasonHint)) : 0,
+              };
+            } catch (_e) {}
+            return { cand: relaxed, stop: is4kCandidate(relaxed) };
+          }
+        }
+        const tier3 = await tryPickOnce({ requireSeasoned: false, tier: 3, cacheOnly: false });
+        if (tier3 && tier3.ep && tier3.ep.url) {
+          try {
+            tmdbSmartLastPickDebug.value = {
+              want,
+              requireSeasoned: false,
+              cands: buildPickCandidateSnapshot(),
+              siteKey: tier3.siteKey || '',
+              siteName: tier3.siteName || '',
+              spiderApi: tier3.spiderApi || '',
+              videoId: tier3.videoId || '',
+              panLabel: tier3.panLabel || '',
+              epName: tier3.ep && tier3.ep.name != null ? String(tier3.ep.name) : '',
+              epUrl: tier3.ep && tier3.ep.url != null ? String(tier3.ep.url) : '',
+              matchSeason: Number.isFinite(Number(tier3.matchSeason)) ? Math.floor(Number(tier3.matchSeason)) : 0,
+              hasSeasonMarker: tier3.hasSeasonMarker ? 1 : 0,
+              searchSeasonHint: Number.isFinite(Number(tier3.searchSeasonHint)) ? Math.floor(Number(tier3.searchSeasonHint)) : 0,
+            };
+          } catch (_e) {}
+          return { cand: tier3, stop: is4kCandidate(tier3) };
+        }
+        return null;
+      },
+    });
+  };
 
-  releaseLowPriorityHold();
-  if (bestFallback && bestFallback.ep && bestFallback.ep.url && (allowDowngradeNow() || Date.now() >= deadlineAt)) return bestFallback;
-  return null;
+    return await resolveSmartCandidate({ allowHistory: true });
   })();
 
   tmdbSmartPickInFlight.set(flightKey, run);
@@ -10902,7 +12929,9 @@ const requestPlay = async (opts = {}) => {
   let id = ep && ep.url ? String(ep.url) : '';
 
   let historySiteKey = (props.siteKey || '').trim();
-  let historySiteName = resolvedSiteName.value || '';
+  const resumeHistorySiteName =
+    resumeHistory.value && typeof resumeHistory.value.siteName === 'string' ? String(resumeHistory.value.siteName).trim() : '';
+  let historySiteName = resolvedSiteName.value || resumeHistorySiteName || historySiteKey;
   let historySpiderApi = api ? String(api) : '';
   let historyVideoId = (props.videoId || '').trim();
 
@@ -11075,12 +13104,10 @@ const requestPlay = async (opts = {}) => {
       fallbackSiteName: historySiteName,
     });
     playerStatsSiteName.value = statsMeta && statsMeta.siteTitleLabel ? String(statsMeta.siteTitleLabel) : '';
-    playerStatsPanName.value = String(flag || '').trim();
     playerStatsPathName.value = pickPathNameForStats(statsEpName);
     playerStatsRawFileName.value = pickRawFileNameForStats(statsEpName, statsEpUrl || id);
   } catch (_e) {
     playerStatsSiteName.value = '';
-    playerStatsPanName.value = '';
     playerStatsPathName.value = '';
     playerStatsRawFileName.value = '';
   }
@@ -11109,6 +13136,37 @@ const requestPlay = async (opts = {}) => {
   const tmdbSubPanKeyAtCall =
     tmdbSmartListAvailable.value && isTMDBSitePanKey(panKeyAtCall) ? String(tmdbSelectedSitePanKey.value || '') : '';
   const epNameAtCall = ep && ep.name ? String(ep.name) : '';
+  const targetResumeIdentity = computeResumeIdentityByEpisode({ idx: idxAtCall, ep });
+  const currentResumeIdentity = currentPlaybackResumeIdentity.value ? String(currentPlaybackResumeIdentity.value) : '';
+
+  // Each play attempt has its own resume-seek window.
+  resumeSeekState.key = '';
+  resumeSeekState.applied = false;
+  resumeSeekState.tryKey = '';
+  resumeSeekState.tryAt = 0;
+  resumeSeekState.frozen = false;
+  resumeSeekState.logKey = '';
+
+  // Prefer latest in-session progress when switching source/quality/pan for the same episode.
+  try {
+    resumeSeekOverrideState.identity = '';
+    resumeSeekOverrideState.sec = 0;
+    resumeSeekOverrideState.at = 0;
+    const curSec = Number(playerTimeState.currentTime);
+    if (
+      playerUrl.value &&
+      (playerPlaybackStarted.value || playerFirstFrameReady.value) &&
+      Number.isFinite(curSec) &&
+      curSec > 3 &&
+      targetResumeIdentity &&
+      currentResumeIdentity &&
+      targetResumeIdentity === currentResumeIdentity
+    ) {
+      resumeSeekOverrideState.identity = targetResumeIdentity;
+      resumeSeekOverrideState.sec = Math.floor(curSec);
+      resumeSeekOverrideState.at = Date.now();
+    }
+  } catch (_e) {}
 
   playRequestState.seq += 1;
   const seqAtCall = playRequestState.seq;
@@ -11361,12 +13419,40 @@ const requestPlay = async (opts = {}) => {
             pendingProxyRetry.value = canRetryWithProxy
               ? { playKey, panKey: panKeyAtCall, idx: idxAtCall, trigger }
               : null;
+            currentPlayingPanFlag.value = String(flag || '').trim();
+            playerStatsPanName.value = currentPlayingPanFlag.value;
 					    playerUrl.value = finalUrl;
-						    playerHeaders.value = finalHeaders;
+				    playerHeaders.value = finalHeaders;
 				    playingPanKey.value = panKeyAtCall;
 				    playingEpisodeIndex.value = idxAtCall;
-				    playingSmartEpisodeNo.value = isSmartPanKey(panKeyAtCall) ? resolveSmartEpisodeNo(ep) : 0;
+            const prevSmartEpisodeNo = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+            const smartEpisodeCandidate = (() => {
+              if (!tmdbMode.value || tmdbMovieMode.value) return 0;
+              const direct = resolveSmartEpisodeNo(ep);
+              if (direct > 0) return direct;
+              const m = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[idxAtCall] : null;
+              const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+              const e = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+              if (s > 0 && e > 0) {
+                const gt = tmdbGlobalEpisodeNoOf(s, e);
+                if (gt > 0) return gt;
+                if (String(panKeyAtCall || '') === DOUBAN_SMART_PAN_KEY) {
+                  const gd = doubanGlobalEpisodeNoOf(s, e, doubanSeasonMeta.value);
+                  if (gd > 0) return gd;
+                }
+                return e;
+              }
+              if (e > 0) return e;
+              return idxAtCall >= 0 ? idxAtCall + 1 : 0;
+            })();
+            const smartEpisodeValid = isSmartEpisodeNoValid(smartEpisodeCandidate);
+            const smartEpisodeFinal = smartEpisodeValid ? smartEpisodeCandidate : prevSmartEpisodeNo;
+            playingSmartEpisodeNo.value = smartEpisodeFinal;
 				    playingTMDBSubPanKey.value = tmdbSubPanKeyAtCall;
+            currentPlayingEpisodeUrl.value = String(ep && ep.url != null ? ep.url : (statsEpUrl || id || '')).trim();
+            currentPlayingEpisodeRawName.value = pickRawFileNameForStats(epNameAtCall, statsEpUrl || id || '').trim();
+            currentPlayingEpisodeMatchKey.value = buildEpisodeMatchKey(epNameAtCall, currentPlayingEpisodeRawName.value);
+            currentPlaybackResumeIdentity.value = targetResumeIdentity || '';
 		        try {
 	          await nextTick();
 	          if (seqAtCall === playRequestState.seq && artPlayerRef.value && typeof artPlayerRef.value.tryAutoplay === 'function') {
@@ -11383,6 +13469,11 @@ const requestPlay = async (opts = {}) => {
 				      if (siteKey && spiderApi && videoId && videoTitle) {
 				        const tmdbSeasonAtCall = (() => {
 				          if (!tmdbMode.value) return 0;
+                  if (!smartEpisodeValid) {
+                    const prev = lastHistoryPayload.value && typeof lastHistoryPayload.value === 'object' ? lastHistoryPayload.value : null;
+                    const prevSeason = prev && Number.isFinite(Number(prev.tmdbSeason)) ? Math.floor(Number(prev.tmdbSeason)) : 0;
+                    if (prevSeason > 0) return prevSeason;
+                  }
 				          // Smart lists carry explicit season/episode metadata.
 				          if (ep && Number.isFinite(Number(ep.__tmdbSeason))) {
 				            const s = Math.floor(Number(ep.__tmdbSeason));
@@ -11394,6 +13485,11 @@ const requestPlay = async (opts = {}) => {
 				        })();
 				        const tmdbEpisodeAtCall = (() => {
 				          if (!tmdbMode.value) return 0;
+                  if (!smartEpisodeValid) {
+                    const prev = lastHistoryPayload.value && typeof lastHistoryPayload.value === 'object' ? lastHistoryPayload.value : null;
+                    const prevEpisode = prev && Number.isFinite(Number(prev.tmdbEpisode)) ? Math.floor(Number(prev.tmdbEpisode)) : 0;
+                    if (prevEpisode > 0) return prevEpisode;
+                  }
 				          if (ep && Number.isFinite(Number(ep.__tmdbSeasonEpisode))) {
 				            const n = Math.floor(Number(ep.__tmdbSeasonEpisode));
 				            if (n > 0) return n;
@@ -11403,23 +13499,13 @@ const requestPlay = async (opts = {}) => {
 				          return n > 0 ? n : 0;
 				        })();
                 const normalizedFlagAtCall = String(flag || '').trim();
-                const normalizedHistoryFlag = resumeHistory.value && typeof resumeHistory.value.playFlag === 'string'
-                  ? String(resumeHistory.value.playFlag || '').trim()
-                  : '';
-                const effectiveHistoryFlag = (() => {
-                  const curProvider = panMockProviderFromFlag(normalizedFlagAtCall);
-                  if (curProvider && normalizedFlagAtCall.includes('-')) return normalizedFlagAtCall;
-                  const prevProvider = panMockProviderFromFlag(normalizedHistoryFlag);
-                  if (prevProvider && normalizedHistoryFlag.includes('-')) return normalizedHistoryFlag;
-                  return normalizedFlagAtCall;
-                })();
 				        const payloadForHistory = {
 				          siteKey,
 				          siteName: historySiteName || resolvedSiteName.value || '',
 				          spiderApi,
 				          videoId,
 				          videoTitle,
-				          contentKey: computeHistoryContentKey(videoTitle) || '',
+				          contentKey: getStableContentKey() || computeHistoryContentKey(videoTitle) || '',
 				          videoPoster: (meta && meta.pic ? String(meta.pic) : '') || historyCoverPoster.value || pickHistoryPoster() || '',
 				          videoRemark: (tmdbMode.value ? tmdbHistoryRemark.value : displayRemark.value) || '',
 				          tmdbId: meta && Number.isFinite(Number(meta.tmdbId)) ? Number(meta.tmdbId) : (tmdbMode.value ? Number(props.tmdbId || 0) : 0),
@@ -11427,16 +13513,16 @@ const requestPlay = async (opts = {}) => {
 				          tmdbSeason: tmdbSeasonAtCall ? Number(tmdbSeasonAtCall) : 0,
 				          tmdbEpisode: tmdbEpisodeAtCall ? Number(tmdbEpisodeAtCall) : 0,
 				          panLabel: (src && src.label ? String(src.label) : '').trim(),
-				          playFlag: effectiveHistoryFlag,
+				          playFlag: normalizedFlagAtCall,
 				          episodeIndex: idxAtCall >= 0 ? idxAtCall : 0,
 				          episodeName: tmdbMode.value ? '' : epNameAtCall,
 				        };
                 try {
                   smartDebugLog('history_flag_resolve', {
+                    module: 'play',
                     trigger: String(trigger || ''),
                     currentFlag: normalizedFlagAtCall,
-                    previousFlag: normalizedHistoryFlag,
-                    finalFlag: effectiveHistoryFlag,
+                    finalFlag: normalizedFlagAtCall,
                   });
                 } catch (_e) {}
 				        // For multi-device resume syncing (Emby-compatible clients), store a stable item id when possible.
@@ -11502,14 +13588,81 @@ const requestPlay = async (opts = {}) => {
   return success;
 };
 
+const pickFirstPlayablePanKey = () => {
+  const list = Array.isArray(sitePanOptions.value) ? sitePanOptions.value : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const pan = list[i];
+    const eps = pan && Array.isArray(pan.episodes) ? pan.episodes : [];
+    if (eps.length) return pan && pan.key ? String(pan.key) : '';
+  }
+  return '';
+};
+
+const hasAnyPlayablePan = () => !!pickFirstPlayablePanKey();
+
+const pickNextAggregatedSource = () => {
+  const list = Array.isArray(aggregatedSources.value) ? aggregatedSources.value : [];
+  if (!list.length) return null;
+  const curKey = `${(props.siteKey || '').trim()}::${(props.spiderApi || '').trim()}::${(props.videoId || '').trim()}`;
+  let startIdx = list.findIndex((s) => {
+    const k = `${(s && s.siteKey ? String(s.siteKey) : '').trim()}::${(s && s.spiderApi ? String(s.spiderApi) : '').trim()}::${(s && s.videoId ? String(s.videoId) : '').trim()}`;
+    return !!(curKey && k === curKey);
+  });
+  if (startIdx < 0) startIdx = 0;
+  for (let offset = 1; offset <= list.length; offset += 1) {
+    const idx = (startIdx + offset) % list.length;
+    const s = list[idx];
+    const siteKey = s && s.siteKey ? String(s.siteKey).trim() : '';
+    const spiderApi = s && s.spiderApi ? String(s.spiderApi).trim() : '';
+    const videoId = s && s.videoId ? String(s.videoId).trim() : '';
+    if (!siteKey || !spiderApi || !videoId) continue;
+    const key = `${siteKey}::${spiderApi}::${videoId}`;
+    if (autoSourceFallbackTried.has(key)) continue;
+    return { ...s, __key: key };
+  }
+  return null;
+};
+
+const tryAutoFallbackToNextSource = () => {
+  if (tmdbMode.value) return false;
+  const next = pickNextAggregatedSource();
+  if (!next || !next.__key) {
+    autoFallbackActive.value = false;
+    return false;
+  }
+  autoSourceFallbackTried.add(next.__key);
+  autoFallbackActive.value = true;
+  try {
+    window.dispatchEvent(
+      new CustomEvent('tv:open-play', {
+        detail: {
+          siteKey: next.siteKey || '',
+          spiderApi: next.spiderApi || '',
+          videoId: next.videoId || '',
+          videoTitle: next.videoTitle || '',
+          videoPoster: next.videoPoster || '',
+          videoRemark: next.videoRemark || '',
+          contentKey: getStableContentKey(),
+          switchOnly: true,
+          switchOnlyToken: Date.now(),
+        },
+      })
+    );
+  } catch (_e) {
+    return false;
+  }
+  return true;
+};
+
 const tryAutoStartPlayback = () => {
   if (initialAutoPlayTriggered.value) return;
   if (initialAutoPlayInFlight.value) return;
-  if (autoPlaySuppressedByUser.value) return;
+  if (autoPlaySuppressedByUser.value && !autoFallbackActive.value) return;
   if (introLoading.value) return;
   if (!resumeHistoryLoaded.value) return;
+  if (resumeHistoryFound.value == null) return;
   // History restore must settle (episode/pan) before first auto play.
-  if (resumeHistory.value && !resumeHistoryApplied.value) return;
+  if (resumeHistoryFound.value && !resumeHistoryApplied.value) return;
   // PanMock list must finish resolving before autoplay; otherwise episode list can still be placeholder.
   if (!tmdbMode.value) {
     const resolving =
@@ -11518,6 +13671,47 @@ const tryAutoStartPlayback = () => {
       detail.value.panMockEnabled === true &&
       detail.value.panMockResolving === true;
     if (resolving) return;
+  }
+  // TMDB entries: wait for TMDB/Douban episode list to finish building.
+  if (tmdbMode.value) {
+    if (tmdbMovieMode.value) {
+      if (!tmdbMovieSmartListAvailable.value) return;
+    } else {
+      if (!tmdbSmartListAvailable.value && !doubanSmartListAvailable.value) return;
+    }
+  }
+  // If we have a resume target, ensure the episode list is ready and the selected index matches it
+  // before starting autoplay (prevents "auto_init" from using episode 1).
+  if (resumeWanted.value && typeof resumeWanted.value === 'object') {
+    const w = resumeWanted.value;
+    const wantedSeason = Number.isFinite(Number(w.season)) ? Math.floor(Number(w.season)) : 0;
+    const wantedEpisode = Number.isFinite(Number(w.episode)) ? Math.floor(Number(w.episode)) : 0;
+    const wantedIndex = Number.isFinite(Number(w.indexFallback)) ? Math.floor(Number(w.indexFallback)) : 0;
+    if (wantedEpisode > 0 && selectedEpisodes.value.length < wantedEpisode) return;
+    const idx = pickResumeEpisodeIndex({ wantedSeason, wantedEpisode, wantedIndex });
+    if (Number.isFinite(idx) && idx >= 0 && Number(selectedEpisodeIndex.value) !== idx) return;
+  }
+  // Site entries: if history points to a pan playFlag, wait until pan-mock list is resolved.
+  if (!tmdbMode.value) {
+    const h = resumeHistory.value && typeof resumeHistory.value === 'object' ? resumeHistory.value : null;
+    const playFlag = h && typeof h.playFlag === 'string' ? h.playFlag.trim() : '';
+    if (playFlag) {
+      const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+      if (d.panMockEnabled === true && d.panMockResolved !== true) return;
+    }
+  }
+  // Site entries without history: prefer smart list if available, otherwise pick the first pan with data.
+  if (!tmdbMode.value && resumeHistoryLoaded.value && !resumeHistory.value) {
+    if (legacySmartListAvailable.value) {
+      if (selectedPanKey.value !== SMART_PAN_KEY) selectPan(SMART_PAN_KEY);
+    } else {
+      const panKey = pickFirstPlayablePanKey();
+      if (panKey) {
+        if (selectedPanKey.value !== panKey) selectPan(panKey);
+      } else if (tryAutoFallbackToNextSource()) {
+        return;
+      }
+    }
   }
   if (!selectedEpisodes.value.length) return;
 				  if (!tmdbSmartListAvailable.value && !tmdbMovieMode.value) {
@@ -11530,15 +13724,18 @@ const tryAutoStartPlayback = () => {
       const wantedSeason = Number.isFinite(Number(w.season)) ? Math.floor(Number(w.season)) : 0;
       const wantedEpisode = Number.isFinite(Number(w.episode)) ? Math.floor(Number(w.episode)) : 0;
       const wantedIndex = Number.isFinite(Number(w.indexFallback)) ? Math.floor(Number(w.indexFallback)) : 0;
-      selectedEpisodeIndex.value = pickResumeEpisodeIndex({ wantedSeason, wantedEpisode, wantedIndex });
+      setEpisodeIndex(pickResumeEpisodeIndex({ wantedSeason, wantedEpisode, wantedIndex }), 'autoplay_pickResume');
     } else {
-      selectedEpisodeIndex.value = 0;
+      // Only default to episode 0 when we are sure there is no history.
+      if (resumeHistoryFound.value === false) setEpisodeIndex(0, 'autoplay_default0');
+      else return;
     }
   }
   initialAutoPlayInFlight.value = true;
   void requestPlay({ trigger: 'auto_init' })
     .then((started) => {
       if (!started) return;
+      autoFallbackActive.value = false;
       initialAutoPlayTriggered.value = true;
     })
     .catch(() => {})
@@ -11547,12 +13744,15 @@ const tryAutoStartPlayback = () => {
     });
 };
 
-const resumeSeekState = { key: '', applied: false, tryKey: '', tryAt: 0 };
+const resumeSeekState = { key: '', applied: false, tryKey: '', tryAt: 0, frozen: false, logKey: '' };
+const resumeSeekOverrideState = { identity: '', sec: 0, at: 0 };
 watch(
   () => playerUrl.value,
   () => {
-    resumeSeekState.key = '';
-    resumeSeekState.applied = false;
+    // Keep per-attempt anti-spam throttling; full resume window is reset in requestPlay().
+    resumeSeekState.tryKey = '';
+    resumeSeekState.tryAt = 0;
+    resumeSeekState.logKey = '';
   },
   { immediate: true }
 );
@@ -11563,7 +13763,58 @@ const fromTicks = (ticks) => {
   return t / 10_000_000;
 };
 
+const computeResumeIdentityByEpisode = ({ idx, ep } = {}) => {
+  try {
+    const nIdx = Number.isFinite(Number(idx)) ? Math.max(0, Math.floor(Number(idx))) : 0;
+    if (tmdbMode.value) {
+      const typ = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+      const tmdbId = Number(props.tmdbId || 0);
+      if (!(tmdbId > 0)) return `tmdb::${typ || 'tv'}::idx:${nIdx}`;
+      if (typ === 'movie') return `tmdb_movie_${Math.floor(tmdbId)}`;
+      const m =
+        ep && typeof ep === 'object' && Number.isFinite(Number(ep.__tmdbSeason)) && Number.isFinite(Number(ep.__tmdbSeasonEpisode))
+          ? { season: Math.floor(Number(ep.__tmdbSeason)), episode: Math.floor(Number(ep.__tmdbSeasonEpisode)) }
+          : (Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[nIdx] : null) || null;
+      const sn = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+      const en = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+      if (sn > 0 && en > 0) return `tmdb_tv_${Math.floor(tmdbId)}_s${String(sn).padStart(2, '0')}_e${String(en).padStart(3, '0')}`;
+      return `tmdb_tv_${Math.floor(tmdbId)}::idx:${nIdx}`;
+    }
+    const stable = getStableContentKey();
+    return `${stable || 'site'}::idx:${nIdx}`;
+  } catch (_e) {
+    return '';
+  }
+};
+
+const computeCurrentResumeIdentity = () => {
+  const idxRaw = Number(selectedEpisodeIndex.value);
+  const idx = Number.isFinite(idxRaw) ? Math.max(0, Math.floor(idxRaw)) : 0;
+  const eps = selectedEpisodes.value;
+  const ep = Array.isArray(eps) && idx < eps.length ? eps[idx] : null;
+  return computeResumeIdentityByEpisode({ idx, ep });
+};
+
+const getResumeSeekDecisionKey = () => `${String(playerUrl.value || '')}::${selectedEpisodeIndex.value}`;
+const logResumeSeekDecisionOnce = (type, payload) => {
+  try {
+    if (!debugEnabled.value) return;
+    const key = getResumeSeekDecisionKey();
+    if (!key) return;
+    if (resumeSeekState.logKey === key) return;
+    resumeSeekState.logKey = key;
+    smartDebugLog(type, payload);
+  } catch (_e) {}
+};
+
 const computeResumeSeekSeconds = () => {
+  const overrideIdentity = String(resumeSeekOverrideState.identity || '').trim();
+  const currentIdentity = computeCurrentResumeIdentity();
+  if (overrideIdentity && currentIdentity && overrideIdentity === currentIdentity) {
+    const secRaw = Number(resumeSeekOverrideState.sec);
+    const sec = Number.isFinite(secRaw) ? Math.floor(secRaw) : 0;
+    if (sec >= 3) return sec;
+  }
   const h = resumeHistory.value && typeof resumeHistory.value === 'object' ? resumeHistory.value : null;
   if (!h) return 0;
   const posSec = fromTicks(h.playbackPositionTicks || 0);
@@ -11612,30 +13863,22 @@ const computeResumeSeekSeconds = () => {
 					}
 				}
 				if (curPb && curPb.toLowerCase() !== wantedPb.toLowerCase()) {
-					try {
-						if (debugEnabled.value) {
-							smartDebugLog('resume_seek_skip', {
-								reason: 'pb_mismatch',
-								panLabel,
-								wantedPb,
-								curPb,
-								selectedEpisodeIndex: curIdx,
-							});
-						}
-					} catch (_e) {}
+					logResumeSeekDecisionOnce('resume_seek_skip', {
+						reason: 'pb_mismatch',
+						panLabel,
+						wantedPb,
+						curPb,
+						selectedEpisodeIndex: curIdx,
+					});
 					return 0;
 				}
 				if (!curPb) {
-					try {
-						if (debugEnabled.value) {
-							smartDebugLog('resume_seek_skip', {
-								reason: 'pb_unavailable',
-								panLabel,
-								wantedPb,
-								selectedEpisodeIndex: curIdx,
-							});
-						}
-					} catch (_e) {}
+					logResumeSeekDecisionOnce('resume_seek_skip', {
+						reason: 'pb_unavailable',
+						panLabel,
+						wantedPb,
+						selectedEpisodeIndex: curIdx,
+					});
 					return 0;
 				}
 			}
@@ -11654,17 +13897,13 @@ const computeResumeSeekSeconds = () => {
 					const a = normalizeEpisodeNameForExactMatch(wantedName);
 					const b = normalizeEpisodeNameForExactMatch(curName);
 					if (a && b && a !== b) {
-						try {
-							if (debugEnabled.value) {
-								smartDebugLog('resume_seek_skip', {
-									reason: 'episode_name_mismatch',
-									panLabel,
-									wantedName,
-									curName,
-									curIdx,
-								});
-							}
-						} catch (_e) {}
+						logResumeSeekDecisionOnce('resume_seek_skip', {
+							reason: 'episode_name_mismatch',
+							panLabel,
+							wantedName,
+							curName,
+							curIdx,
+						});
 						return 0;
 					}
 				}
@@ -11673,16 +13912,12 @@ const computeResumeSeekSeconds = () => {
 			if (Number.isFinite(wantedIdxRaw) && wantedIdxRaw >= 0) {
 				const wantedIdx = Math.floor(wantedIdxRaw);
 				if (curIdx >= 0 && curIdx !== wantedIdx) {
-					try {
-						if (debugEnabled.value) {
-							smartDebugLog('resume_seek_skip', {
-								reason: 'episode_index_mismatch',
-								panLabel,
-								wantedIdx,
-								curIdx,
-							});
-						}
-					} catch (_e) {}
+					logResumeSeekDecisionOnce('resume_seek_skip', {
+						reason: 'episode_index_mismatch',
+						panLabel,
+						wantedIdx,
+						curIdx,
+					});
 					return 0;
 				}
 			}
@@ -11695,6 +13930,7 @@ const computeResumeSeekSeconds = () => {
 const maybeApplyResumeSeek = (trigger = '') => {
   if (!resumeHistoryLoaded.value) return;
   if (!playerUrl.value) return;
+  if (resumeSeekState.frozen) return;
   const sec = computeResumeSeekSeconds();
   if (!sec) return;
   const key = `${playerUrl.value}::${selectedEpisodeIndex.value}`;
@@ -11707,12 +13943,23 @@ const maybeApplyResumeSeek = (trigger = '') => {
   try {
     const player = artPlayerRef.value;
     if (!player || typeof player.seekTo !== 'function') return;
+    const curSec = Number.isFinite(Number(playerTimeState.currentTime)) ? Number(playerTimeState.currentTime) : 0;
+    if (playerPlaybackStarted.value && curSec > sec + 3) {
+      // Playback has already advanced beyond resume point; never rewind on later state/list changes.
+      resumeSeekState.key = key;
+      resumeSeekState.applied = true;
+      resumeSeekState.frozen = true;
+      return;
+    }
     const ok = player.seekTo(sec);
     if (!ok) return;
     resumeSeekState.key = key;
     resumeSeekState.applied = true;
+    resumeSeekState.frozen = true;
     try {
+      resumeSeekState.logKey = key;
       smartDebugLog('resume_seek', {
+        module: 'play',
         sec,
         trigger: String(trigger || ''),
         siteKey: typeof props.siteKey === 'string' ? props.siteKey : '',
@@ -11726,42 +13973,21 @@ const maybeApplyResumeSeek = (trigger = '') => {
   } catch (_e) {}
 };
 
-// Re-attempt resume-seek when episode match metadata becomes available.
-// In TMDB smart flows, `episodeMatchByIndex` may be empty at the moment the player becomes ready.
+// Re-attempt resume-seek once when TMDB episode match metadata becomes available
+// (after the player is already ready to play).
 watch(
-  () => {
-    const h = resumeHistory.value && typeof resumeHistory.value === 'object' ? resumeHistory.value : null;
-    const pbRaw =
-      (h && (h.playbackItemId != null ? String(h.playbackItemId) : '')) ||
-      (h && (h.playback_item_id != null ? String(h.playback_item_id) : ''));
-    const wantedPb = String(pbRaw || '').trim();
-    const pos = h && Number.isFinite(Number(h.playbackPositionTicks)) ? Number(h.playbackPositionTicks) : 0;
-    const curIdxRaw = Number(selectedEpisodeIndex.value);
-    const curIdx = Number.isFinite(curIdxRaw) ? Math.floor(curIdxRaw) : -1;
-    const m = curIdx >= 0 && Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[curIdx] : null;
-    const se = m ? `${Number(m.season || 0)}:${Number(m.episode || 0)}` : '';
-    return [
-      resumeHistoryLoaded.value ? '1' : '0',
-      playerUrl.value ? '1' : '0',
-      playerMetaReady.value ? '1' : '0',
-      playerPlaybackStarted.value ? '1' : '0',
-      playerFirstFrameReady.value ? '1' : '0',
-      String(curIdx),
-      se,
-      wantedPb,
-      String(pos || 0),
-    ].join('|');
-  },
-  () => {
+  () => (Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value.length : 0),
+  (len, prev) => {
+    if (prev > 0 || len <= 0) return;
     if (!playerUrl.value) return;
-    if (!playerMetaReady.value && !playerPlaybackStarted.value && !playerFirstFrameReady.value) return;
-    maybeApplyResumeSeek('watch');
+    if (!playerFirstFrameReady.value && !playerPlaybackStarted.value) return;
+    if (!resumeHistoryLoaded.value || !resumeHistory.value) return;
+    maybeApplyResumeSeek('match_ready');
   }
 );
 
 const onPlayerLoadedMetadata = () => {
   playerMetaReady.value = true;
-  maybeApplyResumeSeek('loadedmetadata');
 };
 
 const playerVideoInfo = ref({ width: 0, height: 0 });
@@ -11839,7 +14065,7 @@ const commitHistoryBaseIfNeeded = (reason = '', opts = {}) => {
         await apiPostJson('/api/playhistory', { ...base }, { dedupe: false });
         window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
         try {
-          smartDebugLog('history_commit', { reason: String(reason || ''), key });
+          smartDebugLog('history_commit', { module: 'play', reason: String(reason || ''), key });
         } catch (_e) {}
       } catch (_e) {
         // ignore
@@ -11890,6 +14116,16 @@ const syncHistoryProgressIfPossible = async (opts = {}) => {
   historyProgressState.inFlight = (async () => {
     try {
       commitHistoryBaseIfNeeded('timeupdate');
+      try {
+        if (resumeHistory.value && typeof resumeHistory.value === 'object') {
+          resumeHistory.value = {
+            ...resumeHistory.value,
+            playbackPositionTicks: posTicks,
+            playbackRuntimeTicks: durTicks,
+            updatedAt: Math.floor(Date.now() / 1000),
+          };
+        }
+      } catch (_e) {}
       await apiPostJson(
         '/api/playhistory',
         {
@@ -12076,7 +14312,7 @@ const playEpisodeFromPlayingList = async ({ delta = 1, reason = '' } = {}) => {
     await nextTick();
     const eps = selectedEpisodes.value;
     if (!Array.isArray(eps) || !eps.length || nextIdx < 0 || nextIdx >= eps.length) return false;
-    selectedEpisodeIndex.value = nextIdx;
+    setEpisodeIndex(nextIdx, 'playEpisodeFromPlayingList');
 	    await requestPlay({ trigger: 'auto_next' });
     return true;
   } catch (e) {
@@ -12233,9 +14469,213 @@ const playerStageProgress = computed(() => {
 });
 
 
+const parseResumeWantedFromRow = (row) => {
+  try {
+    if (!row || typeof row !== 'object') return null;
+    const idxRaw = row.episodeIndex != null ? Number(row.episodeIndex) : NaN;
+    const indexFallback = Number.isFinite(idxRaw) && idxRaw >= 0 ? Math.floor(idxRaw) : 0;
+    const pb =
+      (row.playbackItemId != null ? String(row.playbackItemId) : '') ||
+      (row.playback_item_id != null ? String(row.playback_item_id) : '');
+    const playbackItemId = String(pb || '').trim();
+    const seasonFromField = row.tmdbSeason != null ? Number(row.tmdbSeason) : NaN;
+    const episodeFromField = row.tmdbEpisode != null ? Number(row.tmdbEpisode) : NaN;
+    const seasonField = Number.isFinite(seasonFromField) ? Math.max(0, Math.floor(seasonFromField)) : 0;
+    const episodeField = Number.isFinite(episodeFromField) ? Math.max(0, Math.floor(episodeFromField)) : 0;
+    const m = playbackItemId.match(/^tmdb_tv_\d+_s(\d{2})_e(\d{3})$/i);
+    const seasonPB = m ? Math.max(0, Number(m[1]) || 0) : 0;
+    const episodePB = m ? Math.max(0, Number(m[2]) || 0) : 0;
+    const season = seasonField || seasonPB || 0;
+    const episode = episodeField || episodePB || 0;
+    const updatedAtRaw = row.updatedAt != null ? Number(row.updatedAt) : NaN;
+    const updatedAt = Number.isFinite(updatedAtRaw) ? Math.floor(updatedAtRaw) : 0;
+    return { season, episode, indexFallback, playbackItemId, updatedAt };
+  } catch (_e) {
+    return null;
+  }
+};
+
+const isResumeListReady = () => {
+  if (tmdbMode.value) {
+    if (tmdbMovieMode.value) return tmdbMovieSmartListAvailable.value;
+    return tmdbSmartListAvailable.value;
+  }
+  const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+  if (d.panMockEnabled === true && d.panMockResolving === true) return false;
+  return selectedEpisodes.value.length > 0;
+};
+
+const applyResumeFromHistory = (reason = '') => {
+  try {
+    const row = resumeHistory.value && typeof resumeHistory.value === 'object' ? resumeHistory.value : null;
+    if (!row) return false;
+    if (resumeHistoryApplied.value) return true;
+    if (initialAutoPlayTriggered.value) return false;
+    if (playerPlaybackStarted.value || playerFirstFrameReady.value) return false;
+
+    // Ensure target pan is selected before applying resume (site mode only).
+    if (!tmdbMode.value) {
+      const wantedPanLabel = typeof row.panLabel === 'string' ? row.panLabel.trim() : '';
+      const normalize = (label) => String(label || '').trim().replace(/#\d{1,3}\s*$/i, '').trim().toLowerCase();
+      if (wantedPanLabel) {
+        const want = normalize(wantedPanLabel);
+        const smartHit =
+          smartListAvailable.value
+            ? (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).find((s) => s && normalize(s.label) === want) || null
+            : null;
+        const target =
+          smartHit && smartHit.key
+            ? { key: smartHit.key }
+            : panDropdownOptions.value.find((o) => o && normalize(o.label) === want) || null;
+        if (target && target.key && target.key !== selectedPanKey.value) {
+          selectPan(target.key);
+          return false;
+        }
+      }
+    }
+
+    if (!isResumeListReady()) return false;
+
+    let w = resumeWanted.value && typeof resumeWanted.value === 'object' ? resumeWanted.value : null;
+    if (!w) {
+      w = parseResumeWantedFromRow(row);
+      if (w) resumeWanted.value = w;
+    }
+    if (!w) return false;
+
+    const wantedSeason = Number.isFinite(Number(w.season)) ? Math.floor(Number(w.season)) : 0;
+    const wantedEpisode = Number.isFinite(Number(w.episode)) ? Math.floor(Number(w.episode)) : 0;
+    const wantedIndex = Number.isFinite(Number(w.indexFallback)) ? Math.floor(Number(w.indexFallback)) : 0;
+
+    const total = selectedEpisodes.value.length;
+    if (!total) return false;
+    const desiredEpisode = Number.isFinite(Number(wantedEpisode)) ? Math.floor(Number(wantedEpisode)) : 0;
+    if (desiredEpisode > 0 && total < desiredEpisode) return false;
+
+    if (debugEnabled.value) {
+      try {
+        playDebugLog('resume_apply_start', {
+          reason: String(reason || ''),
+          total,
+          wantedSeason,
+          wantedEpisode,
+          wantedIndex,
+          panKey: String(selectedPanKey.value || ''),
+          tmdbSmart: tmdbSmartListAvailable.value ? 1 : 0,
+          doubanSmart: doubanSmartListAvailable.value ? 1 : 0,
+        });
+      } catch (_e) {}
+    }
+
+    const wantedEpName = typeof row.episodeName === 'string' ? row.episodeName.trim() : '';
+    const exactIdx = wantedEpName ? pickExactResumeEpisodeIndexFromName(wantedEpName, compiledMagicEpisodeCleanRegexRules.value) : null;
+    let pickedIdx = null;
+    if (exactIdx != null) {
+      pickedIdx = exactIdx;
+    } else {
+      const playbackItemIdRaw =
+        (row.playbackItemId != null ? String(row.playbackItemId) : '') ||
+        (row.playback_item_id != null ? String(row.playback_item_id) : '');
+      const pb = String(playbackItemIdRaw || '').trim();
+      const pbMatch = pb.match(/^tmdb_tv_\d+_s(\d{2})_e(\d{3})$/i);
+      const pbSeason = pbMatch ? Number(pbMatch[1]) : 0;
+      const pbEpisode = pbMatch ? Number(pbMatch[2]) : 0;
+      const wantedSeasonFieldRaw = row.tmdbSeason != null ? Number(row.tmdbSeason) : NaN;
+      const wantedEpisodeFieldRaw = row.tmdbEpisode != null ? Number(row.tmdbEpisode) : NaN;
+      const wantedSeasonField = Number.isFinite(wantedSeasonFieldRaw) ? Math.max(0, Math.floor(wantedSeasonFieldRaw)) : 0;
+      const wantedEpisodeField = Number.isFinite(wantedEpisodeFieldRaw) ? Math.max(0, Math.floor(wantedEpisodeFieldRaw)) : 0;
+      let wanted = { season: 0, episode: 0 };
+      if (wantedSeasonField > 0 && wantedEpisodeField > 0) {
+        wanted = { season: wantedSeasonField, episode: wantedEpisodeField };
+      } else if (pbSeason > 0 && pbEpisode > 0) {
+        wanted = { season: pbSeason, episode: pbEpisode };
+      } else if (wantedEpName) {
+        const rules = compiledMagicEpisodeRules.value;
+        const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
+        wanted = extractSeasonEpisodeFromCandidates([wantedEpName], rules, cleanRules);
+        if (!wanted.episode) wanted = parseLooseSeasonEpisodeFromText(wantedEpName);
+      }
+      wanted = normalizeMaybeGlobalSeasonEpisode(wanted);
+      if (!wanted.episode) wanted = { season: 0, episode: wantedIndex + 1 };
+      pickedIdx = pickResumeEpisodeIndex({
+        wantedSeason: wanted.season,
+        wantedEpisode: wanted.episode,
+        wantedIndex,
+      });
+    }
+
+    if (debugEnabled.value) {
+      try {
+        playDebugLog('resume_apply_pick', {
+          reason: String(reason || ''),
+          idx: pickedIdx,
+          total,
+          wantedSeason,
+          wantedEpisode,
+          wantedIndex,
+        });
+      } catch (_e) {}
+    }
+
+    setEpisodeIndex(pickedIdx, `resume_apply:${String(reason || '')}`);
+    if (seasonTabs.value.length) {
+      const chosenIdx = selectedEpisodeIndex.value;
+      const matches = episodeMatchByIndex.value;
+      const m =
+        Number.isFinite(chosenIdx) && chosenIdx >= 0 && matches && matches[chosenIdx] && typeof matches[chosenIdx] === 'object'
+          ? matches[chosenIdx]
+          : { season: 0, episode: 0 };
+      const s = Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+      if (s > 0) {
+        const exists = seasonTabs.value.some((t) => t && Number(t.season) === s);
+        if (exists && Number(selectedSeason.value) !== s) selectSeason(s);
+      }
+    }
+    resumeHistoryApplied.value = true;
+    resumeAppliedEpisodeCount.value = selectedEpisodes.value.length;
+    try {
+      smartDebugLog('resume_apply', { reason: String(reason || ''), idx: pickedIdx, wantedSeason, wantedEpisode, wantedIndex });
+    } catch (_e) {}
+    return true;
+  } catch (_e) {
+    return false;
+  }
+};
+
 const loadResumeFromHistory = async () => {
+  const listReady = () => {
+    if (tmdbMode.value) {
+      if (tmdbMovieMode.value) return tmdbMovieSmartListAvailable.value;
+      return tmdbSmartListAvailable.value;
+    }
+    const d = detail.value && typeof detail.value === 'object' ? detail.value : {};
+    if (d.panMockEnabled === true && d.panMockResolving === true) return false;
+    return selectedEpisodes.value.length > 0;
+  };
+  const isResumeIdentityReady = () => {
+    try {
+      const tmdbId = Number(props.tmdbId || 0);
+      const tmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+      if (tmdbMode.value) return tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie');
+      const siteKey = (props.siteKey || '').trim();
+      const videoId = (props.videoId || '').trim();
+      return !!(siteKey && videoId);
+    } catch (_e) {
+      return false;
+    }
+  };
+  if (!isResumeIdentityReady()) return;
+  resumeSeekState.key = '';
+  resumeSeekState.applied = false;
+  resumeSeekState.tryKey = '';
+  resumeSeekState.tryAt = 0;
+  resumeSeekState.frozen = false;
+  resumeSeekOverrideState.identity = '';
+  resumeSeekOverrideState.sec = 0;
+  resumeSeekOverrideState.at = 0;
   resumeHistoryLoaded.value = false;
   resumeHistoryApplied.value = false;
+  resumeHistoryFound.value = null;
   resumeAppliedEpisodeCount.value = 0;
   resumeHistory.value = null;
   resumeWanted.value = null;
@@ -12244,111 +14684,8 @@ const loadResumeFromHistory = async () => {
   const tmdbId = Number(props.tmdbId || 0);
   const tmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
 
-  const parseResumeWantedFromRow = (row) => {
-    try {
-      if (!row || typeof row !== 'object') return null;
-      const idxRaw = row.episodeIndex != null ? Number(row.episodeIndex) : NaN;
-      const indexFallback = Number.isFinite(idxRaw) && idxRaw >= 0 ? Math.floor(idxRaw) : 0;
-      const pb =
-        (row.playbackItemId != null ? String(row.playbackItemId) : '') ||
-        (row.playback_item_id != null ? String(row.playback_item_id) : '');
-      const playbackItemId = String(pb || '').trim();
-      const seasonFromField = row.tmdbSeason != null ? Number(row.tmdbSeason) : NaN;
-      const episodeFromField = row.tmdbEpisode != null ? Number(row.tmdbEpisode) : NaN;
-      const seasonField = Number.isFinite(seasonFromField) ? Math.max(0, Math.floor(seasonFromField)) : 0;
-      const episodeField = Number.isFinite(episodeFromField) ? Math.max(0, Math.floor(episodeFromField)) : 0;
-      const m = playbackItemId.match(/^tmdb_tv_\d+_s(\d{2})_e(\d{3})$/i);
-      const seasonPB = m ? Math.max(0, Number(m[1]) || 0) : 0;
-      const episodePB = m ? Math.max(0, Number(m[2]) || 0) : 0;
-      const season = seasonField || seasonPB || 0;
-      const episode = episodeField || episodePB || 0;
-      const updatedAtRaw = row.updatedAt != null ? Number(row.updatedAt) : NaN;
-      const updatedAt = Number.isFinite(updatedAtRaw) ? Math.floor(updatedAtRaw) : 0;
-      return { season, episode, indexFallback, playbackItemId, updatedAt };
-    } catch (_e) {
-      return null;
-    }
-  };
 
-	  const applyResumeWantedIfPossible = (reason = '') => {
-	    try {
-	      const w = resumeWanted.value && typeof resumeWanted.value === 'object' ? resumeWanted.value : null;
-	      if (!w) return false;
-	      if (resumeHistoryApplied.value) return true;
-	      if (initialAutoPlayTriggered.value) return false;
-
-	      const wantedSeason = Number.isFinite(Number(w.season)) ? Math.floor(Number(w.season)) : 0;
-	      const wantedEpisode = Number.isFinite(Number(w.episode)) ? Math.floor(Number(w.episode)) : 0;
-	      const wantedIndex = Number.isFinite(Number(w.indexFallback)) ? Math.floor(Number(w.indexFallback)) : 0;
-
-	      const total = selectedEpisodes.value.length;
-	      if (!total) return false;
-	      const idx = pickResumeEpisodeIndex({ wantedSeason, wantedEpisode, wantedIndex });
-	      selectedEpisodeIndex.value = idx;
-	      // Keep season tab consistent with the chosen episode index.
-	      if (seasonTabs.value.length) {
-	        const matches = episodeMatchByIndex.value;
-	        const m =
-	          Number.isFinite(idx) && idx >= 0 && matches && matches[idx] && typeof matches[idx] === 'object'
-	            ? matches[idx]
-	            : { season: 0, episode: 0 };
-	        const s = Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
-	        if (s > 0) {
-	          const exists = seasonTabs.value.some((t) => t && Number(t.season) === s);
-	          if (exists && Number(selectedSeason.value) !== s) selectSeason(s);
-	        }
-	      }
-	      resumeHistoryApplied.value = true;
-        resumeAppliedEpisodeCount.value = selectedEpisodes.value.length;
-	      try {
-	        smartDebugLog('resume_apply', { reason: String(reason || ''), idx, wantedSeason, wantedEpisode, wantedIndex });
-      } catch (_e) {}
-      return true;
-    } catch (_e) {
-      return false;
-    }
-  };
-
-  const applyEpisodeIndexEarlyIfPossible = (row) => {
-    try {
-      if (!row || typeof row !== 'object') return;
-      if (resumeHistoryApplied.value) return;
-      if (initialAutoPlayTriggered.value) return;
-      const wantedIdxRaw = row.episodeIndex != null ? Number(row.episodeIndex) : NaN;
-      if (!Number.isFinite(wantedIdxRaw) || wantedIdxRaw < 0) return;
-      const wantedIdx = Math.floor(wantedIdxRaw);
-      if (wantedIdx < 0) return;
-      const w = parseResumeWantedFromRow(row);
-      if (w) resumeWanted.value = w;
-      // Early preselect: pick a stable global index when we have season+episode.
-      let preIdx = wantedIdx;
-      try {
-        const ww = w && typeof w === 'object' ? w : null;
-        const total = selectedEpisodes.value.length;
-        if (ww && total) {
-          const wantedSeason = Number.isFinite(Number(ww.season)) ? Math.floor(Number(ww.season)) : 0;
-          const wantedEpisode = Number.isFinite(Number(ww.episode)) ? Math.floor(Number(ww.episode)) : 0;
-          const wantedIndex = Number.isFinite(Number(ww.indexFallback)) ? Math.floor(Number(ww.indexFallback)) : wantedIdx;
-          if (wantedSeason > 0 && wantedEpisode > 0) {
-            preIdx = pickResumeEpisodeIndex({ wantedSeason, wantedEpisode, wantedIndex });
-          }
-        }
-      } catch (_e) {}
-      const curRaw = Number(selectedEpisodeIndex.value);
-      const cur = Number.isFinite(curRaw) ? Math.floor(curRaw) : 0;
-      if (cur === preIdx) return;
-      // Early preselect: helps avoid auto-play starting at episode 1 and overwriting server history,
-      // especially in TMDB mode where episode lists may arrive later.
-      selectedEpisodeIndex.value = preIdx;
-      void applyResumeWantedIfPossible('early_idx');
-    } catch (_e) {}
-  };
-
-		  if (!siteKey || !videoId) {
-		    if (!(tmdbMode.value && tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie'))) {
-		      resumeHistoryLoaded.value = true;
-      return;
-    }
+  if (tmdbMode.value && tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie')) {
     const key = `tmdb::${tmdbType}::${tmdbId}`;
     if (resumeHistoryState.inFlight && resumeHistoryState.key === key) {
       await resumeHistoryState.inFlight;
@@ -12363,14 +14700,18 @@ const loadResumeFromHistory = async () => {
           const list = await apiGetJson(`/api/playhistory${buildQuery({ limit: 50 })}`, { cacheMs: 0 });
           if (seqAtCall !== resumeHistoryState.seq) return;
           const items = Array.isArray(list) ? list : [];
-          const wantedKey = normalizeForAggKey(props.contentKey || '') || normalizeForAggKey(computeHistoryContentKey(props.videoTitle || ''));
+          const wantedKey =
+            normalizeForAggKey(getStableContentKey() || '') ||
+            normalizeForAggKey(computeHistoryContentKey(props.videoTitle || ''));
 	          const match = items.find((r) => r && Number(r.tmdbId || 0) === tmdbId && String(r.tmdbType || '').trim().toLowerCase() === tmdbType) ||
 	            (wantedKey ? items.find((r) => r && normalizeForAggKey(r.contentKey || '') === wantedKey) : null) ||
 	            null;
 	          resumeHistory.value = match;
+            resumeHistoryFound.value = !!match;
             resumeWanted.value = parseResumeWantedFromRow(match);
-            applyEpisodeIndexEarlyIfPossible(match);
-            void applyResumeWantedIfPossible('tmdb_list');
+            if (listReady()) {
+              void applyResumeFromHistory('tmdb_list');
+            }
 		          try {
 		            const seasons = match && typeof match.tmdbSeasons === 'string' ? match.tmdbSeasons.trim() : '';
 		            if (tmdbType === 'tv' && tmdbId > 0 && seasons) {
@@ -12379,18 +14720,28 @@ const loadResumeFromHistory = async () => {
 	            }
 	          } catch (_e) {}
         } catch (_e) {
-          if (seqAtCall === resumeHistoryState.seq) resumeHistory.value = null;
+          if (seqAtCall === resumeHistoryState.seq) {
+            resumeHistory.value = null;
+            resumeHistoryFound.value = false;
+          }
         }
       })();
       await resumeHistoryState.inFlight;
     } catch (_e) {
       if (seqAtCall === resumeHistoryState.seq) resumeHistory.value = null;
     } finally {
-      if (seqAtCall === resumeHistoryState.seq) resumeHistoryLoaded.value = true;
+      if (seqAtCall === resumeHistoryState.seq) {
+        resumeHistoryLoaded.value = true;
+        if (resumeHistoryFound.value == null) resumeHistoryFound.value = false;
+      }
       if (resumeHistoryState.key === key && resumeHistoryState.seq === seqAtCall) resumeHistoryState.inFlight = null;
     }
 	    return;
 	  }
+		  if (!siteKey || !videoId) {
+		    resumeHistoryLoaded.value = true;
+      return;
+    }
 
   const key = `${siteKey}::${videoId}`;
   if (resumeHistoryState.inFlight && resumeHistoryState.key === key) {
@@ -12408,9 +14759,9 @@ const loadResumeFromHistory = async () => {
           if (seqAtCall !== resumeHistoryState.seq) return;
 	          if (item && item.siteKey === siteKey && item.videoId === videoId) {
 	            resumeHistory.value = item;
+              resumeHistoryFound.value = true;
               resumeWanted.value = parseResumeWantedFromRow(item);
-              applyEpisodeIndexEarlyIfPossible(item);
-              void applyResumeWantedIfPossible('site_one');
+              if (listReady()) void applyResumeFromHistory('site_one');
 	            try {
 	              if (tmdbMode.value) {
 		                const typRaw = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
@@ -12426,6 +14777,7 @@ const loadResumeFromHistory = async () => {
           }
           if (item == null) {
             resumeHistory.value = null;
+            resumeHistoryFound.value = false;
             return;
           }
         } catch (_e) {
@@ -12437,11 +14789,12 @@ const loadResumeFromHistory = async () => {
 	        const foundExact = items.find((r) => r && r.siteKey === siteKey && r.videoId === videoId) || null;
 	        if (foundExact) {
 	          resumeHistory.value = foundExact;
+            resumeHistoryFound.value = true;
 	        } else {
           const tmdbId = Number(props.tmdbId || 0);
           const tmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
           const wantedKey =
-            normalizeForAggKey(props.contentKey || '') ||
+            normalizeForAggKey(getStableContentKey() || '') ||
             normalizeForAggKey(computeHistoryContentKey(props.videoTitle || ''));
           const foundByTmdb =
             tmdbId > 0 && (tmdbType === 'tv' || tmdbType === 'movie')
@@ -12457,10 +14810,10 @@ const loadResumeFromHistory = async () => {
               ? items.find((r) => r && normalizeForAggKey(r.contentKey || '') === wantedKey) || null
               : null;
 	          resumeHistory.value = foundByTmdb || foundByKey || null;
+            resumeHistoryFound.value = !!resumeHistory.value;
 	        }
           resumeWanted.value = parseResumeWantedFromRow(resumeHistory.value);
-          applyEpisodeIndexEarlyIfPossible(resumeHistory.value);
-          void applyResumeWantedIfPossible('site_list');
+          if (listReady()) void applyResumeFromHistory('site_list');
 	        try {
 	          const found = resumeHistory.value;
 	          if (tmdbMode.value && found) {
@@ -12474,14 +14827,20 @@ const loadResumeFromHistory = async () => {
 	          }
 	        } catch (_e) {}
       } catch (_e) {
-        if (seqAtCall === resumeHistoryState.seq) resumeHistory.value = null;
+        if (seqAtCall === resumeHistoryState.seq) {
+          resumeHistory.value = null;
+          resumeHistoryFound.value = false;
+        }
       }
     })();
     await resumeHistoryState.inFlight;
   } catch (_e) {
     if (seqAtCall === resumeHistoryState.seq) resumeHistory.value = null;
   } finally {
-    if (seqAtCall === resumeHistoryState.seq) resumeHistoryLoaded.value = true;
+    if (seqAtCall === resumeHistoryState.seq) {
+      resumeHistoryLoaded.value = true;
+      if (resumeHistoryFound.value == null) resumeHistoryFound.value = false;
+    }
     if (resumeHistoryState.key === key && resumeHistoryState.seq === seqAtCall) resumeHistoryState.inFlight = null;
   }
 };
@@ -12490,11 +14849,6 @@ watch(
   () => aggregatedSources.value.length,
   async (len) => {
     if (!len) return;
-    if (aggregatedFromStorage.value) {
-      // If we came from search, sessionStorage already has exact matches. Lock immediately.
-      await tryLockHistoryPoster({ force: true, allowFallback: true });
-      return;
-    }
     // If we are doing a swap-source search, lock only when preferred is found,
     // or after the search completes (handled by the watcher below).
     await tryLockHistoryPoster({ force: false, allowFallback: false });
@@ -12526,10 +14880,15 @@ watch(
     ].join('|'),
   () => {
     if (initialAutoPlayTriggered.value) return;
+    if (playerPlaybackStarted.value || playerFirstFrameReady.value) return;
     if (introLoading.value) return;
     if (!resumeHistoryLoaded.value) return;
     if (!selectedEpisodes.value.length) return;
-
+    if (resumeHistory.value && !resumeHistoryApplied.value) {
+      const w = resumeWanted.value && typeof resumeWanted.value === 'object' ? resumeWanted.value : null;
+      const desiredEpisode = w && Number.isFinite(Number(w.episode)) ? Math.floor(Number(w.episode)) : 0;
+      if (desiredEpisode > 0 && selectedEpisodes.value.length < desiredEpisode) return;
+    }
     // Folder-like sources (e.g. 网盘目录) often return an episode list for the whole directory.
     // Ensure the clicked file (props.videoId) becomes the initially selected episode.
     if (!autoPickedEpisodeFromVideoId.value && !resumeHistory.value) {
@@ -12537,111 +14896,21 @@ watch(
       const picked = pickEpisodeByUrlAcrossPans(props.videoId || '');
       if (picked && picked.panKey) {
         selectPan(picked.panKey);
-        selectedEpisodeIndex.value = picked.index;
+        setEpisodeIndex(picked.index, 'auto_pick_by_videoid');
         return;
       }
     }
 
     // Restore from history once (pan + episode), if available and already loaded.
-	      if (
-          resumeHistoryLoaded.value &&
-          resumeHistory.value &&
-          (
-            !resumeHistoryApplied.value ||
-            selectedEpisodeIndex.value < 0 ||
-            selectedEpisodeIndex.value >= selectedEpisodes.value.length ||
-            (
-              resumeHistoryApplied.value &&
-              resumeWanted.value &&
-              selectedEpisodes.value.length > 0 &&
-              selectedEpisodes.value.length > resumeAppliedEpisodeCount.value
-            )
-          )
-        ) {
-	      const prevPan = selectedPan.value;
-	      const prevIdx = selectedEpisodeIndex.value;
-		      const wantedPanLabel = typeof resumeHistory.value.panLabel === 'string' ? resumeHistory.value.panLabel.trim() : '';
-	      const wantedIdxRaw = resumeHistory.value.episodeIndex != null ? Number(resumeHistory.value.episodeIndex) : 0;
-	      const wantedIdx = Number.isFinite(wantedIdxRaw) && wantedIdxRaw >= 0 ? Math.floor(wantedIdxRaw) : 0;
-	      const wantedEpName = typeof resumeHistory.value.episodeName === 'string' ? resumeHistory.value.episodeName.trim() : '';
-	      const playbackItemIdRaw =
-	        (resumeHistory.value.playbackItemId != null ? String(resumeHistory.value.playbackItemId) : '') ||
-	        (resumeHistory.value.playback_item_id != null ? String(resumeHistory.value.playback_item_id) : '');
-		      const normalize = (label) => String(label || '').trim().replace(/#\d{1,3}\s*$/i, '').trim().toLowerCase();
-
-	      let target = null;
-	      // TMDB 模式下不按历史 panLabel 自动切换来源，避免智能命中后下拉源被动变化。
-	      if (wantedPanLabel && !tmdbMode.value) {
-	        const want = normalize(wantedPanLabel);
-          const smartHit =
-            smartListAvailable.value
-              ? (Array.isArray(smartPanEntries.value) ? smartPanEntries.value : []).find((s) => s && normalize(s.label) === want) || null
-              : null;
-	          if (smartHit && smartHit.key) {
-	            selectPan(smartHit.key);
-		          } else {
-	            target = panDropdownOptions.value.find((o) => o && normalize(o.label) === want) || null;
-	            if (target && target.key) selectPan(target.key);
-	          }
-	      }
-
-		      const rules = compiledMagicEpisodeRules.value;
-		      const cleanRules = compiledMagicEpisodeCleanRegexRules.value;
-		      const pb = String(playbackItemIdRaw || '').trim();
-		      const pbMatch = pb.match(/^tmdb_tv_\d+_s(\d{2})_e(\d{3})$/i);
-		      const pbSeason = pbMatch ? Number(pbMatch[1]) : 0;
-		      const pbEpisode = pbMatch ? Number(pbMatch[2]) : 0;
-		      const wantedSeasonFieldRaw = resumeHistory.value.tmdbSeason != null ? Number(resumeHistory.value.tmdbSeason) : NaN;
-		      const wantedEpisodeFieldRaw = resumeHistory.value.tmdbEpisode != null ? Number(resumeHistory.value.tmdbEpisode) : NaN;
-		      const wantedSeasonField = Number.isFinite(wantedSeasonFieldRaw) ? Math.max(0, Math.floor(wantedSeasonFieldRaw)) : 0;
-		      const wantedEpisodeField = Number.isFinite(wantedEpisodeFieldRaw) ? Math.max(0, Math.floor(wantedEpisodeFieldRaw)) : 0;
-		      const exactIdx = wantedEpName ? pickExactResumeEpisodeIndexFromName(wantedEpName, cleanRules) : null;
-		      if (exactIdx != null) {
-	        selectedEpisodeIndex.value = exactIdx;
-	      } else {
-			      let wanted = { season: 0, episode: 0 };
-			      if (wantedSeasonField > 0 && wantedEpisodeField > 0) {
-			        wanted = { season: wantedSeasonField, episode: wantedEpisodeField };
-			      } else if (pbSeason > 0 && pbEpisode > 0) {
-			        wanted = { season: pbSeason, episode: pbEpisode };
-			      } else if (wantedEpName) {
-			        wanted = extractSeasonEpisodeFromCandidates([wantedEpName], rules, cleanRules);
-		          if (!wanted.episode) wanted = parseLooseSeasonEpisodeFromText(wantedEpName);
-			      }
-			      wanted = normalizeMaybeGlobalSeasonEpisode(wanted);
-			      if (!wanted.episode) wanted = { season: 0, episode: wantedIdx + 1 };
-
-	        selectedEpisodeIndex.value = pickResumeEpisodeIndex({
-	          wantedSeason: wanted.season,
-	          wantedEpisode: wanted.episode,
-	          wantedIndex: wantedIdx,
-	        });
-	        // Sync season tab with the chosen index (do not change the index after this).
-	        if (seasonTabs.value.length) {
-	          const chosenIdx = selectedEpisodeIndex.value;
-	          const matches = episodeMatchByIndex.value;
-	          const m =
-	            Number.isFinite(chosenIdx) && chosenIdx >= 0 && matches && matches[chosenIdx] && typeof matches[chosenIdx] === 'object'
-	              ? matches[chosenIdx]
-	              : { season: 0, episode: 0 };
-	          const s = Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
-	          if (s > 0) {
-	            const exists = seasonTabs.value.some((t) => t && Number(t.season) === s);
-	            if (exists && Number(selectedSeason.value) !== s) selectSeason(s);
-	          }
-	        }
-		      }
-
-			      resumeHistoryApplied.value = true;
-            resumeAppliedEpisodeCount.value = selectedEpisodes.value.length;
-			      if (prevPan !== selectedPan.value || prevIdx !== selectedEpisodeIndex.value) {
-		        // Pan/episode changed due to resume apply; wait for reactive updates to settle before auto-start.
-		        void nextTick().then(() => {
-		          tryAutoStartPlayback();
-		        });
-		        return;
-		      }
-		    }
+    if (resumeHistoryLoaded.value && resumeHistory.value && !resumeHistoryApplied.value) {
+      const applied = applyResumeFromHistory('watch');
+      if (!applied) return;
+      // Pan/episode changed due to resume apply; wait for reactive updates to settle before auto-start.
+      void nextTick().then(() => {
+        tryAutoStartPlayback();
+      });
+      return;
+    }
 
     if (resumeHistory.value && !resumeHistoryApplied.value) return;
     tryAutoStartPlayback();
@@ -12672,7 +14941,7 @@ watch(
     if (selectedEpisodes.value.length && allDisplayedEpisodes.value.length === 0) {
       rawListMode.value = true;
       autoRawListMode.value = true;
-      selectedEpisodeIndex.value = -1;
+      setEpisodeIndex(-1, 'auto_raw_list_no_display');
       return;
     }
     if (autoRawListMode.value && allDisplayedEpisodes.value.length) {
@@ -12816,7 +15085,7 @@ const panMockRawDirTree = computed(() => {
     dirs.forEach((d) => {
       node = ensureDir(node, d);
     });
-    node.files.push({ name: fileName, index: idx, url });
+    node.files.push({ name: fileName, index: idx, url, displayName: epName, rawName: fileName });
   });
 
   return root;
@@ -12855,7 +15124,16 @@ const panMockRawDirEntries = computed(() => {
   });
   sortedFiles.forEach((f) => {
     const text = String(f && f.name ? f.name : '').trim() || `第${Number(f && f.index) + 1}集`;
-    out.push({ key: `f:${f.index}:${f.url}`, kind: 'file', name: text, index: f.index, text });
+    out.push({
+      key: `f:${f.index}:${f.url}`,
+      kind: 'file',
+      name: text,
+      index: f.index,
+      text,
+      displayName: f && f.displayName != null ? String(f.displayName) : '',
+      rawName: f && f.rawName != null ? String(f.rawName) : String(f && f.name != null ? f.name : ''),
+      url: f && f.url != null ? String(f.url) : '',
+    });
   });
   return out;
 });
@@ -12980,13 +15258,49 @@ const rawListItems = computed(() => {
 	      tmdbMovieMode.value && tmdbMovieSmartListAvailable.value && selectedPanKey.value === SMART_PAN_KEY;
 	    const url = ep && ep.url != null ? String(ep.url) : '';
 	    const rawNames = extractRawNamesFromEpisodeUrl(url);
+	    const flag = ep && ep.flag != null ? String(ep.flag) : '';
+	    const isPanMockList =
+	      tmdbMode.value &&
+	      !!(detail.value && typeof detail.value === 'object' && detail.value.panMockEnabled === true) &&
+	      !!panMockProviderFromFlag(flag);
+	    const displayName = ep && ep.name != null ? String(ep.name) : '';
+	    const fileName = rawNames[0] || '';
+	    const scoreName = (s, titleLower) => {
+	      const text = typeof s === 'string' ? s.trim() : '';
+	      if (!text) return -999;
+	      const lower = text.toLowerCase();
+	      let score = 0;
+	      if (/(?:ep|episode|e)\s*\d{1,5}/i.test(text) || /第\s*\d+\s*集/.test(text)) score += 5;
+	      if (/S\s*\d{1,2}/i.test(text) || /第\s*\d+\s*季/.test(text)) score += 4;
+	      if (/(2160p|4k|1080p|720p)/i.test(text)) score += 2;
+	      if (titleLower && lower.includes(titleLower)) score += 2;
+	      if (text.length < 6) score -= 3;
+	      if (/^[0-9]+$/.test(text) && text.length >= 10) score -= 5;
+	      if (/^[a-z0-9]+$/i.test(text) && text.length >= 24) score -= 5;
+	      if (/\.(mkv|mp4|avi|flv|mov|wmv|m4v)$/i.test(text)) score += 1;
+	      return score;
+	    };
+	    const titleLower = (displayTitle.value || '').trim().toLowerCase();
+	    const displayScore = scoreName(displayName, titleLower);
+	    const fileScore = scoreName(fileName, titleLower);
+	    const preferDisplay =
+	      useDisplayName || (!isPanMockList && displayScore >= fileScore);
 	    const text = (
-	      (useDisplayName ? (ep && ep.name != null ? String(ep.name) : '') : '') ||
+	      (preferDisplay ? (ep && ep.name != null ? String(ep.name) : '') : '') ||
 	      rawNames[0] ||
 	      (ep && ep.name != null ? String(ep.name) : '') ||
 	      ''
 	    ).trim() || `第${idx + 1}集`;
-	    return { key: `${idx}-${url}`, index: idx, text, kind: 'file', name: text };
+	    return {
+	      key: `${idx}-${url}`,
+	      index: idx,
+	      text,
+	      kind: 'file',
+	      name: text,
+	      displayName,
+	      rawName: fileName,
+	      url,
+	    };
 	  });
 	});
 
@@ -13026,6 +15340,31 @@ watch(
 );
 
 watch(
+  () =>
+    [
+      rawListMode.value ? '1' : '0',
+      selectedPanKey.value,
+      selectedEpisodeGroupKey.value,
+      selectedEpisodes.value.length,
+      groupedDisplayedEpisodes.value.length,
+      rawListItems.value.length,
+      seasonTabs.value.length,
+      selectedPanAuxLoading.value ? '1' : '0',
+      episodeMetaModeEffective.value,
+      tmdbSelectedSitePanKey.value,
+      playingPanKey.value,
+      playingTMDBSubPanKey.value,
+      playingSmartEpisodeNo.value,
+      playingEpisodeIndex.value,
+      currentPlayingEpisodeUrl.value,
+    ].join('|'),
+  () => {
+    scheduleSyncPlayingLocator();
+  },
+  { immediate: true }
+);
+
+watch(
   () => `${rawListMode.value ? '1' : '0'}|${thirdPartyIsMobile.value ? '1' : '0'}|${selectedEpisodeIndex.value}`,
   () => {
     if (!rawListMode.value) return;
@@ -13041,6 +15380,7 @@ const selectEpisode = (idx) => {
   const n = Number(idx);
   if (!Number.isFinite(n) || n < 0) return;
   autoPlaySuppressedByUser.value = false;
+  autoFallbackActive.value = false;
   // Keep season tab consistent with the clicked episode (important for TMDB multi-season lists).
   if (seasonTabs.value.length) {
     try {
@@ -13063,7 +15403,7 @@ const selectEpisode = (idx) => {
     const ep = Array.isArray(eps) && n < eps.length ? eps[n] : null;
     const g = episodeGlobalNoOf(ep);
     if (g > 0 && g === playingSmartEpisodeNo.value) {
-      selectedEpisodeIndex.value = n;
+      setEpisodeIndex(n, 'selectEpisode');
       return;
     }
   }
@@ -13075,11 +15415,286 @@ const selectEpisode = (idx) => {
     playingEpisodeIndex.value === n &&
     playerUrl.value
   ) {
-    selectedEpisodeIndex.value = n;
+    setEpisodeIndex(n, 'selectEpisode_samePlaying');
     return;
   }
-  selectedEpisodeIndex.value = n;
+  setEpisodeIndex(n, 'selectEpisode_default');
 	  requestPlay({ trigger: 'user' });
+};
+
+const resolveCurrentTMDBSubPanKey = (panKey) => {
+  if (!isTMDBSitePanKey(panKey)) return '';
+  const cache = readTMDBSitePanCacheEntry(panKey);
+  const pans = cache && Array.isArray(cache.pans) ? cache.pans : [];
+  const picked =
+    (tmdbSelectedSitePanKey.value && pans.find((p) => p && p.key === tmdbSelectedSitePanKey.value)) || pans[0] || null;
+  return picked && picked.key ? String(picked.key) : '';
+};
+
+const mapGlobalToSeasonEpisode = (globalNo) => {
+  const g = Number.isFinite(Number(globalNo)) ? Math.floor(Number(globalNo)) : 0;
+  if (g <= 0) return { season: 0, episode: 0 };
+  if (episodeMetaModeEffective.value === 'douban') {
+    const fallback = tmdbSeasonEpisodeOfGlobal(g);
+    return fallback && fallback.season ? fallback : { season: 0, episode: g };
+  }
+  const mapped = tmdbSeasonEpisodeOfGlobal(g);
+  return mapped && mapped.season ? mapped : { season: 0, episode: g };
+};
+
+const isEpisodeActive = (idxRaw, ep) => {
+  const idx = Number.isFinite(Number(idxRaw)) ? Math.floor(Number(idxRaw)) : -1;
+  if (idx < 0) return false;
+  if (rawListMode.value) {
+    const playingKey = currentPlayingEpisodeMatchKey.value || '';
+    if (playingKey && isPlayingInCurrentPanContext()) {
+      const epName = ep && ep.displayName != null ? String(ep.displayName) : String(ep && ep.text != null ? ep.text : '');
+      const epRaw = ep && ep.rawName != null ? String(ep.rawName) : String(ep && ep.name != null ? ep.name : '');
+      const epKey = buildEpisodeMatchKey(epName, epRaw);
+      if (epKey && epKey === playingKey) return true;
+    }
+    const sel = Number.isFinite(Number(selectedEpisodeIndex.value)) ? Math.floor(Number(selectedEpisodeIndex.value)) : -1;
+    if (sel >= 0) return idx === sel;
+  }
+  const selectedPan = String(selectedPanKey.value || '');
+  const selectedIdx = Number.isFinite(Number(selectedEpisodeIndex.value)) ? Math.floor(Number(selectedEpisodeIndex.value)) : -1;
+
+  // Smart lists (TMDB / 豆瓣): active marker follows logical mapped episode number.
+  if (isSmartPanKey(selectedPan)) {
+    const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+    if (g > 0) {
+      const cur = resolveSmartEpisodeNo(ep);
+      if (cur > 0) return cur === g;
+    }
+    return idx === selectedIdx;
+  }
+
+  // Non-smart lists: active marker should follow the currently playing file in the same source/pan context.
+  if (tmdbMode.value && isTMDBSitePanKey(selectedPan)) {
+    const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+    if (g > 0) {
+      const m = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[idx] : null;
+      const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+      const e = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+      if (s > 0 && e > 0) {
+        const gg = tmdbGlobalEpisodeNoOf(s, e);
+        if (gg > 0 && gg === g) return true;
+      }
+    }
+  }
+
+  const samePan = isPlayingInCurrentPanContext();
+  const sameTMDBSubPan = (() => {
+    if (!samePan || !isTMDBSitePanKey(selectedPan)) return samePan;
+    const curSub = resolveCurrentTMDBSubPanKey(selectedPan);
+    const playingSub = String(playingTMDBSubPanKey.value || '');
+    if (!curSub || !playingSub) return samePan;
+    return curSub === playingSub;
+  })();
+
+  if (playerUrl.value && playingPanKey.value) {
+    // For non-current source/pan contexts, keep selected-index highlight as a locator.
+    // Only apply strict "currently playing file" matching when context matches.
+    if (!samePan || (isTMDBSitePanKey(selectedPan) && !sameTMDBSubPan)) {
+      return idx === selectedIdx;
+    }
+
+    const epUrl = ep && ep.url != null ? String(ep.url).trim() : '';
+    const playingUrl = String(currentPlayingEpisodeUrl.value || '').trim();
+    if (epUrl && playingUrl && epUrl === playingUrl) return true;
+    const playingKey = currentPlayingEpisodeMatchKey.value || '';
+    if (playingKey) {
+      const rawNames = epUrl ? extractRawNamesFromEpisodeUrl(epUrl) : [];
+      const epRaw = Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '') : '';
+      const epName = ep && ep.name != null ? String(ep.name) : '';
+      const epKey = buildEpisodeMatchKey(epName, epRaw);
+      if (epKey && epKey === playingKey) return true;
+    }
+    const pIdx = Number.isFinite(Number(playingEpisodeIndex.value)) ? Math.floor(Number(playingEpisodeIndex.value)) : -1;
+    if (pIdx >= 0) return idx === pIdx;
+    return false;
+  }
+
+  return idx === selectedIdx;
+};
+
+const isPlayingInCurrentPanContext = () => {
+  if (!playerUrl.value || !playingPanKey.value) return false;
+  const selectedPan = String(selectedPanKey.value || '');
+  if (!selectedPan) return false;
+  if (playingPanKey.value !== selectedPan) return false;
+  if (!isTMDBSitePanKey(selectedPan)) return true;
+  const curSub = resolveCurrentTMDBSubPanKey(selectedPan);
+  const playingSub = String(playingTMDBSubPanKey.value || '');
+  if (!curSub || !playingSub) return true;
+  return curSub === playingSub;
+};
+
+const normalizeRawNameForCompare = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const buildEpisodeMatchKey = (displayName, rawName) => {
+  const name = normalizeRawNameForCompare(displayName);
+  const raw = normalizeRawNameForCompare(rawName);
+  if (!name && !raw) return '';
+  return `${name}||${raw}`.trim();
+};
+
+const resolvePlayingIndexInRawList = () => {
+  if (!rawListMode.value) return -1;
+  const items = rawListItems.value;
+  if (!Array.isArray(items) || items.length < 1) return -1;
+  const playingKey = currentPlayingEpisodeMatchKey.value || '';
+  if (playingKey) {
+    for (let i = 0; i < items.length; i += 1) {
+      const it = items[i];
+      if (!it || it.kind === 'dir') continue;
+      const name = it && it.displayName != null ? String(it.displayName) : String(it && it.text != null ? it.text : '');
+      const raw = it && it.rawName != null ? String(it.rawName) : String(it && it.name != null ? it.name : '');
+      const key = buildEpisodeMatchKey(name, raw);
+      if (key && key === playingKey) return it.index;
+    }
+    return -1;
+  }
+  const playingRaw = normalizeRawNameForCompare(currentPlayingEpisodeRawName.value);
+  if (!playingRaw) return -1;
+  for (let i = 0; i < items.length; i += 1) {
+    const it = items[i];
+    if (!it || it.kind === 'dir') continue;
+    const text = normalizeRawNameForCompare(it.text || it.name || '');
+    if (!text) continue;
+    if (text === playingRaw || text.includes(playingRaw) || playingRaw.includes(text)) return it.index;
+  }
+  return -1;
+};
+
+const resolvePlayingIndexInCurrentList = () => {
+  const eps = selectedEpisodes.value;
+  if (!Array.isArray(eps) || eps.length < 1) return -1;
+  if (rawListMode.value) {
+    const rawIdx = resolvePlayingIndexInRawList();
+    if (rawIdx >= 0) return rawIdx;
+  }
+  const selectedPan = String(selectedPanKey.value || '');
+  const canMapByGlobal =
+    tmdbMode.value && isTMDBSitePanKey(selectedPan) && Number.isFinite(Number(playingSmartEpisodeNo.value)) && Number(playingSmartEpisodeNo.value) > 0;
+  if (!isPlayingInCurrentPanContext() && !canMapByGlobal) return -1;
+  const playingUrl = String(currentPlayingEpisodeUrl.value || '').trim();
+  if (playingUrl && isPlayingInCurrentPanContext()) {
+    const hit = eps.findIndex((it) => it && it.url != null && String(it.url).trim() === playingUrl);
+    if (hit >= 0) return hit;
+  }
+  const playingKey = currentPlayingEpisodeMatchKey.value || '';
+  if (playingKey && isPlayingInCurrentPanContext()) {
+    const hit = eps.findIndex((it) => {
+      const url = it && it.url != null ? String(it.url) : '';
+      const rawNames = url ? extractRawNamesFromEpisodeUrl(url) : [];
+      const epRaw = Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '') : '';
+      const epName = it && it.name != null ? String(it.name) : '';
+      const key = buildEpisodeMatchKey(epName, epRaw);
+      return key && key === playingKey;
+    });
+    if (hit >= 0) return hit;
+  }
+  const playingRaw = String(currentPlayingEpisodeRawName.value || '').trim().toLowerCase();
+  if (playingRaw && isPlayingInCurrentPanContext()) {
+    const hit = eps.findIndex((it) => {
+      const url = it && it.url != null ? String(it.url) : '';
+      const rawNames = url ? extractRawNamesFromEpisodeUrl(url) : [];
+      const epRaw = (Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '') : String(it && it.name != null ? it.name : '')).trim().toLowerCase();
+      return epRaw && epRaw === playingRaw;
+    });
+    if (hit >= 0) return hit;
+  }
+  const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+  if (g > 0) {
+    const mapped = mapGlobalToSeasonEpisode(g);
+    const seasonNo = Number.isFinite(Number(mapped.season)) ? Math.floor(Number(mapped.season)) : 0;
+    const episodeNo = Number.isFinite(Number(mapped.episode)) ? Math.floor(Number(mapped.episode)) : 0;
+    if (episodeNo > 0) {
+      const matches = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value : [];
+      const candidates = [];
+      for (let i = 0; i < matches.length; i += 1) {
+        const m = matches[i];
+        const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+        const e = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+        if (e === episodeNo && (seasonNo <= 0 || s === seasonNo)) candidates.push(i);
+      }
+      if (candidates.length === 1) return candidates[0];
+      if (candidates.length > 1 && playingRaw && isPlayingInCurrentPanContext()) {
+        for (let i = 0; i < candidates.length; i += 1) {
+          const idx = candidates[i];
+          const url = eps[idx] && eps[idx].url != null ? String(eps[idx].url) : '';
+          const rawNames = url ? extractRawNamesFromEpisodeUrl(url) : [];
+          const epRaw = (Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '') : String(eps[idx] && eps[idx].name != null ? eps[idx].name : '')).trim().toLowerCase();
+          if (epRaw && epRaw === playingRaw) return idx;
+        }
+      }
+      if (candidates.length) return candidates[0];
+    }
+  }
+  if (!isPlayingInCurrentPanContext()) return -1;
+  const pIdx = Number.isFinite(Number(playingEpisodeIndex.value)) ? Math.floor(Number(playingEpisodeIndex.value)) : -1;
+  if (pIdx >= 0 && pIdx < eps.length) return pIdx;
+  return -1;
+};
+
+const syncSeasonForIndex = (idx) => {
+  if (manualSeasonOverride.value) return;
+  if (!seasonTabs.value.length) return;
+  const matches = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value : [];
+  const m = Number.isFinite(Number(idx)) && idx >= 0 && matches[idx] ? matches[idx] : null;
+  const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+  if (s <= 0) return;
+  const exists = seasonTabs.value.some((t) => t && Number(t.season) === s);
+  if (!exists) return;
+  if (Number(selectedSeason.value) !== s) selectSeason(s);
+};
+
+const scrollContainerToCenter = (container, active) => {
+  if (!container || !active) return;
+  const cRect = container.getBoundingClientRect();
+  const aRect = active.getBoundingClientRect();
+  if (!cRect.height || !cRect.width) return;
+  const offsetTop = aRect.top - cRect.top + container.scrollTop;
+  const offsetLeft = aRect.left - cRect.left + container.scrollLeft;
+  const nextTop = offsetTop - (cRect.height / 2) + (aRect.height / 2);
+  const nextLeft = offsetLeft - (cRect.width / 2) + (aRect.width / 2);
+  container.scrollTo({
+    top: Math.max(0, nextTop),
+    left: Math.max(0, nextLeft),
+    behavior: 'smooth',
+  });
+};
+
+const scrollEpisodeButtonsToActive = () => {
+  try {
+    const container = episodeButtonsEl.value;
+    if (!container) return;
+    const active = container.querySelector('[data-episode-active=\"true\"]');
+    if (!active) return;
+    scrollContainerToCenter(container, active);
+  } catch (_e) {}
+};
+
+const scrollRawListToActive = () => {
+  try {
+    const container = rawListViewEl.value;
+    if (!container) return;
+    const active = container.querySelector('.raw-list__row--active');
+    if (!active) return;
+    scrollContainerToCenter(container, active);
+  } catch (_e) {}
+};
+
+const scheduleScrollToPlayingEpisode = () => {
+  try {
+    if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (rawListMode.value) scrollRawListToActive();
+        else scrollEpisodeButtonsToActive();
+      });
+    });
+  } catch (_e) {}
 };
 
 const onRawListSelectEpisode = (idx) => {
@@ -13107,6 +15722,22 @@ const onRawListSelectEpisode = (idx) => {
   } catch (_e) {}
 };
 
+const extractDetailVodObject = (data) => {
+  const root = data && typeof data === 'object' ? data : {};
+  const nested = root.data && typeof root.data === 'object' ? root.data : {};
+  const isPanMock = root.pan_mock === true || root.panMock === true;
+  const first = isPanMock
+    ? ((Array.isArray(root.list) && root.list[0]) || {})
+    : (
+        (Array.isArray(root.list) && root.list[0]) ||
+        (Array.isArray(nested.list) && nested.list[0]) ||
+        root.vod ||
+        nested.vod ||
+        {}
+      );
+  return first && typeof first === 'object' ? first : {};
+};
+
 const extractIntroFromDetail = (data) => {
   const pick = (vod) => {
     if (!vod) return '';
@@ -13119,22 +15750,11 @@ const extractIntroFromDetail = (data) => {
   };
 
   if (!data) return '';
-  if (Array.isArray(data.list) && data.list[0]) return pick(data.list[0]);
-  if (data.data && Array.isArray(data.data.list) && data.data.list[0]) return pick(data.data.list[0]);
-  if (data.vod) return pick(data.vod);
-  return '';
+  return pick(extractDetailVodObject(data));
 };
 
 const extractDetailFromResponse = (data) => {
-  const root = data && typeof data === 'object' ? data : {};
-  const nested = root.data && typeof root.data === 'object' ? root.data : {};
-  const first =
-    (Array.isArray(root.list) && root.list[0]) ||
-    (Array.isArray(nested.list) && nested.list[0]) ||
-    root.vod ||
-    nested.vod ||
-    {};
-  const vod = first && typeof first === 'object' ? first : {};
+  const vod = extractDetailVodObject(data);
   const get = (k) => (vod && vod[k] != null ? String(vod[k]) : '').trim();
   const title = get('vod_name') || get('name') || get('title');
   const poster = get('vod_pic') || get('pic') || get('poster');
@@ -13149,16 +15769,24 @@ const extractDetailFromResponse = (data) => {
   return { title, poster, year, type, remark, content, playFrom, playUrl };
 };
 
+const extractPanListVodPlayUrl = (data) => {
+  const root = data && typeof data === 'object' ? data : null;
+  if (!root || root.ok !== true) return '';
+  return typeof root.vod_play_url === 'string' ? String(root.vod_play_url || '').trim() : '';
+};
+
 const detailFetchState = { key: '', seq: 0, inFlight: null };
 
 const contentKeyFromProps = () => {
-  const t = getStableContentKey();
-  const y = String(props.videoYear || '').trim();
-  const ty = String(props.searchType || '').trim();
-  return [t, y, ty].join('|');
+  return buildContentKeyBase();
 };
 
 let lastContentKey = contentKeyFromProps();
+let lastSiteKey = (props.siteKey || '').trim();
+let lastSpiderApi = (props.spiderApi || '').trim();
+let lastVideoId = (props.videoId || '').trim();
+let lastTmdbId = Number(props.tmdbId || 0);
+let lastTmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
 const entryFlowState = { seq: 0, inFlight: null };
 
 const runEntryFlow = async ({ isNewContent, restoreEpisodeIndex } = {}) => {
@@ -13169,9 +15797,10 @@ const runEntryFlow = async ({ isNewContent, restoreEpisodeIndex } = {}) => {
 
   const task = (async () => {
     const contentChanged = !!isNewContent;
+    const sourceSwitchOnly = Number.isFinite(Number(props.switchOnlyToken)) && Number(props.switchOnlyToken) > 0;
 
-    initialAutoPlayTriggered.value = false;
-    resumeHistoryState.seq += 1;
+    if (!sourceSwitchOnly) initialAutoPlayTriggered.value = false;
+    if (!sourceSwitchOnly) resumeHistoryState.seq += 1;
     detailFetchState.seq += 1;
 
     if (contentChanged) {
@@ -13182,24 +15811,45 @@ const runEntryFlow = async ({ isNewContent, restoreEpisodeIndex } = {}) => {
       tmdbMovieSmartEpisodes.value = [];
       tmdbMovieSmartFetchState.seq += 1;
       tmdbMovieSmartFetchState.key = '';
+      resumeHistoryLoaded.value = false;
+      resumeHistoryApplied.value = false;
+      resumeHistoryFound.value = null;
+      resumeWanted.value = null;
+      resumeHistory.value = null;
+      resumeAppliedEpisodeCount.value = 0;
     }
 
     if (contentChanged) {
       resetForNewVideo();
+    } else if (sourceSwitchOnly) {
+      autoPlaySuppressedByUser.value = true;
+      resetEpisodeListForSourceSwitch();
     } else {
       resetForNewSource();
-      selectedEpisodeIndex.value = prevIdx >= 0 ? prevIdx : 0;
+      const nextIdx = prevIdx >= 0 ? prevIdx : -1;
+      if (Number(selectedEpisodeIndex.value) !== nextIdx) setEpisodeIndex(nextIdx, 'resetForNewSource');
     }
 
     loadAggregatedSourcesFromStorage();
+    if (!sourceSwitchOnly) applyAggregatedSourcesFromSearchState();
 
-	    if (tmdbMode.value) {
-	      await loadResumeFromHistory();
-	      await fetchTMDBMetaIfNeeded();
-	      if (tmdbMovieMode.value) {
-	        await fetchTMDBMovieSmartEpisodesIfNeeded();
-	        if (contentChanged) selectedEpisodeIndex.value = 0;
-	      }
+    if (tmdbMode.value) {
+      if (
+        !sourceSwitchOnly &&
+        !isNewContent &&
+        resumeHistoryLoaded.value &&
+        resumeHistoryApplied.value &&
+        resumeHistory.value
+      ) {
+        // Keep existing resume state when only play metadata is being enriched.
+      } else if (!sourceSwitchOnly) {
+        await loadResumeFromHistory();
+      }
+      await fetchTMDBMetaIfNeeded();
+      if (tmdbMovieMode.value) {
+        await fetchTMDBMovieSmartEpisodesIfNeeded();
+        if (contentChanged) setEpisodeIndex(0, 'tmdbMovie_contentChanged');
+      }
       return;
     }
 
@@ -13210,7 +15860,17 @@ const runEntryFlow = async ({ isNewContent, restoreEpisodeIndex } = {}) => {
     }
 
     if (seqAtCall !== entryFlowState.seq) return;
-    void loadResumeFromHistory();
+    if (
+      !sourceSwitchOnly &&
+      !isNewContent &&
+      resumeHistoryLoaded.value &&
+      resumeHistoryApplied.value &&
+      resumeHistory.value
+    ) {
+      // Keep existing resume state when only play metadata is being enriched.
+    } else if (!sourceSwitchOnly) {
+      void loadResumeFromHistory();
+    }
   })();
 
   entryFlowState.inFlight = task;
@@ -13257,6 +15917,7 @@ const fetchDetailForCurrentVideo = async (opts = {}) => {
 				        action: 'detail',
 				        spiderApi: api,
 				        payload: { id },
+				        timeoutMs: 15_000,
 				      });
 				      if (seqAtCall !== detailFetchState.seq) return;
 					      const d = extractDetailFromResponse(raw);
@@ -13382,10 +16043,15 @@ const searchTypeLabel = computed(() => {
 
 const onPanDocDown = (e) => {
   const el = panDropdownEl.value;
+  const elSite = siteSourceDropdownEl.value;
   const el2 = tmdbPanDropdownEl.value;
   if (panDropdownOpen.value) {
     if (el && e && e.target && el.contains(e.target)) return;
     panDropdownOpen.value = false;
+  }
+  if (siteSourceDropdownOpen.value) {
+    if (elSite && e && e.target && elSite.contains(e.target)) return;
+    siteSourceDropdownOpen.value = false;
   }
   if (tmdbPanDropdownOpen.value) {
     if (el2 && e && e.target && el2.contains(e.target)) return;
@@ -13396,6 +16062,7 @@ const onPanDocDown = (e) => {
 const onPanKeyDown = (e) => {
   if (e && e.key === 'Escape') {
     panDropdownOpen.value = false;
+    siteSourceDropdownOpen.value = false;
     tmdbPanDropdownOpen.value = false;
   }
 };
@@ -13679,10 +16346,19 @@ onMounted(() => {
 });
 
 watch(
+  () => `${Number(props.openFromSearch || 0)}|${getStableContentKey()}`,
+  () => {
+    applyAggregatedSourcesFromSearchState();
+  },
+  { immediate: true }
+);
+
+watch(
   () => `${getStableContentKey()}|${isSmartPanActive.value ? '1' : '0'}`,
   () => {
-    if (sourcesLoading.value) return;
     if (isSmartPanActive.value) return;
+    if (applyAggregatedSourcesFromSearchState()) return;
+    if (sourcesLoading.value) return;
     loadAggregatedSourcesFromStorage();
   },
   { immediate: true }
@@ -13693,6 +16369,7 @@ watch(
   async () => {
     if (!tmdbMode.value) return;
     if (!tmdbSmartListAvailable.value && !tmdbMovieSmartListAvailable.value) return;
+    if (applyAggregatedSourcesFromSearchState()) return;
     if (sourcesLoading.value) return;
     loadAggregatedSourcesFromStorage();
   },
@@ -13703,6 +16380,10 @@ watch(
   () => activeTab.value,
   async (v) => {
     if (v !== 'sources') return;
+    if (applyAggregatedSourcesFromSearchState()) {
+      await scrollSourcesToActive({ behavior: 'auto' });
+      return;
+    }
     if (sourcesLoading.value) return;
     if (isSmartPanActive.value && !tmdbMode.value) {
       await scrollSourcesToActive({ behavior: 'auto' });
@@ -13742,16 +16423,64 @@ watch(
       props.spiderApi,
       props.videoId,
       props.contentKey,
+      String(Number(props.switchOnlyToken || 0)),
       typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '',
       String(props.tmdbId || 0),
     ].join('|'),
   () => {
     const nextContentKey = contentKeyFromProps();
-    const isNewContent = !!nextContentKey && nextContentKey !== lastContentKey;
+    const nextBaseKey = buildContentKeyBase();
+    const nextSiteKey = (props.siteKey || '').trim();
+    const nextSpiderApi = (props.spiderApi || '').trim();
+    const nextVideoId = (props.videoId || '').trim();
+    const nextTmdbId = Number(props.tmdbId || 0);
+    const nextTmdbType = typeof props.tmdbType === 'string' ? props.tmdbType.trim().toLowerCase() : '';
+
+    const sameSite =
+      !!lastSiteKey &&
+      !!nextSiteKey &&
+      lastSiteKey === nextSiteKey &&
+      lastSpiderApi === nextSpiderApi &&
+      lastVideoId === nextVideoId;
+    const sameTMDB =
+      lastTmdbId > 0 &&
+      nextTmdbId > 0 &&
+      lastTmdbId === nextTmdbId &&
+      !!lastTmdbType &&
+      lastTmdbType === nextTmdbType;
+    const switchOnly = Number.isFinite(Number(props.switchOnlyToken)) && Number(props.switchOnlyToken) > 0;
+
+    // Treat late-arriving contentKey/title refinements as the same content when source identity is unchanged.
+    const isNewContent = !!nextContentKey && nextContentKey !== lastContentKey && !sameSite && !sameTMDB && !switchOnly;
+
+    if (!lockedContentKey.value || isNewContent) {
+      lockedContentKey.value = nextBaseKey;
+    }
+
     lastContentKey = nextContentKey;
+    lastSiteKey = nextSiteKey;
+    lastSpiderApi = nextSpiderApi;
+    lastVideoId = nextVideoId;
+    lastTmdbId = nextTmdbId;
+    lastTmdbType = nextTmdbType;
 
     const prevIdx = Number.isFinite(selectedEpisodeIndex.value) ? Math.floor(selectedEpisodeIndex.value) : 0;
     void runEntryFlow({ isNewContent, restoreEpisodeIndex: prevIdx }).catch(() => {});
+  },
+  { immediate: true }
+);
+
+watch(
+  () => Number(props.autoPlayResetToken || 0),
+  (v, prev) => {
+    const next = Number.isFinite(Number(v)) ? Number(v) : 0;
+    if (!next || next === prev) return;
+    initialAutoPlayTriggered.value = false;
+    initialAutoPlayInFlight.value = false;
+    autoPlaySuppressedByUser.value = false;
+    autoSourceFallbackSeq += 1;
+    autoSourceFallbackTried.clear();
+    autoFallbackActive.value = false;
   },
   { immediate: true }
 );
@@ -13786,7 +16515,7 @@ watch(
 	      const list = panDropdownOptions.value;
 	      const k = list && list[0] && list[0].key ? String(list[0].key) : '';
 	      selectedPan.value = k;
-        if (!k) selectedEpisodeIndex.value = -1;
+        if (!k) setEpisodeIndex(-1, 'pan_dropdown_clear');
 	      return;
 	    }
     const list = panDropdownOptions.value;
@@ -14275,6 +17004,33 @@ watch(
   text-overflow: ellipsis;
 }
 
+.play-pan-dropdown .custom-dropdown-list {
+  max-height: min(360px, 58vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.7) rgba(148, 163, 184, 0.18);
+}
+
+.play-pan-dropdown .custom-dropdown-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.play-pan-dropdown .custom-dropdown-list::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+}
+
+.play-pan-dropdown .custom-dropdown-list::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.72);
+  border-radius: 999px;
+}
+
+.play-pan-dropdown .custom-dropdown-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.82);
+}
+
 .dark .play-pan-dropdown .custom-dropdown-btn {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.16);
@@ -14286,6 +17042,19 @@ watch(
   background: #0f172a;
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+  scrollbar-color: rgba(148, 163, 184, 0.65) rgba(30, 41, 59, 0.7);
+}
+
+.dark .play-pan-dropdown .custom-dropdown-list::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.72);
+}
+
+.dark .play-pan-dropdown .custom-dropdown-list::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.65);
+}
+
+.dark .play-pan-dropdown .custom-dropdown-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(203, 213, 225, 0.72);
 }
 
 .dark .play-pan-dropdown .custom-dropdown-item {
