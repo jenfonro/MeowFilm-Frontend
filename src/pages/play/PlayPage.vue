@@ -817,6 +817,15 @@ import { grantCatLowPrioritySearchTickets, normalizecatpawrunnerApiBase, pauseCa
 import { apiGetJson, apiPostJson, buildQuery } from '../../shared/apiClient';
 import { fetchBootstrap } from '../../shared/bootstrap';
 import { processPosterUrl } from '../../shared/posterCard';
+import {
+  buildEpisodeMatchKey,
+  extractTianyiShareCodeAndAccessCode,
+  guessPreferredPanFromFlag,
+  normalizeRawNameForCompare,
+  panMockProviderFromFlag,
+  parseMockPasscodeFromRawName,
+  scoreEpisodeDisplayName,
+} from '../../utils/matchCore';
 
 const props = defineProps({
   bootstrap: { type: Object, required: true },
@@ -2292,23 +2301,6 @@ const fetchAggregatedSourcesExactMatches = async (opts = {}) => {
       return 0;
     }
   })();
-  const extractSeasonHintFromText = (text) => {
-    const s = typeof text === 'string' ? text.trim() : '';
-    if (!s) return 0;
-    const mSe = s.match(/S(\d{1,2})\s*E\d{1,5}/i);
-    if (mSe && mSe[1]) {
-      const n = Number.parseInt(String(mSe[1]), 10);
-      if (Number.isFinite(n) && n > 0) return n;
-    }
-    const mSeason = s.match(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季/i);
-    if (mSeason && mSeason[1]) {
-      const raw = String(mSeason[1]);
-      const digits = raw.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
-      const n = /^\d+$/.test(digits) ? Number.parseInt(digits, 10) : parseChineseNumeralToInt(raw);
-      if (Number.isFinite(n) && n > 0) return Math.floor(n);
-    }
-    return 0;
-  };
   const yieldToUi = () =>
     new Promise((resolve) => {
       try {
@@ -5668,69 +5660,6 @@ const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
   return out;
 };
 
-const panMockProviderFromFlag = (flag) => {
-  const s = typeof flag === 'string' ? flag.trim() : '';
-  if (!s) return '';
-  // pan_mock routing must use fixed flag recognition and must NOT depend on user-config aliases.
-  if (!s.includes('-')) return '';
-  const head = String((s.split('-')[0] || '')).trim();
-  if (!head) return '';
-  if (head.includes('百度')) return 'baidu';
-  if (head.includes('夸父')) return 'quark';
-  if (head.includes('优夕')) return 'uc';
-  if (head.includes('天意')) return '189';
-  if (head.includes('逸动')) return '139';
-  return '';
-};
-
-const parseMockPasscodeFromUrl = (episodeUrl) => {
-  const names = extractRawNamesFromEpisodeUrl(episodeUrl);
-  const raw = Array.isArray(names) && names.length ? String(names[0] || '').trim() : '';
-  if (!raw) return '';
-  let t = raw;
-  if (t.toLowerCase().endsWith('.mp4')) t = t.slice(0, -4);
-  t = String(t || '').trim();
-  if (!t || t.toLowerCase() === 'nopass') return '';
-  return t;
-};
-
-const extractTianyiShareCodeAndAccessCode = (flag, urlRaw) => {
-  const label = typeof flag === 'string' ? flag.trim() : '';
-  const urlStr = typeof urlRaw === 'string' ? urlRaw.trim() : '';
-  if (!label || !urlStr) return { shareCode: '', accessCode: '' };
-  const firstSeg = (urlStr.split('#')[0] || '').trim();
-  const idx = firstSeg.indexOf('$');
-  const epUrl = idx >= 0 ? firstSeg.slice(idx + 1).trim() : firstSeg;
-  const pass = parseMockPasscodeFromUrl(epUrl);
-  // Some Tianyi interceptors encode shareCode/accessCode in the filename and keep a "-nopass" placeholder suffix:
-  // - "<shareCode>_<accessCode>-nopass.mp4"
-  // - "<shareCode>-<accessCode>.mp4"
-  // Treat "-nopass" as a placeholder instead of a real accessCode.
-  const normalizeTianyiPass = (raw) => {
-    let t = typeof raw === 'string' ? raw.trim() : '';
-    if (!t) return '';
-    const lower = t.toLowerCase();
-    if (lower.endsWith('-nopass')) t = t.slice(0, -7);
-    else if (lower.endsWith('_nopass')) t = t.slice(0, -7);
-    return t.trim();
-  };
-  const normPass = normalizeTianyiPass(pass);
-  if (normPass) {
-    if (normPass.includes('_')) {
-      const [a, b] = normPass.split('_', 2);
-      return { shareCode: String(a || '').trim(), accessCode: String(b || '').trim() };
-    }
-    if (normPass.includes('-')) {
-      const [a, b] = normPass.split('-', 2);
-      return { shareCode: String(a || '').trim(), accessCode: String(b || '').trim() };
-    }
-  }
-  // Fallback: shareCode might already be embedded in the label like "天意-XXXX".
-  const m = /天意-([A-Za-z0-9]{6,64})/.exec(label);
-  const shareCode = m && m[1] ? String(m[1]).trim() : '';
-  return { shareCode, accessCode: normPass || pass };
-};
-
 const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = {}) => {
   const panMockEnabled = readPanMockEnabledFromRaw(raw);
   if (panMockEnabled) panMockEnabledHint.value = true;
@@ -5768,7 +5697,12 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
         const provider = panMockProviderFromFlag(label);
         if (!provider) continue;
         if (provider === '189') {
-          const { shareCode, accessCode } = extractTianyiShareCodeAndAccessCode(label, u);
+          const firstSeg = (u.split('#')[0] || '').trim();
+          const idx = firstSeg.indexOf('$');
+          const epUrl = idx >= 0 ? firstSeg.slice(idx + 1).trim() : firstSeg;
+          const rawNames = extractRawNamesFromEpisodeUrl(epUrl);
+          const rawName = Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '').trim() : '';
+          const { shareCode, accessCode } = extractTianyiShareCodeAndAccessCode(label, rawName);
           if (!shareCode) continue;
           listReqsRaw.push({ provider: '189', label, flag: `天意-${shareCode}`, accessCode: accessCode || '' });
           continue;
@@ -5776,7 +5710,9 @@ const resolvePanMockPlaySources = async ({ raw, playFrom, playUrl, onUpdate } = 
         const firstSeg = (u.split('#')[0] || '').trim();
         const idx = firstSeg.indexOf('$');
         const epUrl = idx >= 0 ? firstSeg.slice(idx + 1).trim() : firstSeg;
-        const pass = parseMockPasscodeFromUrl(epUrl);
+        const rawNames = extractRawNamesFromEpisodeUrl(epUrl);
+        const rawName = Array.isArray(rawNames) && rawNames.length ? String(rawNames[0] || '').trim() : '';
+        const pass = parseMockPasscodeFromRawName(rawName);
         listReqsRaw.push({ provider, label, flag: label, passcode: pass || '' });
       }
     }
@@ -6859,6 +6795,40 @@ const parseChineseNumeralToInt = (text) => {
 
   const n = parseSection(s);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+};
+
+const extractSeasonHintFromText = (text) => {
+  const s = typeof text === 'string' ? text.trim() : '';
+  if (!s) return 0;
+  const mSe = s.match(/S(\d{1,2})\s*E\d{1,5}/i);
+  if (mSe && mSe[1]) {
+    const n = Number.parseInt(String(mSe[1]), 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const mSeason = s.match(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季/i);
+  if (mSeason && mSeason[1]) {
+    const raw = String(mSeason[1]);
+    const digits = raw.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
+    const n = /^\d+$/.test(digits) ? Number.parseInt(digits, 10) : parseChineseNumeralToInt(raw);
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  return 0;
+};
+
+const extractSeasonHintFromSource = (src) => {
+  const hinted = src && Number.isFinite(Number(src.seasonHint)) ? Math.floor(Number(src.seasonHint)) : 0;
+  if (hinted > 0) return hinted;
+  const title = src && src.videoTitle != null ? String(src.videoTitle) : '';
+  const remark = src && src.videoRemark != null ? String(src.videoRemark) : '';
+  return extractSeasonHintFromText(title) || extractSeasonHintFromText(remark) || 0;
+};
+
+const hasExplicitSeasonMarkerInSource = (src) => {
+  const title = src && src.videoTitle != null ? String(src.videoTitle) : '';
+  const remark = src && src.videoRemark != null ? String(src.videoRemark) : '';
+  const re = /S\d{1,2}\s*E\d{1,5}/i;
+  const reCn = /第\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季/i;
+  return re.test(title) || re.test(remark) || reCn.test(title) || reCn.test(remark);
 };
 
 	const extractSeasonEpisodeFromText = (text, rules, cleanRules) => {
@@ -8863,14 +8833,6 @@ try {
 
 const goProxyInUseBase = ref('');
 const lastGoProxyCandidate = ref(null);
-
-const guessPreferredPanFromFlag = (flag) => {
-  const raw = typeof flag === 'string' ? flag.trim() : '';
-  if (!raw) return '';
-  if (raw.includes('百度')) return 'baidu';
-  if (raw.includes('夸父')) return 'quark';
-  return '';
-};
 
 const joinBaseUrl = (base, relativePath) => {
   const b = normalizeHttpBase(base);
@@ -11118,30 +11080,6 @@ const smartSwitchTo = async ({
   const orderMap = smartBuildSiteOrderMap();
   const preferredSite = typeof targetSiteKey === 'string' ? targetSiteKey.trim() : '';
 
-  const extractSeasonHintFromText = (text) => {
-    const s = typeof text === 'string' ? text.trim() : '';
-    if (!s) return 0;
-    const mSe = s.match(/S(\d{1,2})\s*E\d{1,5}/i);
-    if (mSe && mSe[1]) {
-      const n = Number.parseInt(String(mSe[1]), 10);
-      if (Number.isFinite(n) && n > 0) return n;
-    }
-    const mSeason = s.match(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季/i);
-    if (mSeason && mSeason[1]) {
-      const raw = String(mSeason[1]);
-      const digits = raw.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
-      const n = /^\d+$/.test(digits) ? Number.parseInt(digits, 10) : parseChineseNumeralToInt(raw);
-      if (Number.isFinite(n) && n > 0) return Math.floor(n);
-    }
-    return 0;
-  };
-  const extractSeasonHintFromSource = (src) => {
-    const hinted = src && Number.isFinite(Number(src.seasonHint)) ? Math.floor(Number(src.seasonHint)) : 0;
-    if (hinted > 0) return hinted;
-    const title = src && src.videoTitle != null ? String(src.videoTitle) : '';
-    const remark = src && src.videoRemark != null ? String(src.videoRemark) : '';
-    return extractSeasonHintFromText(title) || extractSeasonHintFromText(remark) || 0;
-  };
   const isGoodEnough = (cand) => {
     const feat = smartComputeCandidateFeatures(cand);
     const q = feat && feat.quality ? feat.quality : '';
@@ -11727,31 +11665,6 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
     return extractMaxEpisodeFromBadgeText(r);
   };
 
-  const extractSeasonHintFromText = (text) => {
-    const s = typeof text === 'string' ? text.trim() : '';
-    if (!s) return 0;
-    const mSe = s.match(/S(\d{1,2})\s*E\d{1,5}/i);
-    if (mSe && mSe[1]) {
-      const n = Number.parseInt(String(mSe[1]), 10);
-      if (Number.isFinite(n) && n > 0) return n;
-    }
-    const mSeason = s.match(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季/i);
-    if (mSeason && mSeason[1]) {
-      const raw = String(mSeason[1]);
-      const digits = raw.replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
-      const n = /^\d+$/.test(digits) ? Number.parseInt(digits, 10) : parseChineseNumeralToInt(raw);
-      if (Number.isFinite(n) && n > 0) return Math.floor(n);
-    }
-    return 0;
-  };
-
-  const extractSeasonHintFromSource = (src) => {
-    const hinted = src && Number.isFinite(Number(src.seasonHint)) ? Math.floor(Number(src.seasonHint)) : 0;
-    if (hinted > 0) return hinted;
-    const title = src && src.videoTitle != null ? String(src.videoTitle) : '';
-    const remark = src && src.videoRemark != null ? String(src.videoRemark) : '';
-    return extractSeasonHintFromText(title) || extractSeasonHintFromText(remark) || 0;
-  };
 
   const normalizeReplayPanLabel = (label) =>
     String(label || '')
@@ -11760,13 +11673,6 @@ const resolveTMDBSmartPlaybackCandidate = async ({ episodeNo, seasonNo, excludeK
       .replace(/\s+/g, '')
       .toLowerCase();
 
-  const hasExplicitSeasonMarkerInSource = (src) => {
-    const title = src && src.videoTitle != null ? String(src.videoTitle) : '';
-    const remark = src && src.videoRemark != null ? String(src.videoRemark) : '';
-    const re = /S\d{1,2}\s*E\d{1,5}/i;
-    const reCn = /第\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季/i;
-    return re.test(title) || re.test(remark) || reCn.test(title) || reCn.test(remark);
-  };
 
 	  const isTMDBMultiSeason = () => {
 	    const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
@@ -15253,6 +15159,19 @@ const rawListItems = computed(() => {
     const entries = panMockRawDirEntries.value;
     return entries.map((it) => it);
   }
+  let allFileNamesSame = true;
+  let firstFileName = null;
+  for (const ep of eps) {
+    const url = ep && ep.url != null ? String(ep.url) : '';
+    const rawNames = extractRawNamesFromEpisodeUrl(url);
+    const fileName = rawNames[0] || '';
+    if (firstFileName == null) {
+      firstFileName = fileName;
+    } else if (fileName !== firstFileName) {
+      allFileNamesSame = false;
+      break;
+    }
+  }
   return eps.map((ep, idx) => {
 	    const useDisplayName =
 	      tmdbMovieMode.value && tmdbMovieSmartListAvailable.value && selectedPanKey.value === SMART_PAN_KEY;
@@ -15265,26 +15184,11 @@ const rawListItems = computed(() => {
 	      !!panMockProviderFromFlag(flag);
 	    const displayName = ep && ep.name != null ? String(ep.name) : '';
 	    const fileName = rawNames[0] || '';
-	    const scoreName = (s, titleLower) => {
-	      const text = typeof s === 'string' ? s.trim() : '';
-	      if (!text) return -999;
-	      const lower = text.toLowerCase();
-	      let score = 0;
-	      if (/(?:ep|episode|e)\s*\d{1,5}/i.test(text) || /第\s*\d+\s*集/.test(text)) score += 5;
-	      if (/S\s*\d{1,2}/i.test(text) || /第\s*\d+\s*季/.test(text)) score += 4;
-	      if (/(2160p|4k|1080p|720p)/i.test(text)) score += 2;
-	      if (titleLower && lower.includes(titleLower)) score += 2;
-	      if (text.length < 6) score -= 3;
-	      if (/^[0-9]+$/.test(text) && text.length >= 10) score -= 5;
-	      if (/^[a-z0-9]+$/i.test(text) && text.length >= 24) score -= 5;
-	      if (/\.(mkv|mp4|avi|flv|mov|wmv|m4v)$/i.test(text)) score += 1;
-	      return score;
-	    };
 	    const titleLower = (displayTitle.value || '').trim().toLowerCase();
-	    const displayScore = scoreName(displayName, titleLower);
-	    const fileScore = scoreName(fileName, titleLower);
+	    const displayScore = scoreEpisodeDisplayName(displayName, titleLower);
+	    const fileScore = scoreEpisodeDisplayName(fileName, titleLower);
 	    const preferDisplay =
-	      useDisplayName || (!isPanMockList && displayScore >= fileScore);
+	      allFileNamesSame || useDisplayName || (!isPanMockList && displayScore >= fileScore);
 	    const text = (
 	      (preferDisplay ? (ep && ep.name != null ? String(ep.name) : '') : '') ||
 	      rawNames[0] ||
@@ -15528,14 +15432,6 @@ const isPlayingInCurrentPanContext = () => {
   const playingSub = String(playingTMDBSubPanKey.value || '');
   if (!curSub || !playingSub) return true;
   return curSub === playingSub;
-};
-
-const normalizeRawNameForCompare = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-const buildEpisodeMatchKey = (displayName, rawName) => {
-  const name = normalizeRawNameForCompare(displayName);
-  const raw = normalizeRawNameForCompare(rawName);
-  if (!name && !raw) return '';
-  return `${name}||${raw}`.trim();
 };
 
 const resolvePlayingIndexInRawList = () => {
