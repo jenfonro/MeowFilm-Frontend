@@ -833,6 +833,7 @@ const props = defineProps({
   videoYear: { type: String, default: '' },
   searchType: { type: String, default: '' },
   siteKey: { type: String, default: '' },
+  siteName: { type: String, default: '' },
   spiderApi: { type: String, default: '' },
   videoId: { type: String, default: '' },
   videoIntro: { type: String, default: '' },
@@ -3573,7 +3574,8 @@ const resolvedSiteName = computed(() => {
   const sites = Array.isArray(effectiveBootstrapSettings.value.homeSites) ? effectiveBootstrapSettings.value.homeSites : [];
   const found = sites.find((s) => s && s.key === key);
   const name = found && found.name ? String(found.name) : '';
-  return name.trim();
+  const fallback = typeof props.siteName === 'string' ? props.siteName.trim() : '';
+  return (name || fallback || '').trim();
 });
 
 const orderedSiteSources = computed(() => {
@@ -4160,6 +4162,7 @@ const switchAggregatedSource = async (src) => {
       new CustomEvent('tv:open-play', {
         detail: {
           siteKey: src.siteKey || '',
+          siteName: src.siteName || '',
           spiderApi: src.spiderApi || '',
           videoId: src.videoId || '',
           videoTitle: metaTitle || displayTitle.value || src.title || '',
@@ -13543,6 +13546,7 @@ const tryAutoFallbackToNextSource = () => {
       new CustomEvent('tv:open-play', {
         detail: {
           siteKey: next.siteKey || '',
+          siteName: next.siteName || '',
           spiderApi: next.spiderApi || '',
           videoId: next.videoId || '',
           videoTitle: next.videoTitle || '',
@@ -15423,15 +15427,18 @@ const isEpisodeActive = (idxRaw, ep) => {
 };
 
 const isPlayingInCurrentPanContext = () => {
-  if (!playerUrl.value || !playingPanKey.value) return false;
-  const selectedPan = String(selectedPanKey.value || '');
-  if (!selectedPan) return false;
-  if (playingPanKey.value !== selectedPan) return false;
-  if (!isTMDBSitePanKey(selectedPan)) return true;
-  const curSub = resolveCurrentTMDBSubPanKey(selectedPan);
-  const playingSub = String(playingTMDBSubPanKey.value || '');
-  if (!curSub || !playingSub) return true;
-  return curSub === playingSub;
+  if (!playerUrl.value) return false;
+  const src = selectedPanSource.value;
+  const normalizePanFlag = (v) =>
+    String(v || '')
+      .trim()
+      .replace(/#\d{1,3}\s*$/i, '')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+  const selectedFlag = src && typeof src.label === 'string' ? normalizePanFlag(src.label) : '';
+  const playingFlag = normalizePanFlag(currentPlayingPanFlag.value || '');
+  if (!selectedFlag || !playingFlag) return false;
+  return selectedFlag === playingFlag;
 };
 
 const resolvePlayingIndexInRawList = () => {

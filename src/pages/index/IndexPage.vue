@@ -529,6 +529,7 @@ const playParams = ref({
   videoYear: '',
   searchType: '',
   siteKey: '',
+  siteName: '',
   spiderApi: '',
   videoId: '',
   videoIntro: '',
@@ -733,10 +734,12 @@ const syncMobileContextFromStorage = () => {
 		    const siteKey = typeof match.siteKey === 'string' ? match.siteKey : '';
 		    const spiderApi = typeof match.spiderApi === 'string' ? match.spiderApi : '';
 		    const videoId = typeof match.videoId === 'string' ? match.videoId : '';
+		    const siteName = typeof match.siteName === 'string' ? match.siteName : '';
 		    if (!siteKey || !spiderApi || !videoId) return input;
 		    return {
 		      ...input,
 			      siteKey,
+			      siteName: typeof input.siteName === 'string' && input.siteName.trim() ? input.siteName : siteName,
 			      spiderApi,
 			      videoId,
 			      contentKey: typeof input.contentKey === 'string' && input.contentKey.trim() ? input.contentKey : (typeof match.contentKey === 'string' ? match.contentKey : ''),
@@ -793,6 +796,7 @@ const syncMobileContextFromStorage = () => {
 			    videoYear: typeof d0.videoYear === 'string' ? d0.videoYear : '',
 			    searchType: typeof d0.searchType === 'string' ? d0.searchType : '',
 			    siteKey: typeof d0.siteKey === 'string' ? d0.siteKey : '',
+			    siteName: typeof d0.siteName === 'string' ? d0.siteName : '',
 			    spiderApi: typeof d0.spiderApi === 'string' ? d0.spiderApi : '',
 			    videoId: typeof d0.videoId === 'string' ? d0.videoId : '',
 			    videoIntro: typeof d0.videoIntro === 'string' ? d0.videoIntro : '',
@@ -839,6 +843,7 @@ const syncMobileContextFromStorage = () => {
 			      }
 			    };
 			    patch('siteKey', typeof d.siteKey === 'string' ? d.siteKey : '');
+			    patch('siteName', typeof d.siteName === 'string' ? d.siteName : '');
 			    patch('spiderApi', typeof d.spiderApi === 'string' ? d.spiderApi : '');
 			    patch('videoId', typeof d.videoId === 'string' ? d.videoId : '');
 			    patch('contentKey', typeof d.contentKey === 'string' ? d.contentKey : '');

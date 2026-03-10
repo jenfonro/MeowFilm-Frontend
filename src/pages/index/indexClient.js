@@ -535,6 +535,7 @@ function setupHomeSpiderBrowse() {
           siteKey: canDirectPlay ? siteKey : '',
           spiderApi: canDirectPlay ? spiderApi : '',
           videoId: canDirectPlay ? videoId : '',
+          siteName: it && typeof it.siteName === 'string' ? it.siteName : '',
           videoTitle,
           videoPoster: it && typeof it.videoPoster === 'string' ? it.videoPoster : '',
           videoRemark: it && typeof it.videoRemark === 'string' ? it.videoRemark : '',
@@ -613,6 +614,7 @@ function setupHomeSpiderBrowse() {
         io,
         detail: {
           siteKey,
+          siteName: it && typeof it.siteName === 'string' ? it.siteName : '',
           spiderApi,
           videoId,
           videoTitle,
@@ -1061,6 +1063,7 @@ function setupHomeSpiderBrowse() {
           onActivate: isFolder && onFolder ? () => onFolder(it) : null,
           detail: {
             siteKey: activeSiteKey || '',
+            siteName: getSiteDisplayName(activeSiteKey) || activeSiteKey,
             spiderApi: activeSiteApi || '',
             videoId: it && it.id ? String(it.id) : '',
             videoTitle: title,
@@ -1695,22 +1698,23 @@ function setupHomeSpiderBrowse() {
 	      const title = it && it.name ? String(it.name) : '';
 	      const tag = it && it.tag ? String(it.tag) : '';
 	      const isFolder = tag.toLowerCase() === 'folder';
-	      const wrapper = createPosterCard({
-	        wrapperClass: 'min-w-[96px] w-24 sm:min-w-[180px] sm:w-44',
-	        io,
-	        onActivate:
-	          isFolder
-	            ? () => {
-	                const folderId = it && it.id ? String(it.id) : '';
-	                const folderName = it && it.name ? String(it.name) : '';
-	                if (!folderId || !activeSiteApi) return;
-	                void startSiteBrowse({ siteKey: activeSiteKey || '', siteApi: activeSiteApi, categoryId: folderId, titleOverride: folderName });
-	              }
-	            : null,
-	        detail: {
-	          siteKey: activeSiteKey || '',
-	          spiderApi: activeSiteApi || '',
-	          videoId: it && it.id ? String(it.id) : '',
+      const wrapper = createPosterCard({
+        wrapperClass: 'min-w-[96px] w-24 sm:min-w-[180px] sm:w-44',
+        io,
+        onActivate:
+          isFolder
+            ? () => {
+                const folderId = it && it.id ? String(it.id) : '';
+                const folderName = it && it.name ? String(it.name) : '';
+                if (!folderId || !activeSiteApi) return;
+                void startSiteBrowse({ siteKey: activeSiteKey || '', siteApi: activeSiteApi, categoryId: folderId, titleOverride: folderName });
+              }
+            : null,
+        detail: {
+          siteKey: activeSiteKey || '',
+          siteName: getSiteDisplayName(activeSiteKey) || activeSiteKey,
+          spiderApi: activeSiteApi || '',
+          videoId: it && it.id ? String(it.id) : '',
           videoTitle: title,
           videoPoster: it && it.pic ? String(it.pic) : '',
           videoRemark: it && it.remark ? String(it.remark) : '',
