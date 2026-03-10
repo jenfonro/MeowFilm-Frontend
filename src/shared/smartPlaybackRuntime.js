@@ -1,0 +1,894 @@
+import { buildSearchGroupKey } from './searchRuntime';
+import { ensurePlayHistoryRowForContext } from './playHistoryRuntime';
+import { buildPlaybackRecognitionData } from './smartSourceRecognition';
+import {
+  extractPanListVodPlayUrl,
+  extractRawNamesFromEpisodeUrl,
+  fetchCatResolvedDetailCached,
+  requestPanListByProviderFlag,
+} from './catpawrunner';
+import { panMockProviderFromFlag } from '../utils/matchCore';
+
+const CIRCLED_DIGITS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳'];
+
+const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+const normalizeInt = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.trunc(num) : 0;
+};
+
+const formatCircledIndex = (index) => CIRCLED_DIGITS[index] || `(${index + 1})`;
+
+export const buildHistorySitePlaybackItem = (row) => {
+  const item = row && typeof row === 'object' ? row : null;
+  const siteKey = normalizeString(item && item.siteKey);
+  const spiderApi = normalizeString(item && item.spiderApi);
+  const videoId = normalizeString(item && item.videoId);
+  const siteName = normalizeString(item && item.siteName);
+  const title = normalizeString(item && item.videoTitle);
+  if (!siteKey || !spiderApi || !videoId || !siteName || !title) return null;
+  return {
+    id: `history:${siteKey}:${videoId}`,
+    siteKey,
+    spiderApi,
+    videoId,
+    siteName,
+    title,
+    videoTitle: title,
+    groupKey: '',
+    _history: true,
+  };
+};
+
+const splitRawPathSegments = (value) =>
+  normalizeString(value)
+    .replace(/\\/g, '/')
+    .split('/')
+    .map(normalizeString)
+    .filter(Boolean);
+
+const getRawFileName = (value) => {
+  const parts = splitRawPathSegments(value);
+  return parts.length ? parts[parts.length - 1] : normalizeString(value);
+};
+
+const getRawDirPath = (value) => {
+  const parts = splitRawPathSegments(value);
+  if (parts.length <= 1) return '';
+  return `/${parts.slice(0, -1).join('/')}`;
+};
+
+const getDisplayDirPath = (value) => {
+  const parts = splitRawPathSegments(value);
+  if (parts.length <= 1) return '';
+  return `/${parts.slice(0, -1).join('/')}`;
+};
+
+export const buildPanSourcesFromDetail = (detail) => {
+  const target = detail && typeof detail === 'object' ? detail : null;
+  if (!target) return [];
+  const directSources = Array.isArray(target.sources) ? target.sources : [];
+  if (directSources.length) {
+    return directSources
+      .map((item, index) => {
+        const label = normalizeString(item && item.label);
+        if (!label) return null;
+        const key = normalizeString(item && item.key) || `source:${index}:${label}`;
+        return {
+          key,
+          label,
+          provider: normalizeString(item && item.provider).toLowerCase(),
+          url: normalizeString(item && item.url),
+          error: normalizeString(item && item.error),
+          loading: item && item.loading === true,
+        };
+      })
+      .filter(Boolean);
+  }
+  const playFrom = normalizeString(target && (target.resolvedPlayFrom || target.playFrom));
+  const playUrl = normalizeString(target && (target.resolvedPlayUrl || target.playUrl));
+  if (!playFrom || !playUrl) return [];
+  const fromParts = playFrom.split('$$$').map(normalizeString).filter(Boolean);
+  const urlParts = playUrl.split('$$$').map(normalizeString).filter(Boolean);
+  const len = Math.max(fromParts.length, urlParts.length);
+  const out = [];
+  for (let i = 0; i < len; i += 1) {
+    const baseLabel = normalizeString(fromParts[i]);
+    const baseUrl = normalizeString(urlParts[i]);
+    if (!baseLabel || !baseUrl) continue;
+    const hasSubs = baseLabel.includes('|||') && baseUrl.includes('|||');
+    const labelParts = baseLabel.includes('|||') ? baseLabel.split('|||').map(normalizeString) : [baseLabel];
+    const urlSegParts = hasSubs ? baseUrl.split('|||').map(normalizeString) : [baseUrl];
+    const subLen = Math.max(labelParts.length, urlSegParts.length);
+    for (let j = 0; j < subLen; j += 1) {
+      const label = normalizeString(labelParts[j]) || baseLabel;
+      const url = normalizeString(urlSegParts[j]);
+      if (!label || !url) continue;
+      out.push({
+        key: `${i}:${j}:${label}`,
+        label,
+        provider: normalizeString(panMockProviderFromFlag(label)).toLowerCase(),
+        url,
+        error: '',
+        loading: false,
+      });
+    }
+  }
+  return out;
+};
+
+export const buildPanSegment = (entry, index) => {
+  if (!entry || !normalizeString(entry.url)) return null;
+  const itemIndex = normalizeInt(index);
+  if (itemIndex < 0) return null;
+  const segments = String(entry.url || '').split('#').map(normalizeString).filter(Boolean);
+  const segment = segments[itemIndex] || '';
+  if (!segment) return null;
+  const dollarIdx = segment.indexOf('$');
+  const label = dollarIdx >= 0 ? normalizeString(segment.slice(0, dollarIdx)) : segment;
+  const episodeUrl = dollarIdx >= 0 ? normalizeString(segment.slice(dollarIdx + 1)) : segment;
+  const rawName = extractRawNamesFromEpisodeUrl(episodeUrl)[0] || '';
+  return {
+    index: itemIndex,
+    segmentIdentity: segment,
+    label,
+    displayName: label,
+    episodeUrl,
+    rawName,
+    pathName: getRawDirPath(rawName) || getDisplayDirPath(label),
+    fileName: getRawFileName(rawName),
+  };
+};
+
+export const buildSiteSourceResultItemsFromSnapshot = ({
+  snapshot,
+  runtimeConfig,
+  blockedSiteKeys = [],
+  blockedMatchIndex = {},
+  title = '',
+  contentKind = 'tv',
+} = {}) => {
+  if (!snapshot || !runtimeConfig) return [];
+  const siteItems = Array.isArray(snapshot.siteItems) ? snapshot.siteItems : [];
+  if (!siteItems.length) return [];
+  const targetGroupKey = buildSearchGroupKey(title, runtimeConfig.aggregateRules, { contentKind });
+  if (!targetGroupKey) return [];
+  const blockedKeySet = new Set(
+    (Array.isArray(blockedSiteKeys) ? blockedSiteKeys : [])
+      .map((item) => normalizeString(item))
+      .filter(Boolean)
+  );
+  const blockedMatchMap = blockedMatchIndex && typeof blockedMatchIndex === 'object' ? blockedMatchIndex : {};
+  const siteOrderMap = runtimeConfig.siteOrderMap instanceof Map ? runtimeConfig.siteOrderMap : new Map();
+  const matched = siteItems
+    .filter(
+      (item) =>
+        item &&
+        normalizeString(item.groupKey) === targetGroupKey &&
+        !blockedKeySet.has(normalizeString(item.siteKey)) &&
+        !(
+          blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.videoId)}`]
+          && blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.videoId)}`].blockAll
+        )
+    )
+    .slice()
+    .sort((left, right) => {
+      const leftOrder = siteOrderMap.has(left.siteKey) ? siteOrderMap.get(left.siteKey) : 999999;
+      const rightOrder = siteOrderMap.has(right.siteKey) ? siteOrderMap.get(right.siteKey) : 999999;
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      const leftLen = normalizeString(left.title).length;
+      const rightLen = normalizeString(right.title).length;
+      if (leftLen !== rightLen) return rightLen - leftLen;
+      return 0;
+    });
+  const titleCounts = new Map();
+  matched.forEach((item) => {
+    const duplicateKey = `${normalizeString(item.siteKey)}::${normalizeString(item.title)}`;
+    titleCounts.set(duplicateKey, (titleCounts.get(duplicateKey) || 0) + 1);
+  });
+  const titleIndexes = new Map();
+  return matched.map((item) => {
+    const duplicateKey = `${normalizeString(item.siteKey)}::${normalizeString(item.title)}`;
+    const nextIndex = titleIndexes.has(duplicateKey) ? titleIndexes.get(duplicateKey) + 1 : 0;
+    titleIndexes.set(duplicateKey, nextIndex);
+    const duplicateCount = titleCounts.get(duplicateKey) || 0;
+    return {
+      ...item,
+      displayLabel: `${normalizeString(item.siteName)}-${normalizeString(item.title)}${duplicateCount > 1 ? ` ${formatCircledIndex(nextIndex)}` : ''}`,
+    };
+  });
+};
+
+export const getSiteResultCacheEntry = (store, itemOrId) => {
+  const siteStore = store && typeof store === 'object' ? store : null;
+  const itemKey = normalizeString(typeof itemOrId === 'string' ? itemOrId : itemOrId && itemOrId.id);
+  if (!siteStore || !itemKey) return null;
+  const entry = siteStore[itemKey];
+  return entry && typeof entry === 'object' ? entry : null;
+};
+
+export const getSiteResultDetail = (store, itemOrId) => {
+  const entry = getSiteResultCacheEntry(store, itemOrId);
+  const detail = entry && entry.detail && typeof entry.detail === 'object' ? entry.detail : null;
+  return detail;
+};
+
+export const getSiteResultRecognitionBySignature = (store, itemOrId, signature, panKey = '') => {
+  const entry = getSiteResultCacheEntry(store, itemOrId);
+  const key = normalizeString(signature);
+  if (!entry || !key) return panKey ? null : {};
+  const bySignature = (() => {
+    if (entry.recognitionBySignature && typeof entry.recognitionBySignature === 'object') {
+      const nested = entry.recognitionBySignature[key];
+      if (nested && typeof nested === 'object') return nested;
+    }
+    const direct = entry[key];
+    return direct && typeof direct === 'object' ? direct : null;
+  })();
+  if (!bySignature || typeof bySignature !== 'object') return panKey ? null : {};
+  const sourceKey = normalizeString(panKey);
+  if (!sourceKey) return bySignature;
+  const payload = bySignature[sourceKey];
+  return payload && typeof payload === 'object' ? payload : null;
+};
+
+export const setSiteResultDetailCacheEntry = ({
+  store,
+  item,
+  detail,
+  cacheMeta,
+} = {}) => {
+  const siteStore = store && typeof store === 'object' ? store : {};
+  const target = item && typeof item === 'object' ? item : null;
+  const nextDetail = detail && typeof detail === 'object' ? detail : null;
+  const itemKey = normalizeString(target && target.id);
+  if (!target || !nextDetail || !itemKey) return siteStore;
+  const current = getSiteResultCacheEntry(siteStore, itemKey) || {};
+  return {
+    ...siteStore,
+    [itemKey]: {
+      ...current,
+      siteItem: target,
+      detail: nextDetail,
+      cacheMeta: cacheMeta && typeof cacheMeta === 'object'
+        ? { ...(current.cacheMeta && typeof current.cacheMeta === 'object' ? current.cacheMeta : {}), ...cacheMeta }
+        : (current.cacheMeta && typeof current.cacheMeta === 'object' ? current.cacheMeta : {}),
+      recognitionBySignature: current.recognitionBySignature && typeof current.recognitionBySignature === 'object'
+        ? current.recognitionBySignature
+        : {},
+    },
+  };
+};
+
+export const cacheRecognitionForSiteResult = ({
+  store,
+  item,
+  detail,
+  signature,
+  runtimeSettings,
+  smartEpisodeMapping,
+} = {}) => {
+  const target = item && typeof item === 'object' ? item : null;
+  const rawDetail = detail && typeof detail === 'object' ? detail : null;
+  const key = normalizeString(signature);
+  const itemKey = normalizeString(target && target.id);
+  const currentStore = store && typeof store === 'object' ? store : {};
+  if (!target || !rawDetail || !key || !itemKey) {
+    return { store: currentStore, byEntry: {} };
+  }
+  const currentGroup =
+    currentStore[itemKey] && typeof currentStore[itemKey] === 'object'
+      ? currentStore[itemKey]
+      : {};
+  const nextByEntry = {};
+  buildPanSourcesFromDetail(rawDetail).forEach((entry) => {
+    if (!entry || !entry.key) return;
+    nextByEntry[entry.key] = buildPlaybackRecognitionData({
+      entry,
+      siteResultItem: target,
+      runtimeSettings,
+      smartEpisodeMapping,
+    });
+  });
+  return {
+    store: {
+      ...currentStore,
+      [itemKey]: {
+        ...currentGroup,
+        [key]: nextByEntry,
+      },
+    },
+    byEntry: nextByEntry,
+  };
+};
+
+export const getRecognitionCandidatesForSiteResult = ({
+  store,
+  item,
+  signature,
+} = {}) => {
+  const bySignature = getSiteResultRecognitionBySignature(store, item, signature);
+  if (!bySignature || typeof bySignature !== 'object') return [];
+  return Object.values(bySignature).filter((entry) => entry && typeof entry === 'object');
+};
+
+const normalizeMatchKind = (options) => {
+  const raw = normalizeString(options && options.kind).toLowerCase();
+  return raw === 'movie' ? 'movie' : 'episode';
+};
+
+const compareCollectedCandidateOrder = (left, right) => {
+  const leftTier = Math.max(1, normalizeInt(left && left.tierRank) || 3);
+  const rightTier = Math.max(1, normalizeInt(right && right.tierRank) || 3);
+  if (leftTier !== rightTier) return leftTier - rightTier;
+  const leftLoose = !!(left && left.looseMatch);
+  const rightLoose = !!(right && right.looseMatch);
+  if (leftLoose !== rightLoose) return leftLoose ? 1 : -1;
+  return normalizeInt(left && left.itemIndex) - normalizeInt(right && right.itemIndex);
+};
+
+export const collectRecognitionCandidatesForTarget = ({
+  store,
+  item,
+  signature,
+  matchOptions = null,
+  globalEpisodeNo,
+  wantEpisodeInSeason = 0,
+  episodeSource = 'TMDB',
+} = {}) => {
+  const target = item && typeof item === 'object' ? item : null;
+  const matchKind = normalizeMatchKind(matchOptions);
+  const targetGlobal = normalizeInt(globalEpisodeNo);
+  const targetLoose = normalizeInt(wantEpisodeInSeason);
+  const sourceMode = normalizeString(episodeSource) === '豆瓣' ? 'douban' : 'tmdb';
+  if (!target || (matchKind === 'episode' && targetGlobal <= 0)) return [];
+  const candidates = [];
+  getRecognitionCandidatesForSiteResult({ store, item: target, signature }).forEach((recognitionData) => {
+    const source = recognitionData && recognitionData.source && typeof recognitionData.source === 'object'
+      ? recognitionData.source
+      : null;
+    const panKey = normalizeString(source && source.key);
+    if (!panKey) return;
+    const tiers = [
+      Array.isArray(recognitionData && recognitionData.tier1) ? recognitionData.tier1 : [],
+      Array.isArray(recognitionData && recognitionData.tier2) ? recognitionData.tier2 : [],
+      Array.isArray(recognitionData && recognitionData.tier3) ? recognitionData.tier3 : [],
+    ];
+    tiers.forEach((list, tierIndex) => {
+      list.forEach((candidate) => {
+        if (matchKind === 'movie') {
+          if (normalizeString(candidate && candidate.matchKind) !== 'movie' || !(candidate && candidate.movieMatched)) return;
+          const itemIndex = normalizeInt(candidate && candidate.itemIndex);
+          if (itemIndex < 0) return;
+          candidates.push({
+            siteItem: target,
+            tierRank: tierIndex + 1,
+            panKey,
+            itemIndex,
+            looseMatch: false,
+            candidate,
+          });
+          return;
+        }
+        const mapping = candidate && candidate.mapping && typeof candidate.mapping === 'object' ? candidate.mapping : null;
+        if (!mapping) return;
+        const strictMatch = normalizeInt(mapping.global) === targetGlobal;
+        const looseAllowed = !strictMatch
+          && targetLoose > 0
+          && (normalizeString(mapping.from) === 'global' || normalizeString(mapping.from) === 'single');
+        const looseMatch = !strictMatch && targetLoose > 0
+          && looseAllowed
+          && normalizeInt(mapping && mapping[sourceMode] && mapping[sourceMode].episode) === targetLoose;
+        if (!strictMatch && !looseMatch) return;
+        const itemIndex = normalizeInt(candidate && candidate.itemIndex);
+        if (itemIndex < 0) return;
+        candidates.push({
+          siteItem: target,
+          tierRank: tierIndex + 1,
+          panKey,
+          itemIndex,
+          looseMatch,
+          candidate,
+        });
+      });
+    });
+  });
+  return candidates.sort(compareCollectedCandidateOrder);
+};
+
+export const collectRecognitionCandidatesForGlobal = (payload = {}) => (
+  collectRecognitionCandidatesForTarget({
+    ...payload,
+    matchOptions: { kind: 'episode' },
+  })
+);
+
+export const buildPlaybackContextCandidates = ({
+  selectedSiteResultItem,
+  currentPanSourceEntry,
+  includeSelectedContext = true,
+  lastResolvedPlaybackContext,
+  lastBrowsePlaybackContext,
+  includeBrowseContext = true,
+  getSiteItemById,
+  detailStore,
+} = {}) => {
+  const out = [];
+  const push = (siteItem, panEntry) => {
+    const item = siteItem && typeof siteItem === 'object' ? siteItem : null;
+    const pan = panEntry && typeof panEntry === 'object' ? panEntry : null;
+    const itemId = normalizeString(item && item.id);
+    const panKey = normalizeString(pan && pan.key);
+    if (!itemId || !panKey) return;
+    const dedupeKey = `${itemId}::${panKey}`;
+    if (out.some((entry) => entry.key === dedupeKey)) return;
+    out.push({ key: dedupeKey, siteItem: item, panEntry: pan });
+  };
+  if (includeSelectedContext && selectedSiteResultItem && currentPanSourceEntry) {
+    push(selectedSiteResultItem, currentPanSourceEntry);
+  }
+  const last = lastResolvedPlaybackContext && typeof lastResolvedPlaybackContext === 'object'
+    ? lastResolvedPlaybackContext
+    : null;
+  if (last) {
+    const cachedEntry = getSiteResultCacheEntry(detailStore, last.itemId);
+    const siteItem = (cachedEntry && cachedEntry.siteItem) || (typeof getSiteItemById === 'function' ? getSiteItemById(last.itemId) : null);
+    const detail = (cachedEntry && cachedEntry.detail) || (siteItem ? getSiteResultDetail(detailStore, siteItem) : null);
+    const panEntry = detail
+      ? buildPanSourcesFromDetail(detail).find((entry) => normalizeString(entry && entry.key) === normalizeString(last.panKey)) || null
+      : null;
+    push(siteItem, panEntry);
+  }
+  if (includeBrowseContext) {
+    const lastBrowse = lastBrowsePlaybackContext && typeof lastBrowsePlaybackContext === 'object'
+      ? lastBrowsePlaybackContext
+      : null;
+    if (lastBrowse) {
+      const cachedEntry = getSiteResultCacheEntry(detailStore, lastBrowse.itemId);
+      const siteItem = (cachedEntry && cachedEntry.siteItem) || (typeof getSiteItemById === 'function' ? getSiteItemById(lastBrowse.itemId) : null);
+      const detail = (cachedEntry && cachedEntry.detail) || (siteItem ? getSiteResultDetail(detailStore, siteItem) : null);
+      const panEntry = detail
+        ? buildPanSourcesFromDetail(detail).find((entry) => normalizeString(entry && entry.key) === normalizeString(lastBrowse.panKey)) || null
+        : null;
+      push(siteItem, panEntry);
+    }
+  }
+  return out;
+};
+
+const pickTargetCandidate = ({ candidates, panKey = '', isCandidateAllowed } = {}) => (
+  (Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => {
+      if (typeof isCandidateAllowed === 'function') {
+        try {
+          if (!isCandidateAllowed(candidate)) return false;
+        } catch (_error) {
+          return false;
+        }
+      }
+      return !normalizeString(panKey) || normalizeString(candidate && candidate.panKey) === normalizeString(panKey);
+    })
+    .sort(compareCollectedCandidateOrder)[0] || null
+);
+
+const findCachedPlaybackTargetForPrimaryEpisode = ({
+  matchOptions = null,
+  globalEpisode,
+  wantEpisodeInSeason = 0,
+  contexts = [],
+  collectCandidates,
+  buildSelectionKey,
+  isCandidateAllowed,
+} = {}) => {
+  const matchKind = normalizeMatchKind(matchOptions);
+  const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
+  const targetLoose = Math.max(0, normalizeInt(wantEpisodeInSeason));
+  if (matchKind === 'episode' && targetGlobal <= 0) return null;
+  const list = Array.isArray(contexts) ? contexts : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const context = list[i];
+    const siteItem = context && context.siteItem ? context.siteItem : null;
+    const panEntry = context && context.panEntry ? context.panEntry : null;
+    const panKey = normalizeString(panEntry && panEntry.key);
+    if (!siteItem || !panEntry || !panKey || !normalizeString(panEntry && panEntry.url)) continue;
+    const candidates = typeof collectCandidates === 'function'
+      ? collectCandidates(siteItem, targetGlobal, targetLoose, matchOptions)
+      : [];
+    const picked = pickTargetCandidate({ candidates, panKey, isCandidateAllowed });
+    if (!picked) continue;
+    const segment = buildPanSegment(panEntry, picked.itemIndex);
+    if (!segment || !normalizeString(segment.episodeUrl)) continue;
+    return {
+      siteItem,
+      panEntry,
+      segment,
+      candidate: picked && picked.candidate ? picked.candidate : null,
+      selectionKey: typeof buildSelectionKey === 'function'
+        ? buildSelectionKey(panKey, segment.index)
+        : '',
+    };
+  }
+  return null;
+};
+
+const findCachedPlaybackTargetAcrossStore = ({
+  matchOptions = null,
+  globalEpisode,
+  wantEpisodeInSeason = 0,
+  detailStore,
+  getSiteItemById,
+  collectCandidates,
+  buildSelectionKey,
+  isCandidateAllowed,
+  ensureRecognitionForSiteItem,
+} = {}) => {
+  const matchKind = normalizeMatchKind(matchOptions);
+  const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
+  const targetLoose = Math.max(0, normalizeInt(wantEpisodeInSeason));
+  if (matchKind === 'episode' && targetGlobal <= 0) return null;
+  const store = detailStore && typeof detailStore === 'object' ? detailStore : {};
+  const entries = Object.entries(store);
+  for (let i = 0; i < entries.length; i += 1) {
+    const [itemId, entry] = entries[i];
+    const cachedEntry = entry && typeof entry === 'object' ? entry : null;
+    const detail = cachedEntry && cachedEntry.detail && typeof cachedEntry.detail === 'object' ? cachedEntry.detail : null;
+    const siteItem = (cachedEntry && cachedEntry.siteItem)
+      || (typeof getSiteItemById === 'function' ? getSiteItemById(itemId) : null);
+    if (!detail || !siteItem) continue;
+    if (typeof ensureRecognitionForSiteItem === 'function') {
+      try {
+        ensureRecognitionForSiteItem(siteItem, detail);
+      } catch (_error) {}
+    }
+    const panSources = buildPanSourcesFromDetail(detail);
+    for (let j = 0; j < panSources.length; j += 1) {
+      const panEntry = panSources[j];
+      const panKey = normalizeString(panEntry && panEntry.key);
+      if (!panKey || !normalizeString(panEntry && panEntry.url)) continue;
+      const candidates = typeof collectCandidates === 'function'
+        ? collectCandidates(siteItem, targetGlobal, targetLoose, matchOptions)
+        : [];
+      const picked = pickTargetCandidate({ candidates, panKey, isCandidateAllowed });
+      if (!picked) continue;
+      const segment = buildPanSegment(panEntry, picked.itemIndex);
+      if (!segment || !normalizeString(segment.episodeUrl)) continue;
+      return {
+        siteItem,
+        panEntry,
+        segment,
+        candidate: picked && picked.candidate ? picked.candidate : null,
+        selectionKey: typeof buildSelectionKey === 'function'
+          ? buildSelectionKey(panKey, segment.index)
+          : '',
+      };
+    }
+  }
+  return null;
+};
+
+export const resolveCachedPlaybackTarget = ({
+  matchOptions = null,
+  globalEpisode,
+  wantEpisodeInSeason = 0,
+  selectedSiteResultItem,
+  currentPanSourceEntry,
+  includeSelectedContext = true,
+  lastResolvedPlaybackContext,
+  lastBrowsePlaybackContext,
+  includeBrowseContext = true,
+  getSiteItemById,
+  detailStore,
+  collectCandidates,
+  buildSelectionKey,
+  isCandidateAllowed,
+  ensureRecognitionForSiteItem,
+} = {}) => {
+  const contexts = buildPlaybackContextCandidates({
+    selectedSiteResultItem,
+    currentPanSourceEntry,
+    includeSelectedContext,
+    lastResolvedPlaybackContext,
+    lastBrowsePlaybackContext,
+    includeBrowseContext,
+    getSiteItemById,
+    detailStore,
+  });
+  if (typeof ensureRecognitionForSiteItem === 'function') {
+    contexts.forEach((context) => {
+      const siteItem = context && context.siteItem ? context.siteItem : null;
+      if (!siteItem) return;
+      const detail = getSiteResultDetail(detailStore, siteItem);
+      if (!detail) return;
+      try {
+        ensureRecognitionForSiteItem(siteItem, detail);
+      } catch (_error) {}
+    });
+  }
+  const contextHit = findCachedPlaybackTargetForPrimaryEpisode({
+    matchOptions,
+    globalEpisode,
+    wantEpisodeInSeason,
+    contexts,
+    collectCandidates,
+    buildSelectionKey,
+    isCandidateAllowed,
+  });
+  if (contextHit) return contextHit;
+  return findCachedPlaybackTargetAcrossStore({
+    matchOptions,
+    globalEpisode,
+    wantEpisodeInSeason,
+    detailStore,
+    getSiteItemById,
+    collectCandidates,
+    buildSelectionKey,
+    isCandidateAllowed,
+    ensureRecognitionForSiteItem,
+  });
+};
+
+export const resolveHistoryPlayFlagPlaybackTarget = async ({
+  matchOptions = null,
+  historyRow,
+  globalEpisode,
+  wantEpisodeInSeason = 0,
+  runtimeSettings,
+  smartEpisodeMapping,
+  episodeSource = 'TMDB',
+  isCandidateAllowed,
+  buildSelectionKey,
+  cacheHistoryDetail,
+} = {}) => {
+  const row = historyRow && typeof historyRow === 'object' ? historyRow : null;
+  const matchKind = normalizeMatchKind(matchOptions);
+  const playFlag = normalizeString(row && row.playFlag);
+  const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
+  const targetLoose = Math.max(0, normalizeInt(wantEpisodeInSeason));
+  if (!row || !playFlag || (matchKind === 'episode' && targetGlobal <= 0) || !playFlag.includes('-')) return null;
+  const provider = normalizeString(panMockProviderFromFlag(playFlag)).toLowerCase();
+  if (!provider) return null;
+  const listData = await requestPanListByProviderFlag({ provider, playFlag }).catch(() => null);
+  const vod = extractPanListVodPlayUrl(listData);
+  if (!vod) return null;
+  const siteItem = buildHistorySitePlaybackItem(row);
+  if (!siteItem) return null;
+  const panEntry = {
+    key: `history:${playFlag}`,
+    label: playFlag,
+    provider,
+    url: vod,
+    error: '',
+    loading: false,
+  };
+  if (typeof cacheHistoryDetail === 'function') {
+    try {
+      cacheHistoryDetail(siteItem, {
+        detail: {
+          sources: [panEntry],
+          resolutionComplete: false,
+        },
+        cacheMeta: {
+          entryKind: 'history-list',
+          resolutionComplete: false,
+        },
+      });
+    } catch (_error) {}
+  }
+  const recognition = buildPlaybackRecognitionData({
+    entry: panEntry,
+    siteResultItem: siteItem,
+    runtimeSettings,
+    smartEpisodeMapping,
+  });
+  const sourceMode = normalizeString(episodeSource) === '豆瓣' ? 'douban' : 'tmdb';
+  const tiers = [
+    Array.isArray(recognition && recognition.tier1) ? recognition.tier1 : [],
+    Array.isArray(recognition && recognition.tier2) ? recognition.tier2 : [],
+    Array.isArray(recognition && recognition.tier3) ? recognition.tier3 : [],
+  ];
+  for (let tierIndex = 0; tierIndex < tiers.length; tierIndex += 1) {
+    const list = tiers[tierIndex];
+    for (let i = 0; i < list.length; i += 1) {
+      const candidate = list[i];
+      let looseMatch = false;
+      if (matchKind === 'movie') {
+        if (normalizeString(candidate && candidate.matchKind) !== 'movie' || !(candidate && candidate.movieMatched)) continue;
+      } else {
+        const mapping = candidate && candidate.mapping && typeof candidate.mapping === 'object' ? candidate.mapping : null;
+        if (!mapping) continue;
+        const strictMatch = normalizeInt(mapping.global) === targetGlobal;
+        const looseAllowed = !strictMatch
+          && targetLoose > 0
+          && (normalizeString(mapping.from) === 'global' || normalizeString(mapping.from) === 'single');
+        looseMatch = !strictMatch
+          && targetLoose > 0
+          && looseAllowed
+          && normalizeInt(mapping && mapping[sourceMode] && mapping[sourceMode].episode) === targetLoose;
+        if (!strictMatch && !looseMatch) continue;
+      }
+      const wrapper = {
+        siteItem,
+        tierRank: tierIndex + 1,
+        panKey: panEntry.key,
+        itemIndex: normalizeInt(candidate && candidate.itemIndex),
+        looseMatch,
+        candidate,
+      };
+      if (typeof isCandidateAllowed === 'function') {
+        try {
+          if (!isCandidateAllowed(wrapper)) continue;
+        } catch (_error) {}
+      }
+      const segment = buildPanSegment(panEntry, wrapper.itemIndex);
+      if (!segment || !normalizeString(segment.episodeUrl)) continue;
+      return {
+        siteItem,
+        panEntry,
+        segment,
+        candidate,
+        selectionKey: typeof buildSelectionKey === 'function' ? buildSelectionKey(panEntry.key, segment.index) : '',
+        fromHistoryPlayFlag: true,
+      };
+    }
+  }
+  return null;
+};
+
+const findHistoryDetailPlaybackTarget = ({
+  matchOptions = null,
+  siteItem,
+  detail,
+  globalEpisode,
+  wantEpisodeInSeason = 0,
+  collectCandidates,
+  buildSelectionKey,
+  isCandidateAllowed,
+} = {}) => {
+  const item = siteItem && typeof siteItem === 'object' ? siteItem : null;
+  const payload = detail && typeof detail === 'object' ? detail : null;
+  const matchKind = normalizeMatchKind(matchOptions);
+  const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
+  const targetLoose = Math.max(0, normalizeInt(wantEpisodeInSeason));
+  if (!item || !payload || (matchKind === 'episode' && targetGlobal <= 0)) return null;
+  const candidates = typeof collectCandidates === 'function'
+    ? collectCandidates(item, targetGlobal, targetLoose, matchOptions)
+    : [];
+  const panSources = buildPanSourcesFromDetail(payload);
+  for (let i = 0; i < panSources.length; i += 1) {
+    const panEntry = panSources[i];
+    const panKey = normalizeString(panEntry && panEntry.key);
+    if (!panKey || !normalizeString(panEntry && panEntry.url)) continue;
+    const picked = pickTargetCandidate({ candidates, panKey, isCandidateAllowed });
+    if (!picked) continue;
+    const segment = buildPanSegment(panEntry, picked.itemIndex);
+    if (!segment || !normalizeString(segment.episodeUrl)) continue;
+    return {
+      siteItem: item,
+      panEntry,
+      segment,
+      candidate: picked && picked.candidate ? picked.candidate : null,
+      selectionKey: typeof buildSelectionKey === 'function' ? buildSelectionKey(panKey, segment.index) : '',
+      fromHistoryDetail: true,
+    };
+  }
+  return null;
+};
+
+export const resolveHistoryBootstrapPlaybackTarget = async ({
+  matchOptions = null,
+  historyContext,
+  globalEpisode,
+  wantEpisodeInSeason = 0,
+  skipHistoryList = false,
+  runtimeSettings,
+  smartEpisodeMapping,
+  episodeSource = 'TMDB',
+  isCandidateAllowed,
+  buildSelectionKey,
+  getCachedSiteResultDetail,
+  cacheHistoryDetail,
+  ensureRecognitionForSiteItem,
+  collectCandidates,
+  ensureSiteResultDetailCached,
+} = {}) => {
+  const context = historyContext && typeof historyContext === 'object' ? historyContext : null;
+  const matchKind = normalizeMatchKind(matchOptions);
+  const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
+  if (!context || (matchKind === 'episode' && targetGlobal <= 0)) return null;
+  const row = await ensurePlayHistoryRowForContext(context, { limit: 50 }).catch(() => null);
+  if (!row) return null;
+  const siteItem = buildHistorySitePlaybackItem(row);
+  if (!siteItem) return null;
+  if (!skipHistoryList) {
+    const listHit = await resolveHistoryPlayFlagPlaybackTarget({
+      matchOptions,
+      historyRow: row,
+      globalEpisode: targetGlobal,
+      wantEpisodeInSeason,
+      runtimeSettings,
+      smartEpisodeMapping,
+      episodeSource,
+      isCandidateAllowed,
+      buildSelectionKey,
+      cacheHistoryDetail,
+    });
+    if (listHit) return listHit;
+  }
+  const tryResolveFromDetail = (detail) => {
+    const payload = detail && typeof detail === 'object' ? detail : null;
+    if (!payload) return null;
+    if (typeof ensureRecognitionForSiteItem === 'function') {
+      try {
+        ensureRecognitionForSiteItem(siteItem, payload);
+      } catch (_error) {}
+    }
+    return findHistoryDetailPlaybackTarget({
+      matchOptions,
+      siteItem,
+      detail: payload,
+      globalEpisode: targetGlobal,
+      wantEpisodeInSeason,
+      collectCandidates,
+      buildSelectionKey,
+      isCandidateAllowed,
+    });
+  };
+  if (typeof getCachedSiteResultDetail === 'function') {
+    const cached = getCachedSiteResultDetail(siteItem);
+    const cachedHit = tryResolveFromDetail(cached);
+    if (cachedHit) return cachedHit;
+  }
+  if (typeof ensureSiteResultDetailCached !== 'function') return null;
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value || null);
+    };
+    void ensureSiteResultDetailCached(siteItem, {
+      onUpdate: (nextDetail) => {
+        const hit = tryResolveFromDetail(nextDetail);
+        if (hit) settle(hit);
+      },
+    }).then((detail) => {
+      if (settled) return;
+      settle(tryResolveFromDetail(detail));
+    }).catch(() => settle(null));
+  });
+};
+
+export const ensureSiteResultDetailCached = async ({
+  item,
+  store,
+  runtimeSettings,
+  timeoutMs = 15000,
+  onUpdate,
+  signal,
+} = {}) => {
+  const target = item && typeof item === 'object' ? item : null;
+  if (!target) return null;
+  const cached = getSiteResultDetail(store, target);
+  if (cached && cached.resolutionComplete === true) {
+    if (typeof onUpdate === 'function') onUpdate(cached);
+    return cached;
+  }
+  const settings = runtimeSettings && typeof runtimeSettings === 'object' ? runtimeSettings : null;
+  const apiBase = normalizeString(settings && settings.catpawrunnerApiBase);
+  const spiderApi = normalizeString(target && target.spiderApi);
+  const videoId = normalizeString(target && target.videoId);
+  if (!apiBase || !spiderApi || !videoId) return null;
+  const detail = await fetchCatResolvedDetailCached({
+    apiBase,
+    spiderApi,
+    videoId,
+    timeoutMs,
+    signal,
+    onUpdate: (nextDetail) => {
+      const payload = nextDetail && typeof nextDetail === 'object' ? nextDetail : null;
+      if (!payload) return;
+      if (typeof onUpdate === 'function') onUpdate(payload);
+    },
+  });
+  return detail && typeof detail === 'object' ? detail : null;
+};

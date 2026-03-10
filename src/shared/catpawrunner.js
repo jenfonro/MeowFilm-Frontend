@@ -1,3 +1,5 @@
+import { extractTianyiShareCodeAndAccessCode, panMockProviderFromFlag, parseMockPasscodeFromRawName } from '../utils/matchCore';
+
 export function normalizecatpawrunnerApiBase(inputUrl) {
   const raw = typeof inputUrl === 'string' ? inputUrl.trim() : '';
   if (!raw) return '';
@@ -196,3 +198,409 @@ export async function requestCatPlay({ apiBase, username, payload, query, header
   }
   return data;
 }
+
+const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const detailCache = new Map();
+const resolvedDetailCache = new Map();
+
+const notifyResolvedDetailListeners = (cacheKey, data) => {
+  const cached = resolvedDetailCache.get(cacheKey);
+  if (!cached || !cached.listeners || !(cached.listeners instanceof Set) || !cached.listeners.size) return;
+  Array.from(cached.listeners).forEach((listener) => {
+    try {
+      listener(data);
+    } catch (_e) {}
+  });
+};
+
+const readPanMockEnabledFromRaw = (raw) => {
+  if (!raw || typeof raw !== 'object') return false;
+  return raw.pan_mock === true;
+};
+
+const extractDetailVodObject = (raw) => {
+  const root = raw && typeof raw === 'object' ? raw : {};
+  const first = Array.isArray(root.list) && root.list[0] && typeof root.list[0] === 'object'
+    ? root.list[0]
+    : {};
+  return first && typeof first === 'object' ? first : {};
+};
+
+export const extractCatDetailFields = (raw) => {
+  const vod = extractDetailVodObject(raw);
+  const get = (key) => (vod && vod[key] != null ? String(vod[key]) : '').trim();
+  return {
+    vod,
+    title: get('vod_name'),
+    poster: get('vod_pic'),
+    year: get('vod_year'),
+    type: get('vod_class'),
+    remark: get('vod_remarks'),
+    content: get('vod_content'),
+    playFrom: get('vod_play_from'),
+    playUrl: get('vod_play_url'),
+    panMock: readPanMockEnabledFromRaw(raw),
+  };
+};
+
+export const extractRawNamesFromEpisodeUrl = (episodeUrl) => {
+  const raw = normalizeString(episodeUrl);
+  if (!raw) return [];
+  const stripMeta = (value) => {
+    let out = normalizeString(value);
+    if (!out) return '';
+    const dollarIdx = out.indexOf('$');
+    if (dollarIdx > 0) out = out.slice(0, dollarIdx);
+    out = out.replace(/#\[[^\]]*\]\s*$/g, '');
+    out = out.replace(/\s*\[\s*\d+(?:\.\d+)?\s*(?:[KMGT]?B)\s*\]\s*$/gi, '');
+    out = out.replace(/^【[^】]{1,16}】\s*/g, '');
+    return out.trim();
+  };
+  const collectStar = () => {
+    if (!raw.includes('***')) return [];
+    const suffix = raw.split('***').slice(1).map(stripMeta).filter(Boolean);
+    return suffix.length ? suffix : [];
+  };
+  const collectTriple = () => {
+    if (!raw.includes('|||')) return [];
+    const suffix = raw.split('|||').slice(1).map(stripMeta).filter(Boolean);
+    return suffix.length ? suffix : [];
+  };
+  const collectPipeTail = () => {
+    const parts = raw.split('|').map(stripMeta).filter(Boolean);
+    if (parts.length >= 4) return [parts[parts.length - 1]];
+    return [];
+  };
+  const picked = collectStar().length ? collectStar() : collectTriple().length ? collectTriple() : collectPipeTail();
+  if (picked.length) return Array.from(new Set(picked));
+  if (raw.includes('*')) {
+    const parts = raw.split('*').map(stripMeta).filter(Boolean);
+    if (parts.length) return [parts[parts.length - 1]];
+  }
+  return [];
+};
+
+export const extractPanListVodPlayUrl = (data) => {
+  const root = data && typeof data === 'object' ? data : null;
+  if (!root || root.ok !== true) return '';
+  return typeof root.vod_play_url === 'string' ? String(root.vod_play_url || '').trim() : '';
+};
+
+const callPanList = async (provider, body, { signal } = {}) => {
+  const routes = {
+    quark: '/api/pan/quark/list',
+    uc: '/api/pan/uc/list',
+    baidu: '/api/pan/baidu/list',
+    '139': '/api/pan/139/list',
+    '189': '/api/pan/189/list',
+  };
+  const path = routes[provider] || '';
+  if (!path) return null;
+  const resp = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+    credentials: 'include',
+    ...(signal ? { signal } : {}),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data || data.ok === false) {
+    const message = data && data.message ? String(data.message) : `HTTP ${resp.status}`;
+    throw new Error(message);
+  }
+  return data && typeof data === 'object' ? data : null;
+};
+
+export const requestPanListByProviderFlag = async ({ provider, playFlag, signal } = {}) => {
+  const key = normalizeString(provider).toLowerCase();
+  const flag = normalizeString(playFlag);
+  if (!key || !flag) return null;
+  const body = (() => {
+    if (key === 'quark') return { flag, passcode: '' };
+    if (key === 'uc') return { flag, passcode: '' };
+    if (key === 'baidu') return { flag, pwd: '' };
+    if (key === '139') return { flag, passcode: '' };
+    if (key === '189') return { flag, accessCode: '' };
+    return null;
+  })();
+  if (!body) return null;
+  return callPanList(key, body, { signal });
+};
+
+const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, signal } = {}) => {
+  const panMock = readPanMockEnabledFromRaw(raw);
+  const fromStr = normalizeString(playFrom);
+  const urlStr = normalizeString(playUrl);
+  if (!panMock || !fromStr || !urlStr) {
+    return { playFrom: fromStr, playUrl: urlStr, panMock, sources: [], panMock189AccessByShareId: {}, resolutionComplete: true };
+  }
+
+  const fromParts = fromStr.split('$$$');
+  const urlParts = urlStr.split('$$$');
+  const len = Math.max(fromParts.length, urlParts.length);
+  const reqMap = new Map();
+  const tianyiAccessByShareId = new Map();
+  const sourceEntries = [];
+
+  const cloneSources = () =>
+    sourceEntries.map((item) => ({
+      key: item.key,
+      label: item.label,
+      provider: item.provider,
+      url: item.url,
+      error: item.error,
+      loading: !!item.loading,
+    }));
+
+  const buildResolvedOutput = (resolutionComplete) => {
+    const grouped = new Map();
+    sourceEntries.forEach((item) => {
+      if (!grouped.has(item.groupIndex)) grouped.set(item.groupIndex, []);
+      grouped.get(item.groupIndex).push(item);
+    });
+    const outFrom = [];
+    const outUrl = [];
+    for (let i = 0; i < len; i += 1) {
+      const entries = grouped.has(i) ? grouped.get(i) : [];
+      const nextFromSubs = [];
+      const nextUrlSubs = [];
+      entries.forEach((item) => {
+        if (item.provider) {
+          if (normalizeString(item.url)) {
+            nextFromSubs.push(item.label);
+            nextUrlSubs.push(item.url);
+          }
+          return;
+        }
+        if (!normalizeString(item.baseUrl)) return;
+        nextFromSubs.push(item.label);
+        nextUrlSubs.push(item.baseUrl);
+      });
+      if (nextFromSubs.length && nextUrlSubs.length) {
+        outFrom.push(nextFromSubs.join('|||'));
+        outUrl.push(nextUrlSubs.join('|||'));
+      }
+    }
+    return {
+      playFrom: outFrom.join('$$$') || fromStr,
+      playUrl: outUrl.join('$$$') || urlStr,
+      panMock,
+      sources: cloneSources(),
+      panMock189AccessByShareId: Object.fromEntries(tianyiAccessByShareId.entries()),
+      resolutionComplete: !!resolutionComplete,
+    };
+  };
+
+  const emitUpdate = (resolutionComplete) => {
+    if (typeof onUpdate !== 'function') return;
+    try {
+      onUpdate(buildResolvedOutput(resolutionComplete));
+    } catch (_e) {}
+  };
+
+  for (let i = 0; i < len; i += 1) {
+    const baseLabel = normalizeString(fromParts[i]);
+    const baseUrl = normalizeString(urlParts[i]);
+    if (!baseLabel || !baseUrl) continue;
+    const hasSubs = baseLabel.includes('|||') && baseUrl.includes('|||');
+    const fromSubs = baseLabel.includes('|||') ? baseLabel.split('|||').map(normalizeString) : [baseLabel];
+    const urlSubs = hasSubs ? baseUrl.split('|||').map(normalizeString) : [baseUrl];
+    const subLen = Math.max(fromSubs.length, urlSubs.length);
+    for (let j = 0; j < subLen; j += 1) {
+      const label = normalizeString(fromSubs[j]) || baseLabel;
+      const urlSeg = normalizeString(urlSubs[j]);
+      if (!label || !urlSeg) continue;
+      const provider = panMockProviderFromFlag(label);
+      sourceEntries.push({
+        key: `${i}:${j}:${label}`,
+        label,
+        provider,
+        baseUrl: urlSeg,
+        url: provider ? '' : urlSeg,
+        error: '',
+        loading: !!provider,
+        groupIndex: i,
+      });
+      if (!provider) continue;
+      const firstSeg = normalizeString(urlSeg.split('#')[0]);
+      const dollarIdx = firstSeg.indexOf('$');
+      const epUrl = dollarIdx >= 0 ? firstSeg.slice(dollarIdx + 1).trim() : firstSeg;
+      const rawName = extractRawNamesFromEpisodeUrl(epUrl)[0] || '';
+      let requestBody = null;
+      if (provider === '189') {
+        const { shareCode, accessCode } = extractTianyiShareCodeAndAccessCode(label, rawName);
+        if (!shareCode) continue;
+        requestBody = { flag: `天意-${shareCode}`, accessCode: accessCode || '' };
+      } else if (provider === 'baidu') {
+        requestBody = { flag: label, pwd: parseMockPasscodeFromRawName(rawName) || '' };
+      } else if (provider === '139') {
+        requestBody = { flag: label, passcode: parseMockPasscodeFromRawName(rawName) || '' };
+      } else {
+        requestBody = { flag: label, passcode: parseMockPasscodeFromRawName(rawName) || '' };
+      }
+      reqMap.set(`${provider}::${label}`, { provider, label, requestBody });
+    }
+  }
+
+  if (!reqMap.size) return buildResolvedOutput(true);
+
+  emitUpdate(false);
+
+  await Promise.allSettled(
+    Array.from(reqMap.values()).map(async ({ provider, label, requestBody }) => {
+      const resolveKey = `${provider}::${label}`;
+      try {
+        const data = await callPanList(provider, requestBody, { signal });
+        const vod = extractPanListVodPlayUrl(data);
+        if (vod) {
+          sourceEntries.forEach((item) => {
+            if (`${item.provider}::${item.label}` !== resolveKey) return;
+            item.url = vod;
+            item.error = '';
+            item.loading = false;
+          });
+          if (provider === '189') {
+            const flag = normalizeString(requestBody && requestBody.flag);
+            const accessCode = normalizeString(requestBody && requestBody.accessCode);
+            const match = /^天意-([A-Za-z0-9]{6,64})$/.exec(flag);
+            const shareId = match && match[1] ? normalizeString(match[1]) : '';
+            if (shareId && accessCode) {
+              tianyiAccessByShareId.set(shareId, accessCode);
+            }
+          }
+          emitUpdate(false);
+          return;
+        }
+        sourceEntries.forEach((item) => {
+          if (`${item.provider}::${item.label}` !== resolveKey) return;
+          item.url = '';
+          item.error = '暂无数据';
+          item.loading = false;
+        });
+        emitUpdate(false);
+      } catch (error) {
+        sourceEntries.forEach((item) => {
+          if (`${item.provider}::${item.label}` !== resolveKey) return;
+          item.url = '';
+          item.error = error && error.message ? String(error.message) : '请求失败';
+          item.loading = false;
+        });
+        emitUpdate(false);
+      }
+    })
+  );
+
+  return buildResolvedOutput(true);
+};
+
+const buildDetailCacheKey = ({ apiBase, spiderApi, videoId }) =>
+  `${normalizecatpawrunnerApiBase(apiBase)}::${normalizeString(spiderApi)}::${normalizeString(videoId)}`;
+
+export const fetchCatDetailCached = async ({ apiBase, spiderApi, videoId, timeoutMs = 15000, signal } = {}) => {
+  const cacheKey = buildDetailCacheKey({ apiBase, spiderApi, videoId });
+  if (!cacheKey.includes('::') || !normalizeString(videoId) || !normalizeString(spiderApi)) {
+    throw new Error('站点详情参数无效');
+  }
+  const cached = detailCache.get(cacheKey);
+  if (cached && cached.status === 'resolved') return cached.data;
+  if (cached && cached.status === 'pending') return cached.promise;
+
+  const promise = requestCatSpider({
+    apiBase,
+    action: 'detail',
+    spiderApi,
+    payload: { id: videoId },
+    timeoutMs,
+    signal,
+  }).then((raw) => {
+    detailCache.set(cacheKey, { status: 'resolved', data: raw });
+    return raw;
+  }).catch((error) => {
+    detailCache.delete(cacheKey);
+    throw error;
+  });
+
+  detailCache.set(cacheKey, { status: 'pending', promise });
+  return promise;
+};
+
+export const fetchCatResolvedDetailCached = async ({ apiBase, spiderApi, videoId, timeoutMs = 15000, onUpdate, signal } = {}) => {
+  const cacheKey = buildDetailCacheKey({ apiBase, spiderApi, videoId });
+  if (!cacheKey.includes('::') || !normalizeString(videoId) || !normalizeString(spiderApi)) {
+    throw new Error('站点详情参数无效');
+  }
+  const cached = resolvedDetailCache.get(cacheKey);
+  if (cached && cached.status === 'resolved') {
+    if (typeof onUpdate === 'function' && cached.data) {
+      try {
+        onUpdate(cached.data);
+      } catch (_e) {}
+    }
+    return cached.data;
+  }
+  if (cached && cached.status === 'pending') {
+    if (typeof onUpdate === 'function') {
+      cached.listeners.add(onUpdate);
+      if (cached.data) {
+        try {
+          onUpdate(cached.data);
+        } catch (_e) {}
+      }
+    }
+    return cached.promise;
+  }
+
+  const listeners = new Set();
+  if (typeof onUpdate === 'function') listeners.add(onUpdate);
+
+  const promise = (async () => {
+    const raw = await fetchCatDetailCached({ apiBase, spiderApi, videoId, timeoutMs, signal });
+    const detail = extractCatDetailFields(raw);
+    const baseData = {
+      raw,
+      ...detail,
+      resolvedPlayFrom: normalizeString(detail.playFrom),
+      resolvedPlayUrl: normalizeString(detail.playUrl),
+      sources: [],
+      panMock189AccessByShareId: {},
+      resolutionComplete: !detail.panMock,
+    };
+    const emitPartial = (partial) => {
+      const current = resolvedDetailCache.get(cacheKey);
+      const nextData = {
+        ...(current && current.data && typeof current.data === 'object' ? current.data : baseData),
+        ...partial,
+      };
+      const nextEntry = resolvedDetailCache.get(cacheKey);
+      if (nextEntry) nextEntry.data = nextData;
+      notifyResolvedDetailListeners(cacheKey, nextData);
+    };
+    const resolved = await resolvePanMockPlaySources(raw, detail.playFrom, detail.playUrl, { onUpdate: emitPartial, signal });
+    const data = {
+      ...baseData,
+      resolvedPlayFrom: normalizeString(resolved.playFrom),
+      resolvedPlayUrl: normalizeString(resolved.playUrl),
+      sources: Array.isArray(resolved.sources) ? resolved.sources : [],
+      panMock189AccessByShareId:
+        resolved && resolved.panMock189AccessByShareId && typeof resolved.panMock189AccessByShareId === 'object'
+          ? resolved.panMock189AccessByShareId
+          : {},
+      resolutionComplete: true,
+    };
+    resolvedDetailCache.set(cacheKey, { status: 'resolved', data, listeners: new Set() });
+    notifyResolvedDetailListeners(cacheKey, data);
+    return data;
+  })().catch((error) => {
+    resolvedDetailCache.delete(cacheKey);
+    throw error;
+  });
+
+  resolvedDetailCache.set(cacheKey, { status: 'pending', promise, data: null, listeners });
+  return promise;
+};
+
+export const clearCatDetailCache = () => {
+  detailCache.clear();
+  resolvedDetailCache.clear();
+};

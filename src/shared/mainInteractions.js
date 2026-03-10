@@ -49,22 +49,4 @@ export function initMainInteractions() {
       applyTheme(darkNow);
     });
   }
-
-  const userBtn = document.getElementById('userMenuBtn');
-  const userMenu = document.getElementById('userMenu');
-  if (userBtn && userMenu) {
-    const closeMenu = (evt) => {
-      if (!userMenu.contains(evt.target) && !userBtn.contains(evt.target)) {
-        userMenu.classList.add('hidden');
-        document.removeEventListener('click', closeMenu);
-      }
-    };
-    userBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      userMenu.classList.toggle('hidden');
-      if (!userMenu.classList.contains('hidden')) {
-        setTimeout(() => document.addEventListener('click', closeMenu), 0);
-      }
-    });
-  }
 }

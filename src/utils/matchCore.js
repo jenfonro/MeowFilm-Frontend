@@ -67,7 +67,11 @@ export const extractTianyiShareCodeAndAccessCode = (flag, rawName) => {
     if (!shareCode && seg[0] && String(seg[0]).trim()) shareCode = String(seg[0]).trim();
     if (seg.length === 2) accessCode = String(seg[1] || '').trim();
   } else {
-    accessCode = pass;
+    if (!shareCode && /^(?:[A-Za-z0-9]{6,64})$/.test(pass)) {
+      shareCode = pass;
+    } else {
+      accessCode = pass;
+    }
   }
   if (accessCode.toLowerCase() === 'nopass') accessCode = '';
   return { shareCode, accessCode };

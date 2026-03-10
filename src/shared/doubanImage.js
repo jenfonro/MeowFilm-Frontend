@@ -49,7 +49,13 @@ export function normalizeDoubanImageProxyMode(mode, fallback = 'server-proxy') {
   const raw = typeof mode === 'string' ? mode.trim() : '';
   const first = raw.split(/[\\s,]+/g)[0] || '';
   const normalized = first.toLowerCase();
-  return normalized || fallback;
+  if (!normalized) return fallback;
+  if (normalized === 'server-proxy') return 'server-proxy';
+  if (normalized === 'douban-cdn-ali') return 'douban-cdn-ali';
+  if (normalized === 'cdn-tx') return 'cdn-tx';
+  if (normalized === 'cdn-ali') return 'cdn-ali';
+  if (normalized === 'custom') return 'custom';
+  return fallback;
 }
 
 function serverProxyUrl(original) {
@@ -90,13 +96,10 @@ export function rewriteDoubanImageUrl(urlStr, { mode, custom, defaultMode = 'ser
 
   switch (p) {
     case 'douban-cdn-ali':
-    case 'img3':
       return swapDoubanImageHost(original, 'img3.doubanio.com');
     case 'cdn-tx':
-    case 'cmliussss-cdn-tencent':
       return swapDoubanImageHost(original, 'img.doubanio.cmliussss.net');
     case 'cdn-ali':
-    case 'cmliussss-cdn-ali':
       return swapDoubanImageHost(original, 'img.doubanio.cmliussss.com');
     default:
       return original;
@@ -118,13 +121,13 @@ export function buildDoubanImageCandidates(
   const p = normalizeDoubanImageProxyMode(mode, defaultMode);
   if (p === 'server-proxy') return [serverProxyUrl(original)];
 
-  if (p === 'cdn-tx' || p === 'cmliussss-cdn-tencent') {
+  if (p === 'cdn-tx') {
     candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
     candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
-  } else if (p === 'cdn-ali' || p === 'cmliussss-cdn-ali') {
+  } else if (p === 'cdn-ali') {
     candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.com'));
     candidates.push(swapDoubanImageHost(original, 'img.doubanio.cmliussss.net'));
-  } else if (p === 'douban-cdn-ali' || p === 'img3') {
+  } else if (p === 'douban-cdn-ali') {
     candidates.push(swapDoubanImageHost(original, 'img3.doubanio.com'));
   }
 

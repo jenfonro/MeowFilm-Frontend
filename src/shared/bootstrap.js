@@ -12,10 +12,10 @@ export async function fetchBootstrap(page) {
 export const normalizeDoubanDataProxyMode = (value, fallback = 'server-proxy') => {
   const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (!raw) return fallback;
-  if (raw === 'server' || raw === 'server_proxy' || raw === 'serverproxy') return 'server-proxy';
-  if (raw === 'cdn-tx' || raw === 'cmliussss-cdn-tencent') return 'cdn-tx';
-  if (raw === 'cdn-ali' || raw === 'cmliussss-cdn-ali') return 'cdn-ali';
-  if (raw === 'cors' || raw === 'cors-proxy-zwei' || raw === 'ciao-cors') return 'cors';
+  if (raw === 'server-proxy') return 'server-proxy';
+  if (raw === 'cdn-tx') return 'cdn-tx';
+  if (raw === 'cdn-ali') return 'cdn-ali';
+  if (raw === 'cors') return 'cors';
   if (raw === 'cors-anywhere') return 'cors-anywhere';
   if (raw === 'custom') return 'custom';
   return fallback;

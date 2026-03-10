@@ -1489,6 +1489,7 @@ const destroyNow = () => {
 	    setBuffering(false);
 	    emitMetaOnce();
 	    emitVideoInfo();
+	    emitFirstFrameOnce();
 	    scheduleBufferedSync();
 	  });
   art.on('video:error', () => {
