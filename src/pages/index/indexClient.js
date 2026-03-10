@@ -4,6 +4,7 @@ import { appendTvCardHoverOverlays, createPosterCard } from '../../shared/poster
 import { apiDeleteJson, apiGetJson, apiInvalidateCache, buildQuery } from '../../shared/apiClient';
 import { buildDoubanImageCandidates, normalizeDoubanImageProxyMode, normalizeImageUrl, rewriteDoubanImageUrl } from '../../shared/doubanImage';
 import { formatTMDBTVRemark } from '../../shared/tmdbBadge';
+import { buildDoubanDataUrl } from '../../shared/bootstrap';
 
 const TMDB_DETAIL_CACHE_MS = 10 * 60 * 1000;
 const tmdbDetailInFlight = new Map();
@@ -2129,6 +2130,8 @@ export function initIndexPage() {
         const runtimeConfig = {
           doubanImgProxy: (cfgEl.getAttribute('data-douban-img-proxy') || 'server-proxy').trim(),
           doubanImgCustom: (cfgEl.getAttribute('data-douban-img-custom') || '').trim(),
+          doubanDataProxy: (cfgEl.getAttribute('data-douban-data-proxy') || 'server-proxy').trim(),
+          doubanDataCustom: (cfgEl.getAttribute('data-douban-data-custom') || '').trim(),
         };
         runtimeConfig.doubanImgProxy = normalizeDoubanImageProxyMode(runtimeConfig.doubanImgProxy, 'server-proxy');
 
@@ -2176,13 +2179,15 @@ export function initIndexPage() {
           });
         };
 
-        const fetchJsonWithTimeout = async (url, timeoutMs = 10000) => {
+        const fetchJsonWithTimeout = async (url, timeoutMs = 10000, opts = {}) => {
           const controller = new AbortController();
           const id = setTimeout(() => controller.abort(), timeoutMs);
           try {
             const resp = await fetch(url, {
               signal: controller.signal,
               headers: { Accept: 'application/json, text/plain, */*' },
+              mode: opts.mode || 'cors',
+              credentials: opts.credentials || 'omit',
             });
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             return await resp.json();
@@ -2197,8 +2202,15 @@ export function initIndexPage() {
           q.set('limit', String(limit));
           q.set('category', category);
           q.set('type', hotType);
-          const url = `/api/douban/rexxar/api/v2/subject/recent_hot/${encodeURIComponent(kind)}?${q.toString()}`;
-          const data = await fetchJsonWithTimeout(url);
+          const path = `/rexxar/api/v2/subject/recent_hot/${encodeURIComponent(kind)}?${q.toString()}`;
+          const { url, mode } = buildDoubanDataUrl(path, {
+            doubanDataProxy: runtimeConfig.doubanDataProxy,
+            doubanDataCustom: runtimeConfig.doubanDataCustom,
+          });
+          const data =
+            mode === 'server-proxy'
+              ? await apiGetJson(url, { timeoutMs: 10000 })
+              : await fetchJsonWithTimeout(url, 10000, { mode: 'cors', credentials: 'omit' });
           const items = Array.isArray(data?.items) ? data.items : [];
           return items.map((item) => ({
             id: String(item?.id || ''),

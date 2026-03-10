@@ -815,7 +815,7 @@ import { initPlayPage } from './playClient.js';
 	import ArtPlayer from '../../shared/ArtPlayer.vue';
 import { grantCatLowPrioritySearchTickets, normalizecatpawrunnerApiBase, pauseCatLowPriority, requestCatPlay, requestCatSpider } from '../../shared/catpawrunner';
 import { apiGetJson, apiPostJson, buildQuery } from '../../shared/apiClient';
-import { fetchBootstrap } from '../../shared/bootstrap';
+import { buildDoubanDataUrl, fetchBootstrap } from '../../shared/bootstrap';
 import { processPosterUrl } from '../../shared/posterCard';
 import {
   buildEpisodeMatchKey,
@@ -874,6 +874,8 @@ const ensurePlaySettingsLoaded = async () => {
   if (playBootstrapSettings.value) return;
   const base = props && props.bootstrap && typeof props.bootstrap.settings === 'object' && props.bootstrap.settings ? props.bootstrap.settings : {};
   const needs =
+    typeof base.doubanDataProxy !== 'string' ||
+    (base.doubanDataProxy === 'custom' && typeof base.doubanDataCustom !== 'string') ||
     !Array.isArray(base.goProxyServers) ||
     !Array.isArray(base.magicEpisodeRules) ||
     !Array.isArray(base.magicEpisodeCleanRegexRules) ||
@@ -888,6 +890,30 @@ const ensurePlaySettingsLoaded = async () => {
       playBootstrapSettings.value = b.settings;
     }
   } catch (_e) {}
+};
+
+const fetchDoubanJson = async (url, timeoutMs = 12000) => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json, text/plain, */*' },
+      mode: 'cors',
+      credentials: 'omit',
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } finally {
+    clearTimeout(id);
+  }
+};
+
+const requestDoubanApiJson = async (path, { timeoutMs = 12000 } = {}) => {
+  const { url, mode } = buildDoubanDataUrl(path, effectiveBootstrapSettings.value || {});
+  if (!url) throw new Error('Missing douban api url');
+  if (mode === 'server-proxy') return await apiGetJson(url, { timeoutMs });
+  return await fetchDoubanJson(url, timeoutMs);
 };
 
 const panLoginSettingsCache = ref(null);
@@ -3069,8 +3095,8 @@ const readPanMockEnabledFromRaw = (raw) => {
 	const fetchDoubanSeasonMetaFromDouban = async ({ keyword = '', maxSeasons = 10 } = {}) => {
 	  const q = typeof keyword === 'string' ? keyword.trim() : '';
 	  if (!q) return null;
-	  const data = await apiGetJson(
-	    `/api/douban/rexxar/api/v2/search${buildQuery({ q, type: 'tv', start: 0, count: 20 })}`,
+	  const data = await requestDoubanApiJson(
+	    `/rexxar/api/v2/search${buildQuery({ q, type: 'tv', start: 0, count: 20 })}`,
 	    { timeoutMs: 12000 }
 	  );
 
@@ -3323,7 +3349,7 @@ const readPanMockEnabledFromRaw = (raw) => {
 			    if (!isStrictTitleMatch(it && it.title)) return null;
 			    if (isLikelyUnreleased(it)) return null;
 			    if (shouldSkipLikelyFuture(it)) return null;
-			    const detail = await apiGetJson(`/api/douban/rexxar/api/v2/tv/${encodeURIComponent(it.doubanId)}`, { timeoutMs: 12000 });
+			    const detail = await requestDoubanApiJson(`/rexxar/api/v2/tv/${encodeURIComponent(it.doubanId)}`, { timeoutMs: 12000 });
 
 	    const epCountRaw = detail?.episodes_count;
 	    let episodeCount = 0;
