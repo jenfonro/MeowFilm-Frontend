@@ -383,7 +383,7 @@
                           <div class="tv-spinner" aria-hidden="true"></div>
                         </div>
                         <button
-                          v-if="tmdbMode && !tmdbMovieMode && isTMDBSitePanKey(selectedPanKey)"
+                          v-if="episodeMetaToggleVisible"
                           type="button"
                           class="episode-control episode-control--btn flex-shrink-0"
                           v-show="!rawListMode"
@@ -433,7 +433,7 @@
 
 		                      <div class="flex items-center gap-4 mb-4 border-b border-gray-300 dark:border-gray-700 -mx-6 px-6 flex-shrink-0" v-show="!rawListMode">
 		                        <div class="flex-1 min-w-0">
-		                          <div v-if="seasonTabs.length" class="episode-season-bar">
+		                          <div v-if="seasonTabs.length" :class="['episode-season-bar', { 'episode-season-bar--tight': !episodeGroups.length }]">
 		                            <div class="episode-season-tabs">
 	                              <button
 	                                v-for="s in seasonTabs"
@@ -447,7 +447,7 @@
 	                              </button>
 	                            </div>
 	                          </div>
-	                          <div class="episode-group-bar">
+	                          <div class="episode-group-bar" v-show="episodeGroups.length">
 	                            <div ref="episodeGroupTabsEl" class="episode-group-tabs" @scroll.passive="updateHiddenEpisodeGroups">
 	                              <button
 	                                v-for="g in episodeGroups"
@@ -7361,6 +7361,29 @@ const doubanSeasonOverrideActive = computed(() => {
 	  return out;
 	});
 
+const episodeMetaToggleVisible = computed(() => {
+  if (!tmdbMode.value || tmdbMovieMode.value) return false;
+  if (!isTMDBSitePanKey(selectedPanKey.value)) return false;
+  const tmdbCount = (Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : []).filter((s) => s && Number(s.season) > 0).length;
+  const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+  const dmSeasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
+  const doubanCount = dmSeasons.filter((s) => s && Number(s.season) > 0).length;
+  if (tmdbCount <= 0 || doubanCount <= 0) return false;
+  return tmdbCount !== doubanCount;
+});
+
+watch(
+  () => episodeMetaToggleVisible.value,
+  (visible) => {
+    if (visible) return;
+    if (episodeMetaMode.value !== 'tmdb') {
+      episodeMetaMode.value = 'tmdb';
+      writeEpisodeMetaMode('tmdb');
+    }
+  },
+  { immediate: true }
+);
+
 const tmdbGlobalEpisodeNoOf = (seasonNo, episodeNo) => {
   const s = Number.isFinite(Number(seasonNo)) ? Math.floor(Number(seasonNo)) : 0;
   const e = Number.isFinite(Number(episodeNo)) ? Math.floor(Number(episodeNo)) : 0;
@@ -7789,8 +7812,7 @@ const episodeMatchByIndex = computed(() => {
     });
   };
 
-  const metaMode = episodeMetaModeEffective.value;
-  if (selectedPanSource.value && selectedPanSource.value.kind === 'tmdb_site_pan' && (metaMode === 'tmdb' || metaMode === 'douban')) {
+  if (selectedPanSource.value && selectedPanSource.value.kind === 'tmdb_site_pan') {
     const entry = readTMDBSitePanSmartEntry();
     const globalByUrl = buildTMDBSitePanBestGlobalByUrl(entry);
     const tmdbHasMultiSeason = (() => {
@@ -7798,27 +7820,17 @@ const episodeMatchByIndex = computed(() => {
       const real = seasons.filter((x) => x && Number.isFinite(Number(x.season)) && Number(x.season) > 0);
       return real.length >= 2;
     })();
-    const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
 
     return eps.map((ep, idx) => {
       const url = ep && ep.url ? String(ep.url) : '';
       const gFromUrl = globalByUrl && url ? globalByUrl.get(url) || 0 : 0;
       const g = Number.isFinite(Number(gFromUrl)) && Number(gFromUrl) > 0 ? Math.floor(Number(gFromUrl)) : idx + 1;
-
-      if (metaMode === 'tmdb') {
-        if (tmdbHasMultiSeason) {
-          const mapped = tmdbSeasonEpisodeOfGlobal(g);
-          const ms = mapped && Number.isFinite(Number(mapped.season)) ? Math.floor(Number(mapped.season)) : 0;
-          const me = mapped && Number.isFinite(Number(mapped.episode)) ? Math.floor(Number(mapped.episode)) : 0;
-          if (ms > 0 && me > 0) return { season: ms, episode: me };
-        }
-        return { season: 0, episode: g };
+      if (tmdbHasMultiSeason) {
+        const mapped = tmdbSeasonEpisodeOfGlobal(g);
+        const ms = mapped && Number.isFinite(Number(mapped.season)) ? Math.floor(Number(mapped.season)) : 0;
+        const me = mapped && Number.isFinite(Number(mapped.episode)) ? Math.floor(Number(mapped.episode)) : 0;
+        if (ms > 0 && me > 0) return { season: ms, episode: me };
       }
-
-      const mapped = doubanSeasonEpisodeOfGlobal(g, dm);
-      const ds = mapped && Number.isFinite(Number(mapped.season)) ? Math.floor(Number(mapped.season)) : 0;
-      const de = mapped && Number.isFinite(Number(mapped.episode)) ? Math.floor(Number(mapped.episode)) : 0;
-      if (ds > 0 && de > 0) return { season: ds, episode: de };
       return { season: 0, episode: g };
     });
   }
@@ -7963,6 +7975,7 @@ const allDisplayedEpisodes = computed(() => {
       return real.length >= 2;
     })();
     const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
+    const isDoubanMode = episodeMetaModeEffective.value === 'douban';
     const items = [];
     for (let g = 1; g <= tmdbMaxGlobal; g += 1) {
       const list = entry.episodeMap && entry.episodeMap.get ? entry.episodeMap.get(g) : null;
@@ -7970,14 +7983,12 @@ const allDisplayedEpisodes = computed(() => {
       if (!cands.length) continue;
       const filtered = panLabel ? cands.filter((c) => smartMatchPan(c, panLabel)) : cands;
       if (!filtered.length) continue;
-      const mapped =
-        episodeMetaModeEffective.value === 'douban'
-          ? doubanSeasonEpisodeOfGlobal(g, dm)
-          : tmdbHasMultiSeason
-            ? tmdbSeasonEpisodeOfGlobal(g)
-            : { season: 0, episode: g };
-      const season = mapped && Number.isFinite(Number(mapped.season)) ? Number(mapped.season) : 0;
-      const no = mapped && Number.isFinite(Number(mapped.episode)) ? Number(mapped.episode) : g;
+      const mappedTmdb = tmdbHasMultiSeason ? tmdbSeasonEpisodeOfGlobal(g) : { season: 0, episode: g };
+      const tmdbSeason = mappedTmdb && Number.isFinite(Number(mappedTmdb.season)) ? Number(mappedTmdb.season) : 0;
+      const tmdbNo = mappedTmdb && Number.isFinite(Number(mappedTmdb.episode)) ? Number(mappedTmdb.episode) : g;
+      const mapped = isDoubanMode ? doubanSeasonEpisodeOfGlobal(g, dm) : { season: tmdbSeason, episode: tmdbNo };
+      const season = mapped && Number.isFinite(Number(mapped.season)) ? Number(mapped.season) : tmdbSeason;
+      const no = mapped && Number.isFinite(Number(mapped.episode)) ? Number(mapped.episode) : tmdbNo;
       filtered.forEach((cand, idx) => {
         const ep = cand && cand.ep ? cand.ep : null;
         const url = ep && ep.url ? String(ep.url) : '';
@@ -8028,9 +8039,7 @@ const allDisplayedEpisodes = computed(() => {
         : (useMetaMapping
           ? (Number.isFinite(gFromUrl) && gFromUrl > 0
             ? gFromUrl
-            : (episodeMetaModeEffective.value === 'douban'
-              ? (doubanGlobalEpisodeNoOf(season, no, doubanSeasonMeta.value) || (Number.isFinite(no) && no > 0 ? no : idx + 1))
-              : (tmdbGlobalEpisodeNoOf(season, no) || (Number.isFinite(no) && no > 0 ? no : idx + 1))))
+            : (tmdbGlobalEpisodeNoOf(season, no) || (Number.isFinite(no) && no > 0 ? no : idx + 1)))
           : (canUseMatchGlobal ? computeGlobalNoFromMatch(m, idx) : (
             season > 0 && no > 0
               ? tmdbGlobalEpisodeNoOf(season, no)
@@ -8144,10 +8153,20 @@ watch(
 );
 
 	  const seasonTabs = computed(() => {
+      const seasonsWithEpisodes = (() => {
+        const list = allDisplayedEpisodes.value;
+        const set = new Set();
+        list.forEach((it) => {
+          const s = it && Number.isFinite(Number(it.season)) ? Math.floor(Number(it.season)) : 0;
+          if (s > 0) set.add(s);
+        });
+        return set;
+      })();
 	    if (tmdbMode.value && isTMDBSitePanKey(selectedPanKey.value)) {
 	      if (episodeMetaModeEffective.value === 'douban') {
 	        const dm = doubanSeasonMeta.value && typeof doubanSeasonMeta.value === 'object' ? doubanSeasonMeta.value : null;
 	        const seasons = dm && Array.isArray(dm.seasons) ? dm.seasons : [];
+	        const doubanHasMultiSeason = seasons.filter((s) => s && Number(s.season) > 0).length >= 2;
 	        const real = seasons
 	          .map((s) => ({
 	            season: Number.isFinite(Number(s && s.season)) ? Math.floor(Number(s.season)) : 0,
@@ -8156,9 +8175,9 @@ watch(
 	                ? String(s.displayLabel).trim()
 	                : '',
 	          }))
-	          .filter((s) => s.season > 0)
+	          .filter((s) => s.season > 0 && seasonsWithEpisodes.has(s.season))
 	          .sort((a, b) => a.season - b.season);
-	        if (real.length >= 2) {
+	        if (real.length >= 2 || (real.length === 1 && doubanHasMultiSeason)) {
 	          const cn = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
 	          return real.map((s) => ({
 	            key: `S${s.season}`,
@@ -8168,13 +8187,14 @@ watch(
 	        }
 	      } else {
 	        const seasons = Array.isArray(tmdbSeasons.value) ? tmdbSeasons.value : [];
+	        const tmdbHasMultiSeason = seasons.filter((s) => s && Number(s.season) > 0).length >= 2;
 	        const real = seasons
 	          .map((s) => ({
 	            season: Number.isFinite(Number(s && s.season)) ? Math.floor(Number(s.season)) : 0,
 	          }))
-	          .filter((s) => s.season > 0)
+	          .filter((s) => s.season > 0 && seasonsWithEpisodes.has(s.season))
 	          .sort((a, b) => a.season - b.season);
-	        if (real.length >= 2) {
+	        if (real.length >= 2 || (real.length === 1 && tmdbHasMultiSeason)) {
 	          const cn = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
 	          return real.map((s) => ({
 	            key: `S${s.season}`,
@@ -8365,6 +8385,10 @@ const episodeGroups = computed(() => {
   const hasMagic = hasMagicEpisodeRules.value;
   const list = displayedEpisodes.value;
   if (!list.length) return [];
+  const shouldGroupByCount = (items) => {
+    const countInFirst = items.filter((it) => it && Number.isFinite(Number(it.no)) && Number(it.no) >= 1 && Number(it.no) <= EPISODE_GROUP_SIZE).length;
+    return countInFirst >= 25;
+  };
 
   const makeLabel = (startNo, endNo) => {
     return episodeDescending.value ? `${endNo}-${startNo}` : `${startNo}-${endNo}`;
@@ -8373,8 +8397,17 @@ const episodeGroups = computed(() => {
   if (hasMagic) {
     const recognized = list.filter((it) => it && !it.unmatched && Number.isFinite(Number(it.no)) && Number(it.no) > 0);
     const unrecognized = list.filter((it) => it && it.unmatched);
+    const minNo = recognized.reduce((m, it) => (it && Number.isFinite(Number(it.no)) ? Math.min(m, Number(it.no)) : m), Infinity);
     const maxNo = recognized.reduce((m, it) => (it && Number.isFinite(Number(it.no)) ? Math.max(m, Number(it.no)) : m), 0);
     if (!maxNo && !unrecognized.length) return [];
+    if (maxNo < EPISODE_GROUP_SIZE || !shouldGroupByCount(recognized)) {
+      if (!seasonTabs.value.length && minNo !== Infinity && minNo > 1 && maxNo > 0) {
+        const startNo = minNo;
+        const endNo = maxNo;
+        return [{ key: `g${startNo}-${endNo}`, startNo, endNo, label: makeLabel(startNo, endNo) }];
+      }
+      return [];
+    }
     const byIdx = new Map();
     recognized.forEach((it) => {
       const no = it && Number.isFinite(it.no) ? Number(it.no) : 0;
@@ -8388,7 +8421,7 @@ const episodeGroups = computed(() => {
       const endNo = Math.min(maxNo, (i + 1) * EPISODE_GROUP_SIZE);
       const key = `g${startNo}-${endNo}`;
       return { key, startNo, endNo, label: makeLabel(startNo, endNo) };
-    });
+    }).filter((g) => recognized.some((it) => it && Number(it.no) >= g.startNo && Number(it.no) <= g.endNo));
     if (episodeDescending.value) groups.reverse();
     if (unrecognized.length) {
       groups.push({ key: UNRECOGNIZED_EPISODE_GROUP_KEY, startNo: 0, endNo: 0, label: '未识别分类', unrecognized: true });
@@ -8398,13 +8431,15 @@ const episodeGroups = computed(() => {
 
   const total = selectedEpisodes.value.length;
   if (!total) return [];
+  if (total < EPISODE_GROUP_SIZE || !shouldGroupByCount(list)) return [];
   const groups = [];
   const count = Math.ceil(total / EPISODE_GROUP_SIZE);
   for (let i = 0; i < count; i += 1) {
     const startNo = i * EPISODE_GROUP_SIZE + 1;
     const endNo = Math.min(total, (i + 1) * EPISODE_GROUP_SIZE);
     const key = `g${startNo}-${endNo}`;
-    groups.push({ key, startNo, endNo, label: makeLabel(startNo, endNo) });
+    const hasAny = list.some((it) => it && Number.isFinite(Number(it.no)) && Number(it.no) >= startNo && Number(it.no) <= endNo);
+    if (hasAny) groups.push({ key, startNo, endNo, label: makeLabel(startNo, endNo) });
   }
   if (episodeDescending.value) groups.reverse();
   return groups;
@@ -15342,9 +15377,9 @@ const resolveCurrentTMDBSubPanKey = (panKey) => {
 const mapGlobalToSeasonEpisode = (globalNo) => {
   const g = Number.isFinite(Number(globalNo)) ? Math.floor(Number(globalNo)) : 0;
   if (g <= 0) return { season: 0, episode: 0 };
-  if (episodeMetaModeEffective.value === 'douban') {
-    const fallback = tmdbSeasonEpisodeOfGlobal(g);
-    return fallback && fallback.season ? fallback : { season: 0, episode: g };
+  if (String(selectedPanKey.value || '') === DOUBAN_SMART_PAN_KEY) {
+    const mapped = doubanSeasonEpisodeOfGlobal(g, doubanSeasonMeta.value);
+    return mapped && mapped.season ? mapped : { season: 0, episode: g };
   }
   const mapped = tmdbSeasonEpisodeOfGlobal(g);
   return mapped && mapped.season ? mapped : { season: 0, episode: g };
@@ -15379,14 +15414,17 @@ const isEpisodeActive = (idxRaw, ep) => {
 
   // Non-smart lists: active marker should follow the currently playing file in the same source/pan context.
   if (tmdbMode.value && isTMDBSitePanKey(selectedPan)) {
-    const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
-    if (g > 0) {
-      const m = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[idx] : null;
-      const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
-      const e = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
-      if (s > 0 && e > 0) {
-        const gg = tmdbGlobalEpisodeNoOf(s, e);
-        if (gg > 0 && gg === g) return true;
+    // Prefer exact file match (url/key) when available to avoid marking multiple candidates.
+    if (!(playerUrl.value && isPlayingInCurrentPanContext())) {
+      const g = Number.isFinite(Number(playingSmartEpisodeNo.value)) ? Math.floor(Number(playingSmartEpisodeNo.value)) : 0;
+      if (g > 0) {
+        const m = Array.isArray(episodeMatchByIndex.value) ? episodeMatchByIndex.value[idx] : null;
+        const s = m && Number.isFinite(Number(m.season)) ? Math.floor(Number(m.season)) : 0;
+        const e = m && Number.isFinite(Number(m.episode)) ? Math.floor(Number(m.episode)) : 0;
+        if (s > 0 && e > 0) {
+          const gg = tmdbGlobalEpisodeNoOf(s, e);
+          if (gg > 0 && gg === g) return true;
+        }
       }
     }
   }
@@ -16579,6 +16617,10 @@ watch(
   margin-bottom: 10px;
 }
 
+.episode-season-bar--tight {
+  margin-bottom: 0;
+}
+
 .episode-season-tabs,
 .episode-group-tabs {
   display: flex;
@@ -16606,6 +16648,7 @@ watch(
   color: rgba(107, 114, 128, 1);
   font-size: 12px;
   font-weight: 700;
+  line-height: 1;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   white-space: nowrap;
 }
