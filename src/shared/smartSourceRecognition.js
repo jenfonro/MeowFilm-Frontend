@@ -407,7 +407,15 @@ const buildSeasonCountLookup = (rows, field) => {
   return out;
 };
 
-const buildMappingCandidate = ({ from, global, tmdbDetail, doubanMeta, tmdb, douban }) => {
+const buildMappingCandidate = ({
+  from,
+  global,
+  tmdbDetail,
+  doubanMeta,
+  tmdb,
+  douban,
+  resolutionMode = '',
+} = {}) => {
   const globalNo = normalizeInt(global);
   if (globalNo <= 0) return [];
   const tmdbValue = tmdb || tmdbSeasonEpisodeOfGlobal(tmdbDetail, globalNo);
@@ -416,7 +424,14 @@ const buildMappingCandidate = ({ from, global, tmdbDetail, doubanMeta, tmdb, dou
   const doubanEpisode = normalizeInt(doubanValue && doubanValue.episode);
   if (tmdbEpisode <= 0 && doubanEpisode <= 0) return [];
   const key = `${globalNo}:${normalizeInt(tmdbValue && tmdbValue.season)}:${tmdbEpisode}:${normalizeInt(doubanValue && doubanValue.season)}:${doubanEpisode}`;
-  return [{ key, from, global: globalNo, tmdb: tmdbValue, douban: doubanValue }];
+  return [{
+    key,
+    from,
+    global: globalNo,
+    tmdb: tmdbValue,
+    douban: doubanValue,
+    resolutionMode: normalizeString(resolutionMode),
+  }];
 };
 
 const resolveStrictTMDBGlobal = ({ seasonNo, episodeNo, tmdbDetail, tmdbCounts }) => {
@@ -459,70 +474,98 @@ const resolveSingleBaselineFallback = ({
     const tmdb = tmdbSeasonEpisodeOfGlobal(tmdbDetail, global);
     if (normalizeInt(tmdb && tmdb.season) !== 1 || normalizeInt(tmdb && tmdb.episode) !== global) return [];
     if (doubanFirstSeasonCount > 0 && global <= doubanFirstSeasonCount && !hasEpisodeBeyondFirstSeason(sourceEpisodeNos, doubanFirstSeasonCount)) return [];
-    return buildMappingCandidate({ from: 'global', global, tmdbDetail, doubanMeta, tmdb });
+    return buildMappingCandidate({
+      from: 'global',
+      global,
+      tmdbDetail,
+      doubanMeta,
+      tmdb,
+      resolutionMode: 'degraded-single-baseline',
+    });
   }
   if (tmdbMultiSeason && !doubanMultiSeason) {
     const tmdbFirstSeasonCount = getFirstSeasonCount(tmdbRows, 'episodes');
     const douban = doubanSeasonEpisodeOfGlobal(doubanMeta, global);
     if (normalizeInt(douban && douban.season) !== 1 || normalizeInt(douban && douban.episode) !== global) return [];
     if (tmdbFirstSeasonCount > 0 && global <= tmdbFirstSeasonCount && !hasEpisodeBeyondFirstSeason(sourceEpisodeNos, tmdbFirstSeasonCount)) return [];
-    return buildMappingCandidate({ from: 'global', global, tmdbDetail, doubanMeta, douban });
+    return buildMappingCandidate({
+      from: 'global',
+      global,
+      tmdbDetail,
+      doubanMeta,
+      douban,
+      resolutionMode: 'degraded-single-baseline',
+    });
   }
   if (!tmdbMultiSeason && !doubanMultiSeason) {
     const tmdb = tmdbSeasonEpisodeOfGlobal(tmdbDetail, global);
     if (normalizeInt(tmdb && tmdb.season) !== 1 || normalizeInt(tmdb && tmdb.episode) !== global) return [];
-    return buildMappingCandidate({ from: 'single', global, tmdbDetail, doubanMeta, tmdb });
+    return buildMappingCandidate({
+      from: 'single',
+      global,
+      tmdbDetail,
+      doubanMeta,
+      tmdb,
+      resolutionMode: 'degraded-single-baseline',
+    });
   }
   return [];
 };
 
-const resolveSeasonMarkedMapping = ({
+const resolveSeasonMarkedStrictTMDB = ({
+  seasonNo,
+  episodeNo,
+  tmdbDetail,
+  tmdbCounts,
+}) => {
+  const tmdbGlobal = resolveStrictTMDBGlobal({ seasonNo, episodeNo, tmdbDetail, tmdbCounts });
+  if (tmdbGlobal <= 0) return [];
+  return buildMappingCandidate({
+    from: 'tmdb',
+    global: tmdbGlobal,
+    tmdbDetail,
+    tmdb: { season: seasonNo, episode: episodeNo },
+    resolutionMode: 'strict-tmdb',
+  });
+};
+
+const resolveSeasonMarkedStrictDouban = ({
   seasonNo,
   episodeNo,
   tmdbDetail,
   doubanMeta,
-  tmdbCounts,
   doubanCounts,
-  tmdbMultiSeason,
-  doubanMultiSeason,
-  sourceEpisodeNos,
 }) => {
-  // Step 1: TMDB is the primary mapping basis. If it can strictly absorb the
-  // extracted season/episode, lock global here and derive Douban from global.
-  const tmdbGlobal = resolveStrictTMDBGlobal({ seasonNo, episodeNo, tmdbDetail, tmdbCounts });
-  if (tmdbGlobal > 0) {
-    return buildMappingCandidate({
-      from: 'tmdb',
-      global: tmdbGlobal,
-      tmdbDetail,
-      doubanMeta,
-      tmdb: { season: seasonNo, episode: episodeNo },
-    });
-  }
-
-  // Step 2: TMDB cannot strictly absorb it. Douban is only an auxiliary
-  // mapping assistant here: it may help derive a unique global, but it is not
-  // a co-equal primary matcher. Once global is derived, TMDB remains the
-  // canonical side and Douban is only the display projection.
   const doubanGlobal = resolveAssistedGlobalFromDouban({ seasonNo, episodeNo, doubanMeta, doubanCounts });
-  if (doubanGlobal > 0) {
-    return buildMappingCandidate({
-      from: 'assist',
-      global: doubanGlobal,
-      tmdbDetail,
-      doubanMeta,
-      douban: { season: seasonNo, episode: episodeNo },
-    });
-  }
-
-  // Step 3: both strict paths failed. Only then allow single-baseline fallback.
-  if (!tmdbMultiSeason || !doubanMultiSeason) {
-    return resolveSingleBaselineFallback({ episodeNo, tmdbDetail, doubanMeta, tmdbMultiSeason, doubanMultiSeason, sourceEpisodeNos });
-  }
-  return [];
+  if (doubanGlobal <= 0) return [];
+  return buildMappingCandidate({
+    from: 'assist',
+    global: doubanGlobal,
+    tmdbDetail,
+    doubanMeta,
+    douban: { season: seasonNo, episode: episodeNo },
+    resolutionMode: 'strict-douban',
+  });
 };
 
-const resolveEpisodeOnlyMapping = ({
+const resolveEpisodeOnlyStrictTMDB = ({
+  episodeNo,
+  tmdbDetail,
+  tmdbMultiSeason,
+}) => {
+  if (tmdbMultiSeason || episodeNo <= 0) return [];
+  const tmdb = tmdbSeasonEpisodeOfGlobal(tmdbDetail, episodeNo);
+  if (normalizeInt(tmdb && tmdb.season) !== 1 || normalizeInt(tmdb && tmdb.episode) !== episodeNo) return [];
+  return buildMappingCandidate({
+    from: 'tmdb',
+    global: episodeNo,
+    tmdbDetail,
+    tmdb,
+    resolutionMode: 'strict-tmdb',
+  });
+};
+
+const resolveSeasonMarkedDegradedSingleBaseline = ({
   episodeNo,
   tmdbDetail,
   doubanMeta,
@@ -530,25 +573,85 @@ const resolveEpisodeOnlyMapping = ({
   doubanMultiSeason,
   sourceEpisodeNos,
 }) => {
-  // No season marker means we only accept a single-baseline validation.
-  // Multi-season metadata never participates in matching here; it is only used
-  // to derive the opposite-side display after global is confirmed.
-  if (!tmdbMultiSeason || !doubanMultiSeason) {
-    return resolveSingleBaselineFallback({ episodeNo, tmdbDetail, doubanMeta, tmdbMultiSeason, doubanMultiSeason, sourceEpisodeNos });
-  }
-  return [];
+  return resolveSingleBaselineFallback({
+    episodeNo,
+    tmdbDetail,
+    doubanMeta,
+    tmdbMultiSeason,
+    doubanMultiSeason,
+    sourceEpisodeNos,
+  });
 };
 
-const buildCandidateMappings = ({ season, episode, tmdbDetail, doubanMeta, tmdbMultiSeason, doubanMultiSeason, sourceEpisodeNos }) => {
-  const seasonNo = normalizeInt(season);
-  const episodeNo = normalizeInt(episode);
-  if (episodeNo <= 0) return [];
+const buildSeasonMarkedMappings = ({
+  seasonNo,
+  episodeNo,
+  tmdbDetail,
+  doubanMeta,
+  tmdbMultiSeason,
+  doubanMultiSeason,
+  sourceEpisodeNos,
+  allowDegradedMapping = true,
+  requireDoubanReadyForMultiSeasonFallback = true,
+}) => {
   const tmdbSeasonRows = Array.isArray(tmdbDetail && tmdbDetail.seasons) ? tmdbDetail.seasons : [];
   const doubanSeasonRows = Array.isArray(doubanMeta && doubanMeta.seasons) ? doubanMeta.seasons : [];
   const tmdbCounts = buildSeasonCountLookup(tmdbSeasonRows, 'episodes');
   const doubanCounts = buildSeasonCountLookup(doubanSeasonRows, 'episodeCount');
-  if (seasonNo <= 0) {
-    return resolveEpisodeOnlyMapping({
+
+  const strictTMDB = resolveSeasonMarkedStrictTMDB({
+    seasonNo,
+    episodeNo,
+    tmdbDetail,
+    tmdbCounts,
+  });
+  if (strictTMDB.length) return strictTMDB;
+
+  const doubanReady = doubanCounts.size > 0 || !requireDoubanReadyForMultiSeasonFallback;
+  if (doubanReady) {
+    const strictDouban = resolveSeasonMarkedStrictDouban({
+      seasonNo,
+      episodeNo,
+      tmdbDetail,
+      doubanMeta,
+      doubanCounts,
+    });
+    if (strictDouban.length) return strictDouban;
+  }
+
+  if (!allowDegradedMapping) return [];
+  if (requireDoubanReadyForMultiSeasonFallback && !doubanReady) return [];
+  return resolveSeasonMarkedDegradedSingleBaseline({
+    episodeNo,
+    tmdbDetail,
+    doubanMeta,
+    tmdbMultiSeason,
+    doubanMultiSeason,
+    sourceEpisodeNos,
+  });
+};
+
+const buildEpisodeOnlyMappings = ({
+  episodeNo,
+  tmdbDetail,
+  doubanMeta,
+  tmdbMultiSeason,
+  doubanMultiSeason,
+  sourceEpisodeNos,
+  allowDegradedMapping = true,
+  requireDoubanReadyForMultiSeasonFallback = true,
+}) => {
+  const strictTMDB = resolveEpisodeOnlyStrictTMDB({
+    episodeNo,
+    tmdbDetail,
+    tmdbMultiSeason,
+  });
+  if (strictTMDB.length) return strictTMDB;
+  if (!allowDegradedMapping) return [];
+  const doubanReady = Array.isArray(doubanMeta && doubanMeta.seasons) && doubanMeta.seasons.length > 0;
+  if (requireDoubanReadyForMultiSeasonFallback && !doubanReady) return [];
+  if (!tmdbMultiSeason || !doubanMultiSeason) {
+    return resolveSingleBaselineFallback({
       episodeNo,
       tmdbDetail,
       doubanMeta,
@@ -557,16 +660,45 @@ const buildCandidateMappings = ({ season, episode, tmdbDetail, doubanMeta, tmdbM
       sourceEpisodeNos,
     });
   }
-  return resolveSeasonMarkedMapping({
+  return [];
+};
+
+const buildCandidateMappings = ({
+  season,
+  episode,
+  tmdbDetail,
+  doubanMeta,
+  tmdbMultiSeason,
+  doubanMultiSeason,
+  sourceEpisodeNos,
+  allowDegradedMapping = true,
+  requireDoubanReadyForMultiSeasonFallback = true,
+}) => {
+  const seasonNo = normalizeInt(season);
+  const episodeNo = normalizeInt(episode);
+  if (episodeNo <= 0) return [];
+  if (seasonNo <= 0) {
+    return buildEpisodeOnlyMappings({
+      episodeNo,
+      tmdbDetail,
+      doubanMeta,
+      tmdbMultiSeason,
+      doubanMultiSeason,
+      sourceEpisodeNos,
+      allowDegradedMapping,
+      requireDoubanReadyForMultiSeasonFallback,
+    });
+  }
+  return buildSeasonMarkedMappings({
     seasonNo,
     episodeNo,
     tmdbDetail,
     doubanMeta,
-    tmdbCounts,
-    doubanCounts,
     tmdbMultiSeason,
     doubanMultiSeason,
     sourceEpisodeNos,
+    allowDegradedMapping,
+    requireDoubanReadyForMultiSeasonFallback,
   });
 };
 
@@ -575,6 +707,8 @@ export const buildPlaybackRecognitionData = ({
   siteResultItem,
   runtimeSettings,
   smartEpisodeMapping,
+  allowDegradedMapping = true,
+  requireDoubanReadyForMultiSeasonFallback = true,
 } = {}) => {
   const source = siteResultItem && typeof siteResultItem === 'object'
     ? {
@@ -672,8 +806,11 @@ export const buildPlaybackRecognitionData = ({
       tmdbMultiSeason,
       doubanMultiSeason,
       sourceEpisodeNos,
+      allowDegradedMapping,
+      requireDoubanReadyForMultiSeasonFallback,
     });
     mappings.forEach((mapping, candidateIndex) => {
+      const resolutionMode = normalizeString(mapping && mapping.resolutionMode);
       const candidate = {
         key: `${normalizeString(entry.key)}:${segment.index}:${candidateIndex}`,
         matchKind: 'episode',
@@ -694,6 +831,7 @@ export const buildPlaybackRecognitionData = ({
           episode: normalizeInt(episode),
         },
         mapping,
+        resolutionMode,
       };
       items.push(candidate);
       if (quality === '4K' && panMatch.index >= 0) tier1.push(candidate);

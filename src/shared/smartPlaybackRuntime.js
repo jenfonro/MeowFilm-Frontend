@@ -1,4 +1,4 @@
-import { buildSearchGroupKey } from './searchRuntime';
+import { buildSearchGroupKey, resolveDisplayedSiteGroupKey } from './searchRuntime';
 import { ensurePlayHistoryRowForContext } from './playHistoryRuntime';
 import { buildPlaybackRecognitionData } from './smartSourceRecognition';
 import {
@@ -153,6 +153,13 @@ export const buildSiteSourceResultItemsFromSnapshot = ({
   if (!siteItems.length) return [];
   const targetGroupKey = buildSearchGroupKey(title, runtimeConfig.aggregateRules, { contentKind });
   if (!targetGroupKey) return [];
+  const displayMode = normalizeString(runtimeConfig && runtimeConfig.searchDisplayMode);
+  const tmdbByGroup = new Map();
+  (Array.isArray(snapshot.tmdbItems) ? snapshot.tmdbItems : []).forEach((item) => {
+    const groupKey = normalizeString(item && item.groupKey);
+    if (!groupKey) return;
+    tmdbByGroup.set(groupKey, item);
+  });
   const blockedKeySet = new Set(
     (Array.isArray(blockedSiteKeys) ? blockedSiteKeys : [])
       .map((item) => normalizeString(item))
@@ -164,7 +171,7 @@ export const buildSiteSourceResultItemsFromSnapshot = ({
     .filter(
       (item) =>
         item &&
-        normalizeString(item.groupKey) === targetGroupKey &&
+        normalizeString(resolveDisplayedSiteGroupKey(item, tmdbByGroup, displayMode)) === targetGroupKey &&
         !blockedKeySet.has(normalizeString(item.siteKey)) &&
         !(
           blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.videoId)}`]
@@ -267,6 +274,8 @@ export const cacheRecognitionForSiteResult = ({
   signature,
   runtimeSettings,
   smartEpisodeMapping,
+  allowDegradedMapping = true,
+  requireDoubanReadyForMultiSeasonFallback = true,
 } = {}) => {
   const target = item && typeof item === 'object' ? item : null;
   const rawDetail = detail && typeof detail === 'object' ? detail : null;
@@ -288,6 +297,8 @@ export const cacheRecognitionForSiteResult = ({
       siteResultItem: target,
       runtimeSettings,
       smartEpisodeMapping,
+      allowDegradedMapping,
+      requireDoubanReadyForMultiSeasonFallback,
     });
   });
   return {
@@ -335,12 +346,17 @@ export const collectRecognitionCandidatesForTarget = ({
   globalEpisodeNo,
   wantEpisodeInSeason = 0,
   episodeSource = 'TMDB',
+  allowResolutionModes = null,
 } = {}) => {
   const target = item && typeof item === 'object' ? item : null;
   const matchKind = normalizeMatchKind(matchOptions);
   const targetGlobal = normalizeInt(globalEpisodeNo);
   const targetLoose = normalizeInt(wantEpisodeInSeason);
   const sourceMode = normalizeString(episodeSource) === '豆瓣' ? 'douban' : 'tmdb';
+  const allowedResolutionModes = Array.isArray(allowResolutionModes)
+    ? allowResolutionModes.map((value) => normalizeString(value)).filter(Boolean)
+    : [];
+  const hasResolutionModeFilter = allowedResolutionModes.length > 0;
   if (!target || (matchKind === 'episode' && targetGlobal <= 0)) return [];
   const candidates = [];
   getRecognitionCandidatesForSiteResult({ store, item: target, signature }).forEach((recognitionData) => {
@@ -356,6 +372,8 @@ export const collectRecognitionCandidatesForTarget = ({
     ];
     tiers.forEach((list, tierIndex) => {
       list.forEach((candidate) => {
+        const resolutionMode = normalizeString(candidate && candidate.resolutionMode);
+        if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) return;
         if (matchKind === 'movie') {
           if (normalizeString(candidate && candidate.matchKind) !== 'movie' || !(candidate && candidate.movieMatched)) return;
           const itemIndex = normalizeInt(candidate && candidate.itemIndex);
@@ -635,6 +653,9 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
   runtimeSettings,
   smartEpisodeMapping,
   episodeSource = 'TMDB',
+  allowDegradedMapping = true,
+  requireDoubanReadyForMultiSeasonFallback = true,
+  allowResolutionModes = null,
   isCandidateAllowed,
   buildSelectionKey,
   cacheHistoryDetail,
@@ -644,6 +665,10 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
   const playFlag = normalizeString(row && row.playFlag);
   const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
   const targetLoose = Math.max(0, normalizeInt(wantEpisodeInSeason));
+  const allowedResolutionModes = Array.isArray(allowResolutionModes)
+    ? allowResolutionModes.map((value) => normalizeString(value)).filter(Boolean)
+    : [];
+  const hasResolutionModeFilter = allowedResolutionModes.length > 0;
   if (!row || !playFlag || (matchKind === 'episode' && targetGlobal <= 0) || !playFlag.includes('-')) return null;
   const provider = normalizeString(panMockProviderFromFlag(playFlag)).toLowerCase();
   if (!provider) return null;
@@ -679,6 +704,8 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
     siteResultItem: siteItem,
     runtimeSettings,
     smartEpisodeMapping,
+    allowDegradedMapping,
+    requireDoubanReadyForMultiSeasonFallback,
   });
   const sourceMode = normalizeString(episodeSource) === '豆瓣' ? 'douban' : 'tmdb';
   const tiers = [
@@ -690,6 +717,8 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
     const list = tiers[tierIndex];
     for (let i = 0; i < list.length; i += 1) {
       const candidate = list[i];
+      const resolutionMode = normalizeString(candidate && candidate.resolutionMode);
+      if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) continue;
       let looseMatch = false;
       if (matchKind === 'movie') {
         if (normalizeString(candidate && candidate.matchKind) !== 'movie' || !(candidate && candidate.movieMatched)) continue;
@@ -783,6 +812,9 @@ export const resolveHistoryBootstrapPlaybackTarget = async ({
   runtimeSettings,
   smartEpisodeMapping,
   episodeSource = 'TMDB',
+  allowDegradedMapping = true,
+  requireDoubanReadyForMultiSeasonFallback = true,
+  allowResolutionModes = null,
   isCandidateAllowed,
   buildSelectionKey,
   getCachedSiteResultDetail,
@@ -808,6 +840,9 @@ export const resolveHistoryBootstrapPlaybackTarget = async ({
       runtimeSettings,
       smartEpisodeMapping,
       episodeSource,
+      allowDegradedMapping,
+      requireDoubanReadyForMultiSeasonFallback,
+      allowResolutionModes,
       isCandidateAllowed,
       buildSelectionKey,
       cacheHistoryDetail,

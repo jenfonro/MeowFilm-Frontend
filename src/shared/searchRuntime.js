@@ -160,7 +160,7 @@ const extractSeriesVariantMetaFromText = (rawValue) => {
   return { kind: '', index: 0 };
 };
 
-const resolveDisplayedSiteGroupKey = (item, tmdbByGroup, displayMode) => {
+export const resolveDisplayedSiteGroupKey = (item, tmdbByGroup, displayMode) => {
   const baseGroupKey = normalizeString(item && item.groupKey);
   if (!baseGroupKey) return '';
   if (displayMode !== 'tmdb' && displayMode !== 'both') return baseGroupKey;

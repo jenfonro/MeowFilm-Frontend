@@ -33,6 +33,7 @@ export const playbackSessionState = reactive({
     selectionKey: '',
     globalEpisode: 0,
     itemIndex: -1,
+    sourceQuality: '',
     quality: '',
     pathName: '',
     rawFileName: '',
@@ -59,6 +60,7 @@ export const setCurrentPlaybackContext = (payload = {}) => {
     selectionKey: normalizeString(raw.selectionKey),
     globalEpisode: Math.max(0, normalizeInt(raw.globalEpisode)),
     itemIndex: normalizeInt(raw.itemIndex),
+    sourceQuality: normalizeString(raw.sourceQuality),
     quality: normalizeString(raw.quality),
     pathName: normalizeString(raw.pathName),
     rawFileName: normalizeString(raw.rawFileName),
@@ -220,8 +222,9 @@ export const buildPlayerControlUiState = ({
       `${normalizeString(playback.panFlag)} ${normalizeString(playback.panKey)}`,
       runtimeSettings,
     ) || '未知';
-  const currentQualityKey = normalizeQualityModeKeyForUi(playback.quality);
-  const currentQualityLabel = formatQualityLabelForUi(playback.quality);
+  const effectiveQualityValue = normalizeString(playback.sourceQuality) || normalizeString(playback.quality);
+  const currentQualityKey = normalizeQualityModeKeyForUi(effectiveQualityValue);
+  const currentQualityLabel = formatQualityLabelForUi(effectiveQualityValue);
 
   const playerPanMenuOptions = (() => {
     if (isPrimaryTmdbMode) {
@@ -325,7 +328,9 @@ export const buildSmartPlaybackConstraintStages = ({
     `${normalizeString(playback.panFlag)} ${normalizeString(playback.panKey)}`,
     runtimeSettings,
   );
-  const currentQualityKey = normalizeQualityModeKeyForUi(playback.quality);
+  const currentQualityKey = normalizeQualityModeKeyForUi(
+    normalizeString(playback.sourceQuality) || normalizeString(playback.quality),
+  );
   const targetPanFamily = normalizeString(selectedValue);
   const targetQualityKey = normalizeString(selectedValue);
   const stages = [];
