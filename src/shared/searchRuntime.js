@@ -96,6 +96,15 @@ const stripSeasonMarkers = (value) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const stripYearbangMarkers = (value) =>
+  String(value || '')
+    .replace(/年番\s*(?:[0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,10})?/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const stripSeriesVariantMarkers = (value) =>
+  stripYearbangMarkers(stripSeasonMarkers(value));
+
 const parseChineseSeasonNo = (rawValue) => {
   const raw = normalizeString(rawValue);
   if (!raw) return 0;
@@ -130,18 +139,25 @@ const parseChineseSeasonNo = (rawValue) => {
   return map[raw] || 0;
 };
 
-const extractSeasonHintFromText = (rawValue) => {
+const extractSeriesVariantMetaFromText = (rawValue) => {
   const text = normalizeString(rawValue);
-  if (!text) return 0;
+  if (!text) return { kind: '', index: 0 };
   const cleaned = preCleanForRules(text) || text;
   const matchSeasonEpisode = cleaned.match(/\bS\s*(\d{1,2})\s*E\s*\d{1,5}\b/i);
   if (matchSeasonEpisode && matchSeasonEpisode[1]) {
     const parsed = Number.parseInt(String(matchSeasonEpisode[1]), 10);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    if (Number.isFinite(parsed) && parsed > 0) return { kind: 'season', index: parsed };
   }
   const matchCnSeason = cleaned.match(/(?:第\s*)?([0-9０-９]{1,3}|[一二三四五六七八九十两〇零]{1,6})\s*季/i);
-  if (matchCnSeason && matchCnSeason[1]) return parseChineseSeasonNo(String(matchCnSeason[1]));
-  return 0;
+  if (matchCnSeason && matchCnSeason[1]) {
+    return { kind: 'season', index: parseChineseSeasonNo(String(matchCnSeason[1])) };
+  }
+  const matchYearbang = cleaned.match(/年番\s*([0-9０-９]{1,3}|[一二三四五六七八九十两〇零]{1,6})/i);
+  if (matchYearbang && matchYearbang[1]) {
+    return { kind: 'yearbang', index: parseChineseSeasonNo(String(matchYearbang[1])) };
+  }
+  if (/年番/i.test(cleaned)) return { kind: 'yearbang', index: 1 };
+  return { kind: '', index: 0 };
 };
 
 const resolveDisplayedSiteGroupKey = (item, tmdbByGroup, displayMode) => {
@@ -150,7 +166,7 @@ const resolveDisplayedSiteGroupKey = (item, tmdbByGroup, displayMode) => {
   if (displayMode !== 'tmdb' && displayMode !== 'both') return baseGroupKey;
   const title = normalizeString(item && item.title);
   if (!title) return baseGroupKey;
-  const strippedTitle = stripSeasonMarkers(preCleanForRules(title) || title);
+  const strippedTitle = stripSeriesVariantMarkers(preCleanForRules(title) || title);
   if (!strippedTitle || strippedTitle === (preCleanForRules(title) || title)) return baseGroupKey;
   const strippedGroupKey = normalizeForGroupKey(strippedTitle);
   if (!strippedGroupKey) return baseGroupKey;
@@ -160,6 +176,21 @@ const resolveDisplayedSiteGroupKey = (item, tmdbByGroup, displayMode) => {
   const tmdbSeasonCount = normalizeInt(tmdbMatch && tmdbMatch.seasonCount);
   if (seasonHint > 0 && tmdbSeasonCount > 0 && seasonHint > tmdbSeasonCount) return baseGroupKey;
   return strippedGroupKey;
+};
+
+const buildCanonicalSearchTitle = (title, compiledRules, { queryTrailingDigits = '', contentKind = 'tv' } = {}) => {
+  const base = sanitizeDisplayTitle(title);
+  if (!base) return '';
+  if (normalizeString(contentKind) === 'movie') return normalizeDisplayTitle(base) || base;
+  const preCleaned = preCleanForRules(base) || base;
+  const cleaned = sanitizeDisplayTitle(
+    applyCleanRules(preCleaned, compiledRules, {
+      skipTrailingDigitsRule: !!normalizeString(queryTrailingDigits),
+      queryTrailingDigits,
+    }) || preCleaned
+  );
+  const canonical = stripSeriesVariantMarkers(cleaned) || cleaned || base;
+  return normalizeDisplayTitle(canonical) || canonical || base;
 };
 
 const normalizePatternInput = (value) => {
@@ -398,19 +429,9 @@ const parseUnseasonedUpdateEpisode = (rawText) => {
 };
 
 export const buildSearchGroupKey = (title, compiledRules, { queryTrailingDigits = '', contentKind = 'tv' } = {}) => {
-  const base = sanitizeDisplayTitle(title);
-  if (normalizeString(contentKind) === 'movie') {
-    return normalizeForGroupKey(base);
-  }
-  const preCleaned = preCleanForRules(base) || base;
-  const cleaned = sanitizeDisplayTitle(
-    applyCleanRules(preCleaned, compiledRules, {
-      skipTrailingDigitsRule: !!normalizeString(queryTrailingDigits),
-      queryTrailingDigits,
-    }) || preCleaned
+  return normalizeForGroupKey(
+    buildCanonicalSearchTitle(title, compiledRules, { queryTrailingDigits, contentKind }) || sanitizeDisplayTitle(title)
   );
-  const cleanedForMatch = normalizeDisplayTitle(cleaned) || cleaned || base;
-  return normalizeForGroupKey(cleanedForMatch || base);
 };
 
 const formatAggregateTVRemark = ({ tmdbMatch, groupTitle, sources } = {}) => {
@@ -521,7 +542,8 @@ const mapTmdbItems = (data, settings, computeMatchScore) => {
       const tmdbType = normalizeTmdbMediaType(item && item.type);
       const tmdbId = normalizeInt(item && item.id);
       if (!title || !tmdbType || tmdbId <= 0) return null;
-      const dedupeKey = `${tmdbType}::${normalizeForGroupKey(title)}`;
+      const groupKey = buildSearchGroupKey(title, [], { contentKind: tmdbType });
+      const dedupeKey = `${tmdbType}::${groupKey}`;
       if (dedupeKey && seen.has(dedupeKey)) return null;
       seen.add(dedupeKey);
       const year = normalizeInt(item && item.year);
@@ -539,7 +561,7 @@ const mapTmdbItems = (data, settings, computeMatchScore) => {
         siteLabel: tmdbType === 'movie' ? '电影' : '剧集',
         score: computeMatchScore(title),
         seq: index,
-        groupKey: normalizeForGroupKey(title),
+        groupKey,
         tmdbId,
         tmdbType,
         tmdbRank: index + 1,
@@ -873,8 +895,15 @@ export async function streamSearch(query, config, { onUpdate, blockedSiteKeys = 
                 });
                 const list = normalizeSiteSearchList(payload);
                 list.slice(0, 12).forEach((item, innerIndex) => {
-                  const seasonHint =
-                    extractSeasonHintFromText(item.title) || extractSeasonHintFromText(item.remark);
+                  const variantMeta = (() => {
+                    const titleMeta = extractSeriesVariantMetaFromText(item.title);
+                    if (normalizeInt(titleMeta && titleMeta.index) > 0) return titleMeta;
+                    return extractSeriesVariantMetaFromText(item.remark);
+                  })();
+                  const seasonHint = normalizeInt(variantMeta && variantMeta.index);
+                  const seasonHintLabel = normalizeString(variantMeta && variantMeta.kind) === 'yearbang'
+                    ? `年番${Math.floor(seasonHint) || 1}`
+                    : (seasonHint > 0 ? `第${Math.floor(seasonHint)}季` : '');
                   siteItems.push({
                     id: `${normalizeString(site.key)}:${item.id}`,
                     sourceKind: 'site',
@@ -893,7 +922,7 @@ export async function streamSearch(query, config, { onUpdate, blockedSiteKeys = 
                       contentKind,
                     }),
                     seasonHint,
-                    seasonHintLabel: seasonHint > 0 ? `第${Math.floor(seasonHint)}季` : '',
+                    seasonHintLabel,
                   });
                 });
               } catch (_error) {
