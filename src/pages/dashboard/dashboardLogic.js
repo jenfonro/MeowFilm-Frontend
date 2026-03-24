@@ -48,6 +48,32 @@ export async function probeGoProxyVersion(base, timeoutMs = 4000) {
   }
 }
 
+export async function probeRelayVersion(base, secret, timeoutMs = 4000) {
+  const normalized = normalizeHttpBase(base);
+  if (!normalized) throw new Error('函数接口地址无效');
+  const target = new URL('version', `${normalized}/`);
+  target.searchParams.set('secret', typeof secret === 'string' ? secret.trim() : '');
+  const ms = Number.isFinite(Number(timeoutMs)) ? Math.max(0, Math.trunc(Number(timeoutMs))) : 0;
+  const controller = ms > 0 && typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), ms) : null;
+  try {
+    const { resp, data } = await requestJson(target.toString(), {
+      method: 'GET',
+      credentials: 'omit',
+      signal: controller ? controller.signal : undefined
+    });
+    if (!resp || !resp.ok) {
+      throw new Error((data && (data.message || data.error)) || `HTTP ${resp ? resp.status : 500}`);
+    }
+    return {
+      ok: true,
+      version: data && typeof data.version === 'string' ? data.version.trim() : ''
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function getSuccessJson(url) {
   const resp = await fetch(url, {
     credentials: 'include',
@@ -287,6 +313,10 @@ export async function deleteDashboardCatpawrunnerServer(payload) {
 
 export async function saveDashboardGoProxySettings(payload) {
   return postForm('/dashboard/goproxy/save', payload);
+}
+
+export async function saveDashboardRelaySettings(payload) {
+  return postForm('/dashboard/relay/save', payload);
 }
 
 export async function fetchDashboardVideoPans() {

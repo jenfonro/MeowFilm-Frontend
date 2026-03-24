@@ -909,6 +909,153 @@
               </button>
             </div>
           </div>
+
+          <div class="dashboard-card adm-space-y-4">
+            <div class="adm-flex adm-items-center adm-gap-3">
+              <div class="adm-text-sm adm-font-semibold adm-text-gray-700">边缘函数设置</div>
+            </div>
+
+            <div class="adm-space-y-1">
+              <div class="adm-text-sm adm-font-medium adm-text-gray-700">边缘函数启用</div>
+              <div>
+                <label class="enable-switch" title="边缘函数">
+                  <input v-model="relayForm.enabled" type="checkbox" />
+                  <span class="enable-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="adm-space-y-2">
+              <div class="adm-text-sm adm-font-medium adm-text-gray-700">auth</div>
+              <input v-model="relayForm.auth" class="tv-field" placeholder="auth" autocomplete="off" />
+              <div class="adm-text-xs adm-text-gray-500">用于函数服务器访问 MeowFilm 接口。</div>
+            </div>
+
+            <div class="adm-space-y-2">
+              <div class="adm-text-sm adm-font-medium adm-text-gray-700">超过 <input v-model="relayForm.goProxyThresholdGB" type="number" min="0" step="1" class="tv-field adm-inline-block" style="width: 96px;" /> G 的文件由 GoProxy 服务器进行代理</div>
+              <div class="adm-text-xs adm-text-gray-500">填 0 则不检测文件大小，始终走函数服务器逻辑。</div>
+            </div>
+
+            <div class="adm-space-y-2">
+              <div class="adm-flex adm-items-center adm-gap-2 adm-mb-1">
+                <div class="adm-text-sm adm-font-medium adm-text-gray-700">函数服务器</div>
+                <button type="button" class="btn-green" @click="openRelayEditorForCreate">添加</button>
+              </div>
+
+              <div class="tv-cpo-config-shell">
+                <div v-if="relayEditorOpen" class="tv-panel tv-cpo-config-editor adm-mb-3">
+                  <div class="user-form-grid">
+                    <span class="adm-text-sm adm-font-medium adm-text-gray-700 user-form-grid__label">名称：</span>
+                    <input v-model="relayEditorForm.name" class="tv-field" placeholder="名称" autocomplete="off" />
+
+                    <span class="adm-text-sm adm-font-medium adm-text-gray-700 user-form-grid__label">显示名称：</span>
+                    <input v-model="relayEditorForm.displayName" class="tv-field" placeholder="显示名称" autocomplete="off" />
+
+                    <span class="adm-text-sm adm-font-medium adm-text-gray-700 user-form-grid__label">接口地址：</span>
+                    <input v-model="relayEditorForm.base" class="tv-field" placeholder="http://example.com" autocomplete="off" />
+
+                    <span class="adm-text-sm adm-font-medium adm-text-gray-700 user-form-grid__label">密钥：</span>
+                    <input v-model="relayEditorForm.secret" class="tv-field" placeholder="密钥" autocomplete="off" />
+                  </div>
+                  <div class="adm-pt-2 adm-space-y-2">
+                    <div class="adm-text-sm adm-font-medium adm-text-gray-700">网盘启用</div>
+                    <div class="adm-flex adm-items-center adm-gap-3 adm-flex-wrap">
+                      <label class="adm-flex adm-items-center adm-gap-2 adm-text-sm adm-text-gray-700">
+                        <input v-model="relayEditorForm.pans.baidu" type="checkbox" />
+                        <span>百度</span>
+                      </label>
+                      <label class="adm-flex adm-items-center adm-gap-2 adm-text-sm adm-text-gray-700">
+                        <input v-model="relayEditorForm.pans.quark" type="checkbox" />
+                        <span>夸克</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="adm-flex adm-justify-start adm-items-center adm-gap-3 adm-mt-3">
+                    <button type="button" class="btn-green" :disabled="!canSaveRelayEditor" @click="confirmRelayEditor">
+                      {{ relayEditorMode === 'edit' ? '保存' : '添加' }}
+                    </button>
+                    <button type="button" class="btn-ghost-blue" @click="closeRelayEditor">取消</button>
+                  </div>
+                </div>
+
+                <div class="tv-panel tv-cpo-config-table adm-overflow-x-auto">
+                  <table class="adm-table-auto adm-w-max adm-max-w-full adm-text-sm adm-text-left adm-text-gray-700">
+                    <thead class="table-head">
+                      <tr>
+                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">名称</th>
+                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">显示名称</th>
+                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">接口地址</th>
+                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">版本</th>
+                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">状态</th>
+                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">密钥</th>
+                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">网盘启用</th>
+                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-if="!relayServers.length">
+                        <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="8">无数据</td>
+                      </tr>
+                      <tr v-for="server in relayServers" :key="server.base">
+                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ server.name || '-' }}</td>
+                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ server.displayName || '-' }}</td>
+                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ displayGoProxyBaseHost(server.base) || '-' }}</td>
+                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ formatRelayVersion(server.base) }}</td>
+                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">
+                          <span class="availability-tag" :class="goProxyProbeTagClass(getRelayProbe(server.base).state)">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                              <circle cx="12" cy="12" r="8"></circle>
+                              <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"></circle>
+                            </svg>
+                            {{ goProxyProbeTextFor(getRelayProbe(server.base).state) }}
+                          </span>
+                        </td>
+                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ server.secret ? '已设置' : '未设置' }}</td>
+                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">
+                          <div class="go-proxy-pan-switches">
+                            <div class="go-proxy-pan-switch">
+                              <span>百度</span>
+                              <label class="enable-switch" title="百度">
+                                <input
+                                  :checked="normalizeGoProxyPanMap(server.pans).baidu"
+                                  type="checkbox"
+                                  @change="setRelayPanEnabled(server.base, 'baidu', $event.target.checked)"
+                                />
+                                <span class="enable-slider"></span>
+                              </label>
+                            </div>
+                            <div class="go-proxy-pan-switch">
+                              <span>夸克</span>
+                              <label class="enable-switch" title="夸克">
+                                <input
+                                  :checked="normalizeGoProxyPanMap(server.pans).quark"
+                                  type="checkbox"
+                                  @change="setRelayPanEnabled(server.base, 'quark', $event.target.checked)"
+                                />
+                                <span class="enable-slider"></span>
+                              </label>
+                            </div>
+                          </div>
+                        </td>
+                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">
+                          <div class="action-group">
+                            <button type="button" class="action-btn blue" @click="openRelayEditorForEdit(server)">修改</button>
+                            <button type="button" class="action-btn red" @click="removeRelayServer(server.base)">删除</button>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="adm-pt-1 adm-flex adm-justify-start">
+              <button type="button" class="btn-green" :disabled="relaySaving" @click="saveRelaySettings">
+                {{ relaySaving ? '保存中' : '保存' }}
+              </button>
+            </div>
+          </div>
         </section>
 
         <section
@@ -2044,12 +2191,14 @@ import {
   fetchUsers,
   normalizeHttpBase,
   probeDashboardVideoSourceSites,
+  probeRelayVersion,
   probeGoProxyVersion,
   resolveDashboardCatpawrunnerApiBase,
   restoreDashboardBackup,
   saveCatpawrunnerAdminSettings,
   saveCatpawrunnerWebsitePans,
   saveDashboardCatpawrunnerServer,
+  saveDashboardRelaySettings,
   saveDashboardGoProxySettings,
   saveDashboardVideoPans,
   saveDashboardVideoSourceOrder,
@@ -2321,6 +2470,24 @@ const goProxyEditorForm = ref({
   name: '',
   displayName: '',
   base: '',
+  pans: { baidu: true, quark: true }
+});
+const relaySaving = ref(false);
+const relayForm = ref({
+  enabled: false,
+  auth: '',
+  goProxyThresholdGB: '0'
+});
+const relayServers = ref([]);
+const relayProbes = ref({});
+const relayEditorOpen = ref(false);
+const relayEditorMode = ref('create');
+const relayEditorOriginalBase = ref('');
+const relayEditorForm = ref({
+  name: '',
+  displayName: '',
+  base: '',
+  secret: '',
   pans: { baidu: true, quark: true }
 });
 const videoLoading = ref(false);
@@ -2778,6 +2945,10 @@ const canSaveCatServer = computed(() => {
 
 const canSaveGoProxyEditor = computed(() => {
   return !!goProxyEditorForm.value.name.trim() && !!normalizeHttpBase(goProxyEditorForm.value.base);
+});
+
+const canSaveRelayEditor = computed(() => {
+  return !!relayEditorForm.value.name.trim() && !!normalizeHttpBase(relayEditorForm.value.base);
 });
 
 const canSaveCatConfigEditor = computed(() => {
@@ -3797,6 +3968,17 @@ function normalizeGoProxyServerRow(server) {
   };
 }
 
+function normalizeRelayServerRow(server) {
+  const row = server && typeof server === 'object' ? server : {};
+  return {
+    name: typeof row.name === 'string' ? row.name : '',
+    displayName: typeof row.displayName === 'string' ? row.displayName : '',
+    base: normalizeHttpBase(row.base),
+    secret: typeof row.secret === 'string' ? row.secret.trim() : '',
+    pans: normalizeGoProxyPanMap(row.pans)
+  };
+}
+
 function normalizeGoProxyProbeState(value) {
   const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (raw === 'online' || raw === 'offline' || raw === 'checking') return raw;
@@ -3864,12 +4046,59 @@ function formatGoProxyVersion(base) {
   return '异常';
 }
 
+function getRelayProbe(base) {
+  const key = normalizeHttpBase(base).toLowerCase();
+  if (!key) return { state: 'checking', version: '', checkedAt: 0 };
+  const entry = relayProbes.value[key];
+  return entry && typeof entry === 'object' ? entry : { state: 'checking', version: '', checkedAt: 0 };
+}
+
+function setRelayProbe(base, patch) {
+  const key = normalizeHttpBase(base).toLowerCase();
+  if (!key) return;
+  relayProbes.value = {
+    ...relayProbes.value,
+    [key]: {
+      state: 'checking',
+      version: '',
+      checkedAt: 0,
+      ...(relayProbes.value[key] && typeof relayProbes.value[key] === 'object' ? relayProbes.value[key] : {}),
+      ...(patch && typeof patch === 'object' ? patch : {})
+    }
+  };
+}
+
+function ensureRelayProbeEntry(base) {
+  const key = normalizeHttpBase(base).toLowerCase();
+  if (!key || relayProbes.value[key]) return;
+  setRelayProbe(base, { state: 'checking', version: '', checkedAt: 0 });
+}
+
+function formatRelayVersion(base) {
+  const probe = getRelayProbe(base);
+  const state = normalizeGoProxyProbeState(probe.state);
+  if (state === 'checking') return '检测中';
+  if (state === 'online') return probe.version || '未知';
+  return '异常';
+}
+
 function normalizeGoProxyServersJson(raw) {
   if (Array.isArray(raw)) return raw.map(normalizeGoProxyServerRow).filter((item) => item.base);
   if (typeof raw !== 'string' || !raw.trim()) return [];
   try {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.map(normalizeGoProxyServerRow).filter((item) => item.base) : [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+function normalizeRelayServersJson(raw) {
+  if (Array.isArray(raw)) return raw.map(normalizeRelayServerRow).filter((item) => item.base);
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(normalizeRelayServerRow).filter((item) => item.base) : [];
   } catch (_e) {
     return [];
   }
@@ -4116,6 +4345,11 @@ async function loadInterfacePanel() {
     goProxyForm.value.autoSelect = !!settings.goProxyAutoSelect;
     goProxyServers.value = normalizeGoProxyServersJson(settings.goProxyServersJson);
     await probeAllGoProxyServers();
+    relayForm.value.enabled = !!settings.relayEnabled;
+    relayForm.value.auth = typeof settings.auth === 'string' ? settings.auth : '';
+    relayForm.value.goProxyThresholdGB = String(Math.max(0, Math.trunc(Number(settings.relayGoProxyThresholdGB) || 0)));
+    relayServers.value = normalizeRelayServersJson(settings.relayServersJson);
+    await probeAllRelayServers();
     if (catSelectedServerKey.value) {
       await hydrateSelectedCatServer();
     } else {
@@ -5352,6 +5586,140 @@ async function saveGoProxySettings() {
     notifyError((err && err.message) || '保存失败');
   } finally {
     goProxySaving.value = false;
+  }
+}
+
+function resetRelayEditorForm() {
+  relayEditorForm.value = {
+    name: '',
+    displayName: '',
+    base: '',
+    secret: '',
+    pans: { baidu: true, quark: true }
+  };
+}
+
+function buildRelayServerDraft() {
+  return normalizeRelayServerRow(relayEditorForm.value);
+}
+
+function applyRelayServerDraft(draft) {
+  const previousBase = relayEditorMode.value === 'edit' ? normalizeHttpBase(relayEditorOriginalBase.value) : '';
+  if (relayEditorMode.value === 'edit' && relayEditorOriginalBase.value) {
+    relayServers.value = relayServers.value.map((server) => (
+      server.base === relayEditorOriginalBase.value ? draft : server
+    ));
+  } else {
+    relayServers.value = [...relayServers.value.filter((server) => server.base !== draft.base), draft];
+  }
+  if (previousBase && previousBase !== draft.base && relayProbes.value[previousBase.toLowerCase()]) {
+    const next = { ...relayProbes.value };
+    delete next[previousBase.toLowerCase()];
+    relayProbes.value = next;
+  }
+  ensureRelayProbeEntry(draft.base);
+  probeOneRelayServer(draft.base);
+}
+
+function openRelayEditorForCreate() {
+  relayEditorMode.value = 'create';
+  relayEditorOriginalBase.value = '';
+  resetRelayEditorForm();
+  relayEditorOpen.value = true;
+}
+
+function openRelayEditorForEdit(server) {
+  const row = normalizeRelayServerRow(server);
+  relayEditorMode.value = 'edit';
+  relayEditorOriginalBase.value = row.base;
+  relayEditorForm.value = {
+    name: row.name,
+    displayName: row.displayName,
+    base: row.base,
+    secret: row.secret,
+    pans: normalizeGoProxyPanMap(row.pans)
+  };
+  relayEditorOpen.value = true;
+}
+
+function closeRelayEditor() {
+  relayEditorOpen.value = false;
+  relayEditorOriginalBase.value = '';
+  resetRelayEditorForm();
+}
+
+function confirmRelayEditor() {
+  if (!canSaveRelayEditor.value) return;
+  const draft = buildRelayServerDraft();
+  applyRelayServerDraft(draft);
+  closeRelayEditor();
+}
+
+function removeRelayServer(base) {
+  const target = normalizeHttpBase(base);
+  if (!target) return;
+  relayServers.value = relayServers.value.filter((server) => server.base !== target);
+  const key = target.toLowerCase();
+  if (relayProbes.value[key]) {
+    const next = { ...relayProbes.value };
+    delete next[key];
+    relayProbes.value = next;
+  }
+}
+
+function setRelayPanEnabled(base, panKey, checked) {
+  const target = normalizeHttpBase(base);
+  if (!target) return;
+  relayServers.value = relayServers.value.map((server) => {
+    if (server.base !== target) return server;
+    return {
+      ...server,
+      pans: {
+        ...normalizeGoProxyPanMap(server.pans),
+        [panKey]: !!checked
+      }
+    };
+  });
+}
+
+async function probeOneRelayServer(base) {
+  const target = normalizeHttpBase(base);
+  if (!target) return;
+  const row = relayServers.value.find((server) => server.base === target);
+  const secret = row && typeof row.secret === 'string' ? row.secret.trim() : '';
+  const prev = getRelayProbe(target);
+  setRelayProbe(target, { state: 'checking', version: '', checkedAt: prev.checkedAt || 0 });
+  try {
+    const result = await probeRelayVersion(target, secret, 4000);
+    setRelayProbe(target, { state: 'online', version: result.version || '', checkedAt: Date.now() });
+  } catch (_e) {
+    setRelayProbe(target, { state: 'offline', version: '', checkedAt: Date.now() });
+  }
+}
+
+async function probeAllRelayServers() {
+  const targets = relayServers.value.map((server) => server.base).filter(Boolean);
+  targets.forEach((base) => ensureRelayProbeEntry(base));
+  await Promise.all(targets.map((base) => probeOneRelayServer(base)));
+}
+
+async function saveRelaySettings() {
+  if (relaySaving.value) return;
+  relaySaving.value = true;
+  try {
+    const relayGoProxyThresholdGB = String(Math.max(0, Math.trunc(Number(relayForm.value.goProxyThresholdGB) || 0)));
+    relayForm.value.goProxyThresholdGB = relayGoProxyThresholdGB;
+    await saveDashboardRelaySettings({
+      relayEnabled: relayForm.value.enabled ? '1' : '0',
+      auth: relayForm.value.auth || '',
+      relayGoProxyThresholdGB,
+      relayServersJson: JSON.stringify(relayServers.value)
+    });
+    notifySuccess('保存成功');
+  } catch (err) {
+    notifyError((err && err.message) || '保存失败');
+  } finally {
+    relaySaving.value = false;
   }
 }
 
