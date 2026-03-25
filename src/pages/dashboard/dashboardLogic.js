@@ -516,8 +516,8 @@ function deriveTianyiMockMeta(flag, rawPasscode) {
   return out;
 }
 
-function derivePanMockPasscode(episodeName, episodeID) {
-  const nameRaw = typeof episodeName === 'string' ? episodeName.trim() : '';
+function derivePanMockPasscode(siteEpisodeFile, episodeID) {
+  const nameRaw = typeof siteEpisodeFile === 'string' ? siteEpisodeFile.trim() : '';
   if (nameRaw) return normalizePanMockPasscode(nameRaw);
   const idRaw = typeof episodeID === 'string' ? episodeID.trim() : '';
   if (idRaw && idRaw.includes('***')) {
@@ -653,8 +653,8 @@ function parsePlayCandidates(fromStr, urlStr) {
       if (!firstLine) continue;
       const idx = firstLine.indexOf('$');
       const id = String(idx >= 0 ? firstLine.slice(idx + 1) : firstLine).trim();
-      const episodeName = String(idx >= 0 ? firstLine.slice(0, idx) : '').trim();
-      const passcode = derivePanMockPasscode(episodeName, id);
+      const siteEpisodeFile = String(idx >= 0 ? firstLine.slice(0, idx) : '').trim();
+      const passcode = derivePanMockPasscode(siteEpisodeFile, id);
       if (!flag || !id) continue;
       const uniqKey = `${flag}@@${id}`;
       if (seen.has(uniqKey)) continue;

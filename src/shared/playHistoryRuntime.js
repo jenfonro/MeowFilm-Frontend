@@ -40,14 +40,14 @@ const buildHistoryIdentity = (context) => {
   const globalEpisode = Math.max(0, normalizeInt(target.globalEpisode));
   if (contentKey && globalEpisode > 0) return `${contentKey}::ep:${globalEpisode}`;
   const siteKey = normalizeString(target.siteKey);
-  const videoId = normalizeString(target.videoId);
-  if (!siteKey || !videoId) return '';
+  const siteDetail = normalizeString(target.siteDetail);
+  if (!siteKey || !siteDetail) return '';
   const selectionKey = normalizeString(target.selectionKey);
-  if (selectionKey) return `${siteKey}::${videoId}::selection:${selectionKey}`;
+  if (selectionKey) return `${siteKey}::${siteDetail}::selection:${selectionKey}`;
   const playFlag = normalizeString(target.playFlag);
-  const episodeIndex = Math.max(0, normalizeInt(target.episodeIndex));
-  if (playFlag) return `${siteKey}::${videoId}::flag:${playFlag}::${episodeIndex}`;
-  return `${siteKey}::${videoId}::idx:${episodeIndex}`;
+  const siteEpisodeIndex = Math.max(0, normalizeInt(target.siteEpisodeIndex));
+  if (playFlag) return `${siteKey}::${siteDetail}::flag:${playFlag}::${siteEpisodeIndex}`;
+  return `${siteKey}::${siteDetail}::idx:${siteEpisodeIndex}`;
 };
 
 const buildHistoryCommitKey = (context) => {
@@ -56,38 +56,12 @@ const buildHistoryCommitKey = (context) => {
   return [
     normalizeString(target.siteKey),
     normalizeString(target.spiderApi),
-    normalizeString(target.videoId),
+    normalizeString(target.siteDetail),
     normalizeString(target.playFlag),
-    String(Math.max(0, normalizeInt(target.episodeIndex))),
+    String(Math.max(0, normalizeInt(target.siteEpisodeIndex))),
     normalizeString(target.playbackItemId),
     normalizeString(target.identity),
   ].join('::');
-};
-
-const isSameEpisodeHistoryRow = (row, context) => {
-  const item = row && typeof row === 'object' ? row : null;
-  const target = context && typeof context === 'object' ? context : null;
-  if (!item || !target) return false;
-  const targetContentKey = normalizeString(target.contentKey).toLowerCase();
-  const targetGlobal = Math.max(0, normalizeInt(target.globalEpisode));
-  if (targetContentKey && targetGlobal > 0) {
-    const rowContentKey = normalizeString(item.contentKey).toLowerCase();
-    if (rowContentKey !== targetContentKey) return false;
-    const rowPlaybackItemId = normalizeString(item.playbackItemId);
-    const targetPlaybackItemId = normalizeString(target.playbackItemId);
-    if (rowPlaybackItemId && targetPlaybackItemId) {
-      return rowPlaybackItemId === targetPlaybackItemId;
-    }
-    return (
-      Math.max(0, normalizeInt(item.tmdbSeason)) === Math.max(0, normalizeInt(target.tmdbSeason))
-      && Math.max(0, normalizeInt(item.tmdbEpisode)) === Math.max(0, normalizeInt(target.tmdbEpisode))
-    );
-  }
-  const rowSiteKey = normalizeString(item.siteKey);
-  const rowVideoId = normalizeString(item.videoId);
-  if (rowSiteKey !== normalizeString(target.siteKey) || rowVideoId !== normalizeString(target.videoId)) return false;
-  const targetEpisodeIndex = Math.max(0, normalizeInt(target.episodeIndex));
-  return Math.max(0, normalizeInt(item.episodeIndex)) === targetEpisodeIndex;
 };
 
 export const playHistoryListState = reactive({
@@ -115,17 +89,17 @@ const historyProgressState = {
 
 const cloneHistoryRows = (items) => (Array.isArray(items) ? items.map((item) => ({ ...(item || {}) })) : []);
 
-const removePlayHistoryRowLocally = ({ contentKey = '', siteKey = '', videoId = '' } = {}) => {
+const removePlayHistoryRowLocally = ({ contentKey = '', siteKey = '', siteDetail = '' } = {}) => {
   const normalizedContentKey = normalizeString(contentKey);
   const normalizedSiteKey = normalizeString(siteKey);
-  const normalizedVideoId = normalizeString(videoId);
+  const normalizedSiteDetail = normalizeString(siteDetail);
   const list = Array.isArray(playHistoryListState.items) ? playHistoryListState.items : [];
   const nextItems = list.filter((item) => {
     if (!item || typeof item !== 'object') return false;
     if (normalizedContentKey) return normalizeString(item.contentKey) !== normalizedContentKey;
     return !(
       normalizeString(item.siteKey) === normalizedSiteKey
-      && normalizeString(item.videoId) === normalizedVideoId
+      && normalizeString(item.siteDetail) === normalizedSiteDetail
     );
   });
   updateHistoryListState({
@@ -142,13 +116,8 @@ const sameBaseHistoryTarget = (row, context) => {
   const target = context && typeof context === 'object' ? context : null;
   if (!item || !target) return false;
   const targetContentKey = normalizeString(target.contentKey).toLowerCase();
-  if (targetContentKey) {
-    return normalizeString(item.contentKey).toLowerCase() === targetContentKey;
-  }
-  return (
-    normalizeString(item.siteKey) === normalizeString(target.siteKey)
-    && normalizeString(item.videoId) === normalizeString(target.videoId)
-  );
+  if (!targetContentKey) return false;
+  return normalizeString(item.contentKey).toLowerCase() === targetContentKey;
 };
 
 const buildHistoryRowFromContext = (context, extra = {}) => {
@@ -159,21 +128,17 @@ const buildHistoryRowFromContext = (context, extra = {}) => {
     siteKey: normalizeString(target.siteKey),
     siteName: normalizeString(target.siteName),
     spiderApi: normalizeString(target.spiderApi),
-    videoId: normalizeString(target.videoId),
-    videoTitle: normalizeString(target.videoTitle),
-    videoPoster: normalizeString(target.videoPoster),
-    videoRemark: normalizeString(target.videoRemark),
+    siteDetail: normalizeString(target.siteDetail),
+    Poster: normalizeString(target.Poster),
+    Remark: normalizeString(target.Remark),
     tmdbId: Math.max(0, normalizeInt(target.tmdbId)),
     tmdbType: normalizeString(target.tmdbType),
     tmdbSeason: Math.max(0, normalizeInt(target.tmdbSeason)),
     tmdbEpisode: Math.max(0, normalizeInt(target.tmdbEpisode)),
     globalEpisode: Math.max(0, normalizeInt(target.globalEpisode)),
-    // Canonical history pan identity is playFlag. Keep panLabel empty for
-    // compatibility fields and old rows only.
-    panLabel: '',
     playFlag: normalizeString(target.playFlag),
-    episodeIndex: Math.max(0, normalizeInt(target.episodeIndex)),
-    episodeName: normalizeString(target.episodeName),
+    siteEpisodeIndex: Math.max(0, normalizeInt(target.siteEpisodeIndex)),
+    siteEpisodeFile: normalizeString(target.siteEpisodeFile),
     playbackItemId: normalizeString(target.playbackItemId),
     playbackPositionTicks: Math.max(0, normalizeInt64(patch.playbackPositionTicks)),
     playbackRuntimeTicks: Math.max(0, normalizeInt64(patch.playbackRuntimeTicks)),
@@ -186,7 +151,7 @@ const mergeHistoryRowLocally = (context, extra = {}) => {
   if (!target) return;
   const nextRow = buildHistoryRowFromContext(target, extra);
   const list = Array.isArray(playHistoryListState.items) ? playHistoryListState.items.slice() : [];
-  const index = list.findIndex((item) => isSameEpisodeHistoryRow(item, target));
+  const index = list.findIndex((item) => sameBaseHistoryTarget(item, target));
   if (index >= 0) {
     list.splice(index, 1);
   }
@@ -258,16 +223,16 @@ export const ensurePlayHistoryItems = async ({ limit = 50, force = false } = {})
   return playHistoryListState.items.slice(0, targetLimit);
 };
 
-export const deletePlayHistoryItem = async ({ contentKey = '', siteKey = '', videoId = '' } = {}) => {
+export const deletePlayHistoryItem = async ({ contentKey = '', siteKey = '', siteDetail = '' } = {}) => {
   const normalizedContentKey = normalizeString(contentKey);
   const normalizedSiteKey = normalizeString(siteKey);
-  const normalizedVideoId = normalizeString(videoId);
-  if (!normalizedContentKey && (!normalizedSiteKey || !normalizedVideoId)) {
+  const normalizedSiteDetail = normalizeString(siteDetail);
+  if (!normalizedContentKey && (!normalizedSiteKey || !normalizedSiteDetail)) {
     throw new Error('缺少历史记录标识');
   }
   const query = normalizedContentKey
     ? { contentKey: normalizedContentKey }
-    : { siteKey: normalizedSiteKey, videoId: normalizedVideoId };
+    : { siteKey: normalizedSiteKey, siteDetail: normalizedSiteDetail };
   const data = await apiDeleteJson(`/api/playhistory${buildQuery(query)}`, { dedupe: false });
   if (data && typeof data === 'object' && !Array.isArray(data) && data.success === false) {
     throw new Error(normalizeString(data.message || data.error || data.msg) || '删除失败');
@@ -276,7 +241,7 @@ export const deletePlayHistoryItem = async ({ contentKey = '', siteKey = '', vid
   removePlayHistoryRowLocally({
     contentKey: normalizedContentKey,
     siteKey: normalizedSiteKey,
-    videoId: normalizedVideoId,
+    siteDetail: normalizedSiteDetail,
   });
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
@@ -296,7 +261,7 @@ export const findPlayHistoryRowForContext = (context = {}, { sameEpisodeOnly = f
   if (!target) return null;
   const list = Array.isArray(playHistoryListState.items) ? playHistoryListState.items : [];
   if (sameEpisodeOnly) {
-    return list.find((item) => isSameEpisodeHistoryRow(item, target)) || null;
+    return list.find((item) => sameBaseHistoryTarget(item, target)) || null;
   }
   return list.find((item) => sameBaseHistoryTarget(item, target)) || null;
 };
@@ -318,21 +283,23 @@ export const playHistorySessionState = reactive({
     siteKey: '',
     siteName: '',
     spiderApi: '',
-    videoId: '',
-    videoTitle: '',
-    videoPoster: '',
-    videoRemark: '',
+    siteDetail: '',
+    Poster: '',
+    Remark: '',
     tmdbId: 0,
     tmdbType: '',
     tmdbSeason: 0,
     tmdbEpisode: 0,
     globalEpisode: 0,
-    panLabel: '',
     playFlag: '',
-    episodeIndex: 0,
-    episodeName: '',
+    siteEpisodeIndex: 0,
+    siteEpisodeFile: '',
     playbackItemId: '',
     selectionKey: '',
+  },
+  playbackState: {
+    started: false,
+    ready: false,
   },
   playerTime: {
     currentTime: 0,
@@ -388,7 +355,7 @@ const readResumeSecondsFromHistory = async (context) => {
     && now - playHistoryListState.at < 15_000
     && Array.isArray(playHistoryListState.items)
   ) {
-    const hit = playHistoryListState.items.find((item) => isSameEpisodeHistoryRow(item, target)) || null;
+    const hit = playHistoryListState.items.find((item) => sameBaseHistoryTarget(item, target)) || null;
     return fromTicks(hit && hit.playbackPositionTicks);
   }
   try {
@@ -396,7 +363,7 @@ const readResumeSecondsFromHistory = async (context) => {
   } catch (_error) {
     return 0;
   }
-  const hit = (Array.isArray(playHistoryListState.items) ? playHistoryListState.items : []).find((item) => isSameEpisodeHistoryRow(item, target)) || null;
+  const hit = (Array.isArray(playHistoryListState.items) ? playHistoryListState.items : []).find((item) => sameBaseHistoryTarget(item, target)) || null;
   return fromTicks(hit && hit.playbackPositionTicks);
 };
 
@@ -418,24 +385,26 @@ export const preparePlayHistoryContext = async (payload = {}) => {
     siteKey: normalizeString(raw.siteKey),
     siteName: normalizeString(raw.siteName),
     spiderApi: normalizeString(raw.spiderApi),
-    videoId: normalizeString(raw.videoId),
-    videoTitle: normalizeString(raw.videoTitle),
-    videoPoster: normalizeString(raw.videoPoster),
-    videoRemark: normalizeString(raw.videoRemark),
+    siteDetail: normalizeString(raw.siteDetail),
+    Poster: normalizeString(raw.Poster),
+    Remark: normalizeString(raw.Remark),
     tmdbId: Math.max(0, normalizeInt(raw.tmdbId)),
     tmdbType: normalizeString(raw.tmdbType).toLowerCase(),
     tmdbSeason: Math.max(0, normalizeInt(raw.tmdbSeason)),
     tmdbEpisode: Math.max(0, normalizeInt(raw.tmdbEpisode)),
     globalEpisode: Math.max(0, normalizeInt(raw.globalEpisode)),
-    panLabel: '',
     playFlag: normalizeString(raw.playFlag),
-    episodeIndex: Math.max(0, normalizeInt(raw.episodeIndex)),
-    episodeName: normalizeString(raw.episodeName),
+    siteEpisodeIndex: Math.max(0, normalizeInt(raw.siteEpisodeIndex)),
+    siteEpisodeFile: normalizeString(raw.siteEpisodeFile),
     playbackItemId: normalizeString(raw.playbackItemId),
     selectionKey: normalizeString(raw.selectionKey),
   };
   nextContext.identity = buildHistoryIdentity(nextContext);
   playHistorySessionState.activeContext = nextContext;
+  playHistorySessionState.playbackState = {
+    started: false,
+    ready: false,
+  };
 
   if (!nextContext.identity || !nextContext.reportEnabled) {
     setResumePlan({});
@@ -472,21 +441,23 @@ export const clearActivePlayHistoryContext = () => {
     siteKey: '',
     siteName: '',
     spiderApi: '',
-    videoId: '',
-    videoTitle: '',
-    videoPoster: '',
-    videoRemark: '',
+    siteDetail: '',
+    Poster: '',
+    Remark: '',
     tmdbId: 0,
     tmdbType: '',
     tmdbSeason: 0,
     tmdbEpisode: 0,
     globalEpisode: 0,
-    panLabel: '',
     playFlag: '',
-    episodeIndex: 0,
-    episodeName: '',
+    siteEpisodeIndex: 0,
+    siteEpisodeFile: '',
     playbackItemId: '',
     selectionKey: '',
+  };
+  playHistorySessionState.playbackState = {
+    started: false,
+    ready: false,
   };
   setResumePlan({});
 };
@@ -518,18 +489,16 @@ const commitHistoryBaseIfNeeded = async (reason = '') => {
         siteKey: context.siteKey,
         siteName: context.siteName,
         spiderApi: context.spiderApi,
-        videoId: context.videoId,
-        videoTitle: context.videoTitle,
-        videoPoster: context.videoPoster,
-        videoRemark: context.videoRemark,
+        siteDetail: context.siteDetail,
+        Poster: context.Poster,
+        Remark: context.Remark,
         tmdbId: context.tmdbId,
         tmdbType: context.tmdbType,
         tmdbSeason: context.tmdbSeason,
         tmdbEpisode: context.tmdbEpisode,
-    panLabel: '',
         playFlag: context.playFlag,
-        episodeIndex: context.episodeIndex,
-        episodeName: context.episodeName,
+        siteEpisodeIndex: context.siteEpisodeIndex,
+        siteEpisodeFile: context.siteEpisodeFile,
         playbackItemId: context.playbackItemId,
       }, { dedupe: false });
       mergeHistoryRowLocally(context);
@@ -548,9 +517,11 @@ const commitHistoryBaseIfNeeded = async (reason = '') => {
   void reason;
 };
 
-export const onPlayerHistoryPlaybackStart = async (reason = '') => {
-  await commitHistoryBaseIfNeeded(reason);
-  historyProgressState.at = Date.now();
+export const onPlayerHistoryPlaybackStart = async (_reason = '') => {
+  playHistorySessionState.playbackState = {
+    started: true,
+    ready: false,
+  };
   const plan = playHistorySessionState.resumePlan && typeof playHistorySessionState.resumePlan === 'object'
     ? playHistorySessionState.resumePlan
     : null;
@@ -570,11 +541,32 @@ export const onPlayerHistoryPlaybackStart = async (reason = '') => {
   return seconds;
 };
 
+export const confirmPlayerHistoryPlaybackReady = async (reason = '') => {
+  const context = playHistorySessionState.activeContext && typeof playHistorySessionState.activeContext === 'object'
+    ? playHistorySessionState.activeContext
+    : null;
+  if (!context || !context.reportEnabled) return;
+  const playbackState = playHistorySessionState.playbackState && typeof playHistorySessionState.playbackState === 'object'
+    ? playHistorySessionState.playbackState
+    : null;
+  if (!playbackState || !playbackState.started || playbackState.ready) return;
+  playHistorySessionState.playbackState = {
+    started: true,
+    ready: true,
+  };
+  historyProgressState.at = Date.now();
+  await commitHistoryBaseIfNeeded(reason);
+};
+
 export const syncHistoryProgressIfPossible = async ({ force = false } = {}) => {
   const context = playHistorySessionState.activeContext && typeof playHistorySessionState.activeContext === 'object'
     ? playHistorySessionState.activeContext
     : null;
   if (!context || !context.reportEnabled) return;
+  const playbackState = playHistorySessionState.playbackState && typeof playHistorySessionState.playbackState === 'object'
+    ? playHistorySessionState.playbackState
+    : null;
+  if (!playbackState || !playbackState.ready) return;
   const playerTime = playHistorySessionState.playerTime && typeof playHistorySessionState.playerTime === 'object'
     ? playHistorySessionState.playerTime
     : null;
@@ -594,18 +586,16 @@ export const syncHistoryProgressIfPossible = async ({ force = false } = {}) => {
         siteKey: context.siteKey,
         siteName: context.siteName,
         spiderApi: context.spiderApi,
-        videoId: context.videoId,
-        videoTitle: context.videoTitle,
-        videoPoster: context.videoPoster,
-        videoRemark: context.videoRemark,
+        siteDetail: context.siteDetail,
+        Poster: context.Poster,
+        Remark: context.Remark,
         tmdbId: context.tmdbId,
         tmdbType: context.tmdbType,
         tmdbSeason: context.tmdbSeason,
         tmdbEpisode: context.tmdbEpisode,
-        panLabel: '',
         playFlag: context.playFlag,
-        episodeIndex: context.episodeIndex,
-        episodeName: context.episodeName,
+        siteEpisodeIndex: context.siteEpisodeIndex,
+        siteEpisodeFile: context.siteEpisodeFile,
         playbackItemId: context.playbackItemId,
         playbackPositionTicks: positionTicks,
         playbackRuntimeTicks: runtimeTicks,
@@ -638,19 +628,17 @@ export const buildPlayHistoryPayload = ({
   siteKey = '',
   siteName = '',
   spiderApi = '',
-  videoId = '',
-  videoTitle = '',
-  videoPoster = '',
-  videoRemark = '',
+  siteDetail = '',
+  Poster = '',
+  Remark = '',
   tmdbId = 0,
   tmdbType = '',
   tmdbSeason = 0,
   tmdbEpisode = 0,
   globalEpisode = 0,
-  panLabel = '',
   playFlag = '',
-  episodeIndex = 0,
-  episodeName = '',
+  siteEpisodeIndex = 0,
+  siteEpisodeFile = '',
   selectionKey = '',
 } = {}) => {
   const payload = {
@@ -659,19 +647,17 @@ export const buildPlayHistoryPayload = ({
     siteKey: normalizeString(siteKey),
     siteName: normalizeString(siteName),
     spiderApi: normalizeString(spiderApi),
-    videoId: normalizeString(videoId),
-    videoTitle: normalizeString(videoTitle),
-    videoPoster: normalizeString(videoPoster),
-    videoRemark: normalizeString(videoRemark),
+    siteDetail: normalizeString(siteDetail),
+    Poster: normalizeString(Poster),
+    Remark: normalizeString(Remark),
     tmdbId: Math.max(0, normalizeInt(tmdbId)),
     tmdbType: normalizeString(tmdbType).toLowerCase(),
     tmdbSeason: Math.max(0, normalizeInt(tmdbSeason)),
     tmdbEpisode: Math.max(0, normalizeInt(tmdbEpisode)),
     globalEpisode: Math.max(0, normalizeInt(globalEpisode)),
-    panLabel: '',
     playFlag: normalizeString(playFlag),
-    episodeIndex: Math.max(0, normalizeInt(episodeIndex)),
-    episodeName: normalizeString(episodeName),
+    siteEpisodeIndex: Math.max(0, normalizeInt(siteEpisodeIndex)),
+    siteEpisodeFile: normalizeString(siteEpisodeFile),
     selectionKey: normalizeString(selectionKey),
     playbackItemId: '',
   };

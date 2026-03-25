@@ -372,7 +372,7 @@
         <div class="play-detail__inner">
           <div class="play-detail__poster">
             <div class="play-detail__posterWrap">
-              <img v-if="detailPoster" :src="detailPoster" :alt="displayTitle" class="play-detail__posterImg">
+              <img v-if="detailPoster" :src="detailPosterDisplay" :alt="displayTitle" class="play-detail__posterImg">
               <div v-else class="play-detail__posterSkeleton"></div>
             </div>
           </div>
@@ -438,6 +438,7 @@ import {
   buildPlayHistoryPayload,
   clearActivePlayHistoryContext,
   flushHistoryProgressBestEffort,
+  confirmPlayerHistoryPlaybackReady,
   onPlayerHistoryPlaybackStart,
   onPlayerHistoryTimeUpdate,
   preparePlayHistoryContext,
@@ -451,6 +452,7 @@ import {
   subscribeSearchSessionQuery,
   performSearchSessionSearch,
 } from '../../shared/searchSession';
+import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { addSmartMatchBlockItem, buildSearchGroupKey, clearBlockedMatchCaches, fetchBlockedMatchIndex } from '../../shared/searchRuntime';
 import { runSmartPlaybackController } from '../../shared/smartPlaybackController';
 import {
@@ -828,9 +830,9 @@ const buildTmdbMovieCandidateItems = ({
         const qualityLabel = formatMovieCandidateQualityLabel(qualityKey);
         const selectionKey = buildSiteEpisodeSelectionKey(panKey, itemIndex);
         siteRows.push({
-          key: `${normalizeString(item.siteKey)}::${normalizeString(item.videoId)}::${panKey}::${itemIndex}`,
+          key: `${normalizeString(item.siteKey)}::${normalizeString(item.siteDetail)}::${panKey}::${itemIndex}`,
           siteKey: normalizeString(item.siteKey),
-          videoId: normalizeString(item.videoId),
+          siteDetail: normalizeString(item.siteDetail),
           siteName: normalizeString(item.siteName) || normalizeString(item.siteLabel) || '站点',
           panKey,
           panFlag: normalizeString(pan && pan.label),
@@ -937,18 +939,17 @@ export default {
     bootstrap: { type: Object, default: () => ({}) },
     isTmdbMode: { type: Boolean, default: false },
     contentKey: { type: String, default: '' },
-    videoTitle: { type: String, default: '' },
     videoYear: { type: String, default: '' },
     searchType: { type: String, default: '' },
     siteKey: { type: String, default: '' },
     siteName: { type: String, default: '' },
     spiderApi: { type: String, default: '' },
-    videoId: { type: String, default: '' },
+    siteDetail: { type: String, default: '' },
     tmdbId: { type: [String, Number], default: '' },
     tmdbType: { type: String, default: '' },
     videoIntro: { type: String, default: '' },
-    videoPoster: { type: String, default: '' },
-    videoRemark: { type: String, default: '' },
+    Poster: { type: String, default: '' },
+    Remark: { type: String, default: '' },
     switchOnlyToken: { type: Number, default: 0 },
     openFromSearch: { type: Number, default: 0 },
     originSearchQuery: { type: String, default: '' },
@@ -999,14 +1000,14 @@ export default {
       if (this.selectedSiteResultItem) return this.selectedSiteResultItem;
       if (this.isTmdbMode) return null;
       const spiderApi = normalizeString(this.spiderApi);
-      const videoId = normalizeString(this.videoId);
-      if (!spiderApi || !videoId) return null;
+      const siteDetail = normalizeString(this.siteDetail);
+      if (!spiderApi || !siteDetail) return null;
       return {
-        id: `direct:${spiderApi}::${videoId}`,
+        id: `direct:${spiderApi}::${siteDetail}`,
         siteKey: normalizeString(this.siteKey),
         siteName: normalizeString(this.siteName),
         spiderApi,
-        videoId,
+        siteDetail,
       };
     },
     currentPanSourceOptions() {
@@ -1121,19 +1122,7 @@ export default {
       return '';
     },
     playContentPreferenceKey() {
-      const propKey = normalizeString(this.contentKey);
-      if (propKey) return propKey;
-      if (this.isTmdbMode) {
-        const type = normalizeString(this.tmdbType || this.searchType).toLowerCase();
-        const id = normalizeString(this.tmdbId);
-        if ((type === 'movie' || type === 'tv') && id) return `tmdb:${type}:${id}`;
-      }
-      const siteKey = normalizeString(this.siteKey);
-      const videoId = normalizeString(this.videoId);
-      if (siteKey && videoId) return `site:${siteKey}:${videoId}`;
-      const spiderApi = normalizeString(this.spiderApi);
-      if (spiderApi && videoId) return `site:${spiderApi}:${videoId}`;
-      return '';
+      return normalizeString(this.contentKey);
     },
     episodeMetaModeStorageKey() {
       const key = normalizeString(this.playContentPreferenceKey);
@@ -1782,7 +1771,7 @@ export default {
         siteKey: normalizeString(raw && raw.siteKey),
         siteName: normalizeString(raw && raw.siteName),
         spiderApi: normalizeString(raw && raw.spiderApi),
-        videoId: normalizeString(raw && raw.videoId),
+        siteDetail: normalizeString(raw && raw.siteDetail),
         panKey: normalizeString(raw && raw.panKey),
         panFlag: normalizeString(raw && raw.panFlag),
         selectionKey: normalizeString(raw && raw.selectionKey),
@@ -1919,10 +1908,13 @@ export default {
         : { source: null, items: [], tier1: [], tier2: [], tier3: [] };
     },
     displayTitle() {
-      return normalizeString(this.videoTitle) || '未命名内容';
+      return normalizeString(this.contentKey) || '未命名内容';
     },
     detailPoster() {
-      return normalizeString(this.videoPoster);
+      return normalizeString(this.Poster);
+    },
+    detailPosterDisplay() {
+      return rewriteDisplayPosterUrl(this.detailPoster, this.runtimeSettings || {});
     },
     detailMetaTags() {
       const tags = this.isTmdbMode
@@ -1954,6 +1946,9 @@ export default {
     },
     detailYearText() {
       return this.detailYear || '';
+    },
+    historyRemarkText() {
+      return normalizeString(this.Remark);
     },
     detailRemarkText() {
       return this.detailRemark || '';
@@ -2110,12 +2105,12 @@ export default {
       const siteKey = normalizeString(target && target.siteKey)
         || normalizeString(siteItem && siteItem.siteKey)
         || normalizeString(source && source.siteKey);
-      const videoId = normalizeString(target && target.videoId)
-        || normalizeString(siteItem && siteItem.videoId)
-        || normalizeString(source && source.videoId);
+      const siteDetail = normalizeString(target && target.siteDetail)
+        || normalizeString(siteItem && siteItem.siteDetail)
+        || normalizeString(source && source.siteDetail);
       const fileIdentity = this.buildSwitchFileIdentity(target);
-      if (!siteKey || !videoId || !fileIdentity) return '';
-      return `${siteKey}::${videoId}::${fileIdentity}`;
+      if (!siteKey || !siteDetail || !fileIdentity) return '';
+      return `${siteKey}::${siteDetail}::${fileIdentity}`;
     },
     buildSwitchFileIdentity(wrapper) {
       const target = wrapper && typeof wrapper === 'object' ? wrapper : null;
@@ -2126,9 +2121,9 @@ export default {
       if (segmentIdentity) return segmentIdentity;
       return '';
     },
-    buildPlaybackSourceSignature({ siteKey = '', videoId = '', panKey = '', itemIndex = -1 } = {}) {
+    buildPlaybackSourceSignature({ siteKey = '', siteDetail = '', panKey = '', itemIndex = -1 } = {}) {
       const nextSiteKey = normalizeString(siteKey);
-      const nextVideoId = normalizeString(videoId);
+      const nextVideoId = normalizeString(siteDetail);
       const nextPanKey = normalizeString(panKey);
       const nextItemIndex = normalizeInt(itemIndex);
       if (!nextSiteKey || !nextVideoId || !nextPanKey || nextItemIndex < 0) return '';
@@ -2181,12 +2176,12 @@ export default {
         ? this.currentPlaybackContext
         : null;
       const siteKey = normalizeString(playback && playback.siteKey);
-      const videoId = normalizeString(playback && playback.videoId);
+      const siteDetail = normalizeString(playback && playback.siteDetail);
       const fileIdentity = normalizeString(playback && playback.fileIdentity);
-      if (!siteKey || !videoId || !fileIdentity) return;
+      if (!siteKey || !siteDetail || !fileIdentity) return;
       this.appendSwitchSkippedCandidate(episodeKey, {
         siteKey,
-        videoId,
+        siteDetail,
         fileIdentity,
       });
     },
@@ -2445,7 +2440,7 @@ export default {
         fromHistoryDetail,
       });
       const nextSiteKey = normalizeString(item && item.siteKey);
-      const nextVideoId = normalizeString(item && item.videoId);
+      const nextVideoId = normalizeString(item && item.siteDetail);
       const nextPanKey = normalizeString(pan && pan.key);
       const nextItemIndex = normalizeInt(seg && seg.index);
       const nextRawFileName = pickRawFileNameForStats(seg && seg.displayName, seg && seg.rawName);
@@ -2455,7 +2450,7 @@ export default {
         siteKey: nextSiteKey,
         siteName: normalizeString(item && item.siteName),
         spiderApi: normalizeString(item && item.spiderApi),
-        videoId: nextVideoId,
+        siteDetail: nextVideoId,
         panKey: nextPanKey,
         panFlag: normalizeString(pan && pan.label),
         selectionKey: nextSelectionKey,
@@ -2469,7 +2464,7 @@ export default {
         sourceKind: nextSourceKind,
         sourceSignature: this.buildPlaybackSourceSignature({
           siteKey: nextSiteKey,
-          videoId: nextVideoId,
+          siteDetail: nextVideoId,
           panKey: nextPanKey,
           itemIndex: nextItemIndex,
         }),
@@ -2642,8 +2637,8 @@ export default {
         contentKind: this.playSearchContentKind,
       });
     },
-    getPlayMatchBlockEntry(siteKey, videoId) {
-      const key = `${normalizeString(siteKey)}::${normalizeString(videoId)}`;
+    getPlayMatchBlockEntry(siteKey, siteDetail) {
+      const key = `${normalizeString(siteKey)}::${normalizeString(siteDetail)}`;
       if (!key || key === '::') return null;
       const index = this.playBlockedMatchIndex && typeof this.playBlockedMatchIndex === 'object'
         ? this.playBlockedMatchIndex
@@ -2656,8 +2651,8 @@ export default {
       const candidate = wrapper && wrapper.candidate && typeof wrapper.candidate === 'object' ? wrapper.candidate : null;
       const source = candidate && candidate.source && typeof candidate.source === 'object' ? candidate.source : null;
       const siteKey = normalizeString(source && source.siteKey) || normalizeString(item && item.siteKey);
-      const videoId = normalizeString(source && source.videoId) || normalizeString(item && item.videoId);
-      const entry = this.getPlayMatchBlockEntry(siteKey, videoId);
+      const siteDetail = normalizeString(source && source.siteDetail) || normalizeString(item && item.siteDetail);
+      const entry = this.getPlayMatchBlockEntry(siteKey, siteDetail);
       if (!entry) return false;
       if (entry.blockAll) return true;
       const panFlag = normalizeString(candidate && candidate.panFlag)
@@ -2687,24 +2682,22 @@ export default {
     buildPlayHistoryWarmContext() {
       return {
         contentKey: this.playContentPreferenceKey,
-        siteKey: normalizeString(this.siteKey),
-        videoId: normalizeString(this.videoId),
       };
     },
     syncPlaybackContextFromHistoryRow(row) {
       const item = row && typeof row === 'object' ? row : null;
       if (!item) return;
       const nextGlobalEpisode = this.getHistoryRowGlobalEpisode(item);
-      const nextPlayFlag = normalizeString(item.playFlag) || normalizeString(item.panLabel);
+      const nextPlayFlag = normalizeString(item.playFlag);
       const nextSelectionKey = normalizeString(item.selectionKey);
-      const nextEpisodeIndex = Math.max(0, normalizeInt(item.episodeIndex) - 1);
-      const nextEpisodeName = normalizeString(item.episodeName);
+      const nextSiteEpisodeIndex = Math.max(0, normalizeInt(item.siteEpisodeIndex) - 1);
+      const nextSiteEpisodeFile = normalizeString(item.siteEpisodeFile);
       patchCurrentPlaybackContext({
         globalEpisode: nextGlobalEpisode,
         panFlag: nextPlayFlag,
         selectionKey: nextSelectionKey,
-        itemIndex: nextEpisodeIndex,
-        rawFileName: nextEpisodeName,
+        itemIndex: nextSiteEpisodeIndex,
+        rawFileName: nextSiteEpisodeFile,
       });
       this.$nextTick(() => this.syncPlaybackDisplayFocus());
     },
@@ -2727,7 +2720,7 @@ export default {
     },
     async prefetchPlayHistoryForPage() {
       const context = this.buildPlayHistoryWarmContext();
-      if (!normalizeString(context.contentKey) && (!normalizeString(context.siteKey) || !normalizeString(context.videoId))) return;
+      if (!normalizeString(context.contentKey) && (!normalizeString(context.siteKey) || !normalizeString(context.siteDetail))) return;
       await warmPlayHistoryForContext(context, { limit: 50 });
     },
     parseHistoryPlaybackItemId(row) {
@@ -2781,9 +2774,9 @@ export default {
       const history = row && typeof row === 'object' ? row : null;
       const wantedPlayFlag = normalizeString(history && history.playFlag);
       const wantedSelectionKey = normalizeString(history && history.selectionKey);
-      const wantedEpisodeName = this.normalizeHistoryEpisodeName(history && history.episodeName);
-      const wantedIndex = Math.max(0, normalizeInt(history && history.episodeIndex) - 1);
-      const wantPanNorm = this.normalizeHistoryEpisodeName(wantedPlayFlag || normalizeString(history && history.panLabel));
+      const wantedEpisodeName = this.normalizeHistoryEpisodeName(history && history.siteEpisodeFile);
+      const wantedIndex = Math.max(0, normalizeInt(history && history.siteEpisodeIndex) - 1);
+      const wantPanNorm = this.normalizeHistoryEpisodeName(wantedPlayFlag);
       let panKey = normalizeString(this.selectedPanSource);
       if (wantPanNorm) {
         const hit = panOptions.find((item) => {
@@ -2937,42 +2930,48 @@ export default {
     },
     buildPlayHistoryPayloadForResolvedSegment({ siteItem, pan, segment, selectionKey, globalEpisode = 0 } = {}) {
       const item = siteItem && typeof siteItem === 'object' ? siteItem : null;
+      const playback = this.currentPlaybackContext && typeof this.currentPlaybackContext === 'object'
+        ? this.currentPlaybackContext
+        : null;
       const nextGlobalEpisode = Math.max(0, normalizeInt(globalEpisode));
-      const tmdbTarget = nextGlobalEpisode > 0
+      const canReportTMDBHistory = !!this.isTmdbMode;
+      const tmdbTarget = canReportTMDBHistory && nextGlobalEpisode > 0
         ? tmdbSeasonEpisodeOfGlobal(this.detailTMDBData, nextGlobalEpisode)
         : null;
       return buildPlayHistoryPayload({
         contentKey: this.playContentPreferenceKey,
-        reportEnabled: this.isTmdbMode ? (this.tmdbMovieMode || nextGlobalEpisode > 0) : true,
+        reportEnabled: canReportTMDBHistory ? (this.tmdbMovieMode || nextGlobalEpisode > 0) : true,
         siteKey: normalizeString(item && item.siteKey) || normalizeString(this.siteKey),
         siteName: normalizeString(item && item.siteName) || normalizeString(this.siteName),
         spiderApi: normalizeString(item && item.spiderApi) || normalizeString(this.spiderApi),
-        videoId: normalizeString(item && item.videoId) || normalizeString(this.videoId),
-        videoTitle: this.displayTitle,
-        videoPoster: this.detailPoster,
-        videoRemark: this.detailRemarkText,
-        tmdbId: this.tmdbId,
-        tmdbType: this.tmdbType || this.searchType,
-        tmdbSeason: normalizeInt(tmdbTarget && tmdbTarget.season),
-        tmdbEpisode: normalizeInt(tmdbTarget && tmdbTarget.episode),
+        siteDetail: normalizeString(item && item.siteDetail)
+          || normalizeString(playback && playback.siteDetail)
+          || (!canReportTMDBHistory ? normalizeString(this.siteDetail) : ''),
+        Poster: this.detailPoster,
+        Remark: this.historyRemarkText,
+        tmdbId: canReportTMDBHistory ? this.tmdbId : 0,
+        tmdbType: canReportTMDBHistory ? (this.tmdbType || this.searchType) : '',
+        tmdbSeason: canReportTMDBHistory ? normalizeInt(tmdbTarget && tmdbTarget.season) : 0,
+        tmdbEpisode: canReportTMDBHistory ? normalizeInt(tmdbTarget && tmdbTarget.episode) : 0,
         globalEpisode: nextGlobalEpisode,
-        panLabel: '',
         playFlag: normalizeString(pan && pan.label),
-        episodeIndex: Math.max(1, normalizeInt(segment && segment.index) + 1),
-        episodeName: pickRawFileNameForStats(segment && segment.displayName, segment && segment.rawName),
+        siteEpisodeIndex: Math.max(1, normalizeInt(segment && segment.index) + 1),
+        siteEpisodeFile: pickRawFileNameForStats(segment && segment.displayName, segment && segment.rawName),
         selectionKey,
       });
     },
     async applyPlayHistoryResume(reason = '') {
       const seconds = await onPlayerHistoryPlaybackStart(reason);
-      if (seconds <= 0) return;
-      await this.$nextTick();
-      const art = this.$refs.artPlayerRef;
-      if (art && typeof art.seekTo === 'function') {
-        try {
-          art.seekTo(seconds);
-        } catch (_error) {}
+      if (seconds > 0) {
+        await this.$nextTick();
+        const art = this.$refs.artPlayerRef;
+        if (art && typeof art.seekTo === 'function') {
+          try {
+            art.seekTo(seconds);
+          } catch (_error) {}
+        }
       }
+      await confirmPlayerHistoryPlaybackReady(reason);
     },
     isEpisodeButtonActive(episode) {
       const item = episode && typeof episode === 'object' ? episode : null;
@@ -3015,9 +3014,9 @@ export default {
         : null;
       if (!item || !playback) return false;
       const playbackSiteKey = normalizeString(playback.siteKey);
-      const playbackVideoId = normalizeString(playback.videoId);
+      const playbackVideoId = normalizeString(playback.siteDetail);
       const itemSiteKey = normalizeString(item.siteKey);
-      const itemVideoId = normalizeString(item.videoId);
+      const itemVideoId = normalizeString(item.siteDetail);
       if (!playbackSiteKey || !playbackVideoId || playbackSiteKey !== itemSiteKey || playbackVideoId !== itemVideoId) return false;
       const playbackPanKey = normalizeString(playback.panKey);
       const itemPanKey = normalizeString(item.panKey);
@@ -3872,14 +3871,14 @@ export default {
           siteKey: normalizeString(playback && playback.siteKey),
           siteName: normalizeString(playback && playback.siteName),
           spiderApi: normalizeString(playback && playback.spiderApi),
-          videoId: normalizeString(playback && playback.videoId),
+          siteDetail: normalizeString(playback && playback.siteDetail),
         };
       const panFlag = normalizeString(this.currentPlaybackContext && this.currentPlaybackContext.panFlag)
         || normalizeString(payload && payload.panEntry && payload.panEntry.label);
       const siteKey = normalizeString(siteItem && siteItem.siteKey);
       const spiderApi = normalizeString(siteItem && siteItem.spiderApi);
-      const videoId = normalizeString(siteItem && siteItem.videoId);
-      if (!keyword || !siteKey || !videoId || !panFlag) {
+      const siteDetail = normalizeString(siteItem && siteItem.siteDetail);
+      if (!keyword || !siteKey || !siteDetail || !panFlag) {
         this.playError = '当前片源信息不完整';
         return false;
       }
@@ -3887,7 +3886,7 @@ export default {
         keyword,
         siteKey,
         spiderApi,
-        videoId,
+        siteDetail,
         poster: normalizeString(this.detailPoster),
         panFlag,
         source: 'play',
@@ -4064,19 +4063,8 @@ export default {
       this.pendingProxyRetry = null;
       this.activePlayerControlAction = '';
       this.finishPlayerSwitchTransition();
-      const pendingRunSeq = normalizeInt(this.smartPlaybackPendingRunSeq);
-      if (pendingRunSeq > 0 && pendingRunSeq === this.smartPlaybackRunSeq) {
-        this.smartPlaybackConfirmedRunSeq = pendingRunSeq;
-        this.smartPlaybackAttemptRunSeq = 0;
-        if (typeof this.smartPlaybackStreamCleanup === 'function') {
-          try {
-            this.smartPlaybackStreamCleanup();
-          } catch (_e) {}
-        }
-        this.smartPlaybackStreamCleanup = null;
-      }
     },
-    onPlayerFirstFrame() {
+    async onPlayerFirstFrame() {
       this.playLoading = false;
       this.playerRuntimeError = '';
       this.playerBuffering = false;
@@ -4085,7 +4073,7 @@ export default {
       this.pendingProxyRetry = null;
       this.activePlayerControlAction = '';
       this.finishPlayerSwitchTransition();
-      void this.applyPlayHistoryResume('firstframe');
+      await this.applyPlayHistoryResume('firstframe');
       const pendingRunSeq = normalizeInt(this.smartPlaybackPendingRunSeq);
       if (pendingRunSeq > 0 && pendingRunSeq === this.smartPlaybackRunSeq) {
         this.smartPlaybackConfirmedRunSeq = pendingRunSeq;
@@ -4169,7 +4157,7 @@ export default {
       if (!target || !target.scheme) return;
       const durl = normalizeString(this.playerUrl);
       if (!durl) return;
-      const name = normalizeString(this.displayTitle || this.videoTitle);
+      const name = normalizeString(this.displayTitle);
       const href = convertThirdPartyUrl(target.scheme, {
         raw_url: '',
         d_url: durl,
@@ -4234,16 +4222,8 @@ export default {
 
       try {
         if (this.isTmdbMode) {
-          let tmdbType = normalizeString(this.tmdbType || this.searchType).toLowerCase();
-          let tmdbId = normalizeString(this.tmdbId);
-          const contentKey = normalizeString(this.contentKey).toLowerCase();
-          if ((!tmdbId || (tmdbType !== 'movie' && tmdbType !== 'tv')) && contentKey.startsWith('tmdb:')) {
-            const match = contentKey.match(/^tmdb:(movie|tv):(\d+)$/);
-            if (match) {
-              tmdbType = normalizeString(match[1]).toLowerCase();
-              tmdbId = normalizeString(match[2]);
-            }
-          }
+          const tmdbType = normalizeString(this.tmdbType || this.searchType).toLowerCase();
+          const tmdbId = normalizeString(this.tmdbId);
           if (!tmdbId || (tmdbType !== 'movie' && tmdbType !== 'tv')) {
             this.detailLoading = false;
             return;
@@ -4266,12 +4246,12 @@ export default {
         const settings = await this.ensurePlayRuntimeSettings();
         const apiBase = normalizeString(settings && settings.catpawrunnerApiBase);
         const spiderApi = normalizeString(this.spiderApi);
-        const videoId = normalizeString(this.videoId);
-        if (!apiBase || !spiderApi || !videoId) {
+        const siteDetail = normalizeString(this.siteDetail);
+        if (!apiBase || !spiderApi || !siteDetail) {
           this.detailLoading = false;
           return;
         }
-        const raw = await fetchCatResolvedDetailCached({ apiBase, spiderApi, videoId, timeoutMs: 15000 });
+        const raw = await fetchCatResolvedDetailCached({ apiBase, spiderApi, siteDetail, timeoutMs: 15000 });
         if (seq !== this.detailFetchSeq) return;
         this.detailOverview = stripMarkupText(raw && raw.content);
         this.detailYear = normalizeString(raw && raw.year);
@@ -4361,8 +4341,8 @@ export default {
       const settings = await this.ensurePlayRuntimeSettings();
       const apiBase = normalizeString(settings && settings.catpawrunnerApiBase);
       const spiderApi = normalizeString(target.spiderApi);
-      const videoId = normalizeString(target.videoId);
-      if (!apiBase || !spiderApi || !videoId) {
+      const siteDetail = normalizeString(target.siteDetail);
+      if (!apiBase || !spiderApi || !siteDetail) {
         this.siteResultDetailData = null;
         this.siteResultDetailLoading = false;
         this.siteResultDetailError = '';

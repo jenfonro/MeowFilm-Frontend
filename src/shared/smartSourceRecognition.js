@@ -716,7 +716,7 @@ export const buildPlaybackRecognitionData = ({
         siteKey: normalizeString(siteResultItem.siteKey),
         siteName: normalizeString(siteResultItem.siteName),
         spiderApi: normalizeString(siteResultItem.spiderApi),
-        videoId: normalizeString(siteResultItem.videoId),
+        siteDetail: normalizeString(siteResultItem.siteDetail),
         panFlag: normalizeString(entry && entry.label),
       }
     : null;

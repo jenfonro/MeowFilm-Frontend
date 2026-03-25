@@ -92,7 +92,7 @@
                   </a>
                   <img
                     v-if="item.poster"
-                    :src="item.poster"
+                    :src="displayPosterFor(item.poster)"
                     :alt="item.title || section.title"
                     loading="lazy"
                   >
@@ -177,8 +177,8 @@ import { requestCatSpider } from '../../shared/catpawrunner';
 import { buildDoubanDataUrl as buildSharedDoubanDataUrl } from '../../shared/bootstrap';
 import { normalizeImageUrl, rewriteDoubanImageUrl as rewriteSharedDoubanImageUrl } from '../../shared/doubanImage';
 import { buildHomeCacheKey, ensureHomeCacheEntry, getHomeCacheEntry, resolveCachedHomeSections, setHomeCacheEntry } from '../../shared/homeRuntime';
+import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { deletePlayHistoryItem, ensurePlayHistoryItems, playHistoryListState } from '../../shared/playHistoryRuntime';
-import { formatTMDBTVRemark } from '../../shared/tmdbBadge';
 
 const props = defineProps({
   bootstrap: { type: Object, default: () => ({}) },
@@ -220,19 +220,14 @@ const sourceSectionStates = ref([]);
 let siteHomeLoadSeq = 0;
 
 const normalizeHistoryCard = (item) => {
-  const title = item && item.videoTitle ? String(item.videoTitle) : '未命名内容';
-  const poster = item && item.videoPoster ? String(item.videoPoster) : '';
+  const title = item && item.contentKey ? String(item.contentKey) : '未命名内容';
+  const poster = item && item.Poster ? String(item.Poster) : '';
   const isTmdb = isTmdbHistoryItem(item);
-  const tmdbParsed = parseTmdbFromContentKey(item && item.contentKey ? String(item.contentKey) : '');
-  const rawRemark = item && item.videoRemark ? String(item.videoRemark) : '';
-  const textBadge = isTmdb && tmdbParsed.tmdbType === 'tv'
-    ? formatTMDBTVRemark({
-        badge: rawRemark,
-        title,
-      }) || rawRemark
-    : rawRemark;
-  const itemKey = item && (item.contentKey || `${item.siteKey || 'tmdb'}:${item.videoId || item.tmdbId || title}`)
-    ? String(item.contentKey || `${item.siteKey || 'tmdb'}:${item.videoId || item.tmdbId || title}`)
+  const rawRemark = item && item.Remark ? String(item.Remark) : '';
+  const tmdbType = item && item.tmdbType ? String(item.tmdbType).toLowerCase() : '';
+  const tmdbId = item && item.tmdbId != null ? String(item.tmdbId) : '';
+  const itemKey = item && (item.contentKey || `${item.siteKey || 'tmdb'}:${item.siteDetail || item.tmdbId || title}`)
+    ? String(item.contentKey || `${item.siteKey || 'tmdb'}:${item.siteDetail || item.tmdbId || title}`)
     : title;
   return {
     id: itemKey,
@@ -240,14 +235,18 @@ const normalizeHistoryCard = (item) => {
     poster,
     detailUrl: '',
     scoreBadge: '',
-    textBadge,
+    textBadge: rawRemark,
     siteLabel: !isTmdb && item && item.siteName ? String(item.siteName) : '',
     rawSiteKey: item && item.siteKey ? String(item.siteKey) : '',
     rawSpiderApi: item && item.spiderApi ? String(item.spiderApi) : '',
-    rawVideoId: item && item.videoId ? String(item.videoId) : '',
+    rawSiteDetail: item && item.siteDetail ? String(item.siteDetail) : '',
     rawContentKey: item && item.contentKey ? String(item.contentKey) : '',
+    rawTmdbId: tmdbId,
+    rawTmdbType: tmdbType,
   };
 };
+
+const displayPosterFor = (poster) => rewriteDisplayPosterUrl(poster, readHomeSettings());
 
 const normalizeDoubanCard = (sectionKey, item, sectionTitle) => ({
   id: `${sectionKey}:${item && item.id ? String(item.id) : item && item.title ? String(item.title) : sectionTitle}`,
@@ -310,8 +309,8 @@ const openHistoryContextMenu = (event, item) => {
   }
   const contentKey = currentItem.rawContentKey ? String(currentItem.rawContentKey).trim() : '';
   const siteKey = currentItem.rawSiteKey ? String(currentItem.rawSiteKey).trim() : '';
-  const videoId = currentItem.rawVideoId ? String(currentItem.rawVideoId).trim() : '';
-  if (!contentKey && (!siteKey || !videoId)) {
+  const siteDetail = currentItem.rawSiteDetail ? String(currentItem.rawSiteDetail).trim() : '';
+  if (!contentKey && (!siteKey || !siteDetail)) {
     closeHistoryContextMenu();
     return;
   }
@@ -337,7 +336,7 @@ const deleteHistoryContextMenuItem = async () => {
     await deletePlayHistoryItem({
       contentKey: currentItem.rawContentKey ? String(currentItem.rawContentKey) : '',
       siteKey: currentItem.rawSiteKey ? String(currentItem.rawSiteKey) : '',
-      videoId: currentItem.rawVideoId ? String(currentItem.rawVideoId) : '',
+      siteDetail: currentItem.rawSiteDetail ? String(currentItem.rawSiteDetail) : '',
     });
   } catch (_error) {
     // ignore
@@ -398,8 +397,9 @@ const openHomeCard = (section, item, event = null) => {
   const target = event && event.target && typeof event.target.closest === 'function' ? event.target : null;
   if (target && target.closest('.media-card__linkBadge')) return;
   if (currentSection.key === 'history') {
-    const tmdbParsed = parseTmdbFromContentKey(currentItem.rawContentKey);
-    const isTmdb = !!(tmdbParsed.tmdbType && tmdbParsed.tmdbId);
+    const tmdbId = currentItem.rawTmdbId ? String(currentItem.rawTmdbId) : '';
+    const tmdbType = currentItem.rawTmdbType ? String(currentItem.rawTmdbType).toLowerCase() : '';
+    const isTmdb = !!tmdbId && (tmdbType === 'movie' || tmdbType === 'tv');
     emit('open-item', {
       sourceKind: isTmdb ? 'tmdb' : 'site',
       isTmdbMode: isTmdb,
@@ -410,9 +410,9 @@ const openHomeCard = (section, item, event = null) => {
       siteKey: currentItem.rawSiteKey ? String(currentItem.rawSiteKey) : '',
       siteName: currentItem.siteLabel ? String(currentItem.siteLabel) : '',
       spiderApi: currentItem.rawSpiderApi ? String(currentItem.rawSpiderApi) : '',
-      videoId: currentItem.rawVideoId ? String(currentItem.rawVideoId) : '',
-      tmdbId: tmdbParsed.tmdbId,
-      tmdbType: tmdbParsed.tmdbType,
+      siteDetail: currentItem.rawSiteDetail ? String(currentItem.rawSiteDetail) : '',
+      tmdbId,
+      tmdbType,
     });
     return;
   }
@@ -427,7 +427,7 @@ const openHomeCard = (section, item, event = null) => {
       siteKey: currentItem.rawSiteKey ? String(currentItem.rawSiteKey) : '',
       siteName: currentItem.siteLabel ? String(currentItem.siteLabel) : sourceResolved.value.siteName,
       spiderApi: currentItem.rawSpiderApi ? String(currentItem.rawSpiderApi) : '',
-      videoId: currentItem.rawVideoId ? String(currentItem.rawVideoId) : '',
+      siteDetail: currentItem.rawSiteDetail ? String(currentItem.rawSiteDetail) : '',
     });
     return;
   }
@@ -533,29 +533,20 @@ const normalizeHistoryItems = (payload) => {
       siteKey: item && item.siteKey ? String(item.siteKey) : '',
       siteName: item && item.siteName ? String(item.siteName) : '',
       spiderApi: item && item.spiderApi ? String(item.spiderApi) : '',
-      videoId: item && item.videoId ? String(item.videoId) : '',
+      siteDetail: item && item.siteDetail ? String(item.siteDetail) : '',
       tmdbId: item && item.tmdbId != null ? String(item.tmdbId) : '',
-      videoTitle: item && item.videoTitle ? String(item.videoTitle) : '',
-      videoPoster: item && item.videoPoster ? String(item.videoPoster) : '',
-      videoRemark: item && item.videoRemark ? String(item.videoRemark) : '',
+      tmdbType: item && item.tmdbType ? String(item.tmdbType).toLowerCase() : '',
+      Poster: item && item.Poster ? String(item.Poster) : '',
+      Remark: item && item.Remark ? String(item.Remark) : '',
     }))
-    .filter((item) => item.videoTitle);
+    .filter((item) => item.contentKey);
 };
 
 const isTmdbHistoryItem = (item) => {
   if (!item || typeof item !== 'object') return false;
-  const contentKey = typeof item.contentKey === 'string' ? item.contentKey.trim().toLowerCase() : '';
-  return contentKey.startsWith('tmdb');
-};
-
-const parseTmdbFromContentKey = (contentKey) => {
-  const raw = typeof contentKey === 'string' ? contentKey.trim().toLowerCase() : '';
-  const match = raw.match(/^tmdb:(movie|tv):(\d+)$/);
-  if (!match) return { tmdbType: '', tmdbId: '' };
-  return {
-    tmdbType: match[1] ? String(match[1]) : '',
-    tmdbId: match[2] ? String(match[2]) : '',
-  };
+  const tmdbType = typeof item.tmdbType === 'string' ? item.tmdbType.trim().toLowerCase() : '';
+  const tmdbId = item.tmdbId != null ? String(item.tmdbId).trim() : '';
+  return !!tmdbId && (tmdbType === 'movie' || tmdbType === 'tv');
 };
 
 const readHomeSettings = () => {
@@ -568,6 +559,7 @@ const readHomeSettings = () => {
     doubanDataCustom: typeof settings.doubanDataCustom === 'string' ? settings.doubanDataCustom.trim() : '',
     doubanImgProxy: typeof settings.doubanImgProxy === 'string' ? settings.doubanImgProxy.trim() : 'server-proxy',
     doubanImgCustom: typeof settings.doubanImgCustom === 'string' ? settings.doubanImgCustom.trim() : '',
+    tmdbImageProxyBase: typeof settings.tmdbImageProxyBase === 'string' ? settings.tmdbImageProxyBase.trim() : '',
   };
 };
 
@@ -650,6 +642,7 @@ const normalizeSiteList = (data) => {
 const normalizeSiteCard = (siteKey, categoryId, item) => ({
   id: `${siteKey}:${categoryId}:${item && item.id ? String(item.id) : item && item.name ? String(item.name) : ''}`,
   title: item && item.name ? String(item.name) : '未命名内容',
+  contentKey: item && item.name ? String(item.name) : '',
   poster: item && item.pic ? normalizeImageUrl(item.pic) : '',
   detailUrl: '',
   scoreBadge: '',
@@ -657,7 +650,8 @@ const normalizeSiteCard = (siteKey, categoryId, item) => ({
   siteLabel: '',
   rawSiteKey: siteKey ? String(siteKey) : '',
   rawSpiderApi: sourceResolved.value.siteApi ? String(sourceResolved.value.siteApi) : '',
-  rawVideoId: item && item.id ? String(item.id) : '',
+  rawSiteDetail: item && item.id ? String(item.id) : '',
+  rawContentKey: item && item.name ? String(item.name) : '',
 });
 
 const cloneSectionStates = (sections) => (

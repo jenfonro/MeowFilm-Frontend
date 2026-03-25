@@ -494,12 +494,12 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
   return buildResolvedOutput(true);
 };
 
-const buildDetailCacheKey = ({ apiBase, spiderApi, videoId }) =>
-  `${normalizecatpawrunnerApiBase(apiBase)}::${normalizeString(spiderApi)}::${normalizeString(videoId)}`;
+const buildDetailCacheKey = ({ apiBase, spiderApi, siteDetail }) =>
+  `${normalizecatpawrunnerApiBase(apiBase)}::${normalizeString(spiderApi)}::${normalizeString(siteDetail)}`;
 
-export const fetchCatDetailCached = async ({ apiBase, spiderApi, videoId, timeoutMs = 15000, signal } = {}) => {
-  const cacheKey = buildDetailCacheKey({ apiBase, spiderApi, videoId });
-  if (!cacheKey.includes('::') || !normalizeString(videoId) || !normalizeString(spiderApi)) {
+export const fetchCatDetailCached = async ({ apiBase, spiderApi, siteDetail, timeoutMs = 15000, signal } = {}) => {
+  const cacheKey = buildDetailCacheKey({ apiBase, spiderApi, siteDetail });
+  if (!cacheKey.includes('::') || !normalizeString(siteDetail) || !normalizeString(spiderApi)) {
     throw new Error('站点详情参数无效');
   }
   const cached = detailCache.get(cacheKey);
@@ -510,7 +510,7 @@ export const fetchCatDetailCached = async ({ apiBase, spiderApi, videoId, timeou
     apiBase,
     action: 'detail',
     spiderApi,
-    payload: { id: videoId },
+    payload: { id: siteDetail },
     timeoutMs,
     signal,
   }).then((raw) => {
@@ -525,9 +525,9 @@ export const fetchCatDetailCached = async ({ apiBase, spiderApi, videoId, timeou
   return promise;
 };
 
-export const fetchCatResolvedDetailCached = async ({ apiBase, spiderApi, videoId, timeoutMs = 15000, onUpdate, signal } = {}) => {
-  const cacheKey = buildDetailCacheKey({ apiBase, spiderApi, videoId });
-  if (!cacheKey.includes('::') || !normalizeString(videoId) || !normalizeString(spiderApi)) {
+export const fetchCatResolvedDetailCached = async ({ apiBase, spiderApi, siteDetail, timeoutMs = 15000, onUpdate, signal } = {}) => {
+  const cacheKey = buildDetailCacheKey({ apiBase, spiderApi, siteDetail });
+  if (!cacheKey.includes('::') || !normalizeString(siteDetail) || !normalizeString(spiderApi)) {
     throw new Error('站点详情参数无效');
   }
   const cached = resolvedDetailCache.get(cacheKey);
@@ -555,7 +555,7 @@ export const fetchCatResolvedDetailCached = async ({ apiBase, spiderApi, videoId
   if (typeof onUpdate === 'function') listeners.add(onUpdate);
 
   const promise = (async () => {
-    const raw = await fetchCatDetailCached({ apiBase, spiderApi, videoId, timeoutMs, signal });
+    const raw = await fetchCatDetailCached({ apiBase, spiderApi, siteDetail, timeoutMs, signal });
     const detail = extractCatDetailFields(raw);
     const baseData = {
       raw,

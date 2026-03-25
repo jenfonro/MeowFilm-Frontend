@@ -1,6 +1,6 @@
 import { fetchBootstrap } from './bootstrap';
 import { requestCatSpider } from './catpawrunner';
-import { rewriteDoubanImageUrl } from './doubanImage';
+import { normalizeImageUrl } from './doubanImage';
 import { formatTMDBTVRemark } from './tmdbBadge';
 import { fetchTMDBDetailCached } from './tmdbRuntime';
 
@@ -350,16 +350,40 @@ const snapshotSearchState = (state, { progressDone = 0, progressTotal = 0 } = {}
 const buildTmdbPoster = (item, settings) => {
   const poster = normalizeString(item && (item.poster || item.backdrop || item.image));
   if (!poster) return '';
-  return rewriteDoubanImageUrl(poster, {
-    mode: normalizeString(settings.doubanImgProxy) || 'server-proxy',
-    custom: normalizeString(settings.doubanImgCustom),
-    defaultMode: 'server-proxy',
-  });
+  return normalizeImageUrl(poster);
 };
 
 const normalizeInt = (value) => {
   const n = Number.isFinite(Number(value)) ? Math.floor(Number(value)) : 0;
   return n > 0 ? n : 0;
+};
+
+const buildDisplayedContentKey = (title, fallback = '') => {
+  const normalizedTitle = sanitizeDisplayTitle(title);
+  if (normalizedTitle) return normalizedTitle;
+  return sanitizeDisplayTitle(fallback);
+};
+
+const mergeDisplayedSiteItem = (item, tmdbMatch = null, { canAggregate = false } = {}) => {
+  const source = item && typeof item === 'object' ? item : {};
+  const tmdbItem = tmdbMatch && typeof tmdbMatch === 'object' ? tmdbMatch : null;
+  const rawOriginalTitle = normalizeString(source.rawTitle || source.title);
+  const rawTitle = sanitizeDisplayTitle(rawOriginalTitle);
+  const tmdbTitle = sanitizeDisplayTitle(tmdbItem && tmdbItem.title);
+  const aggregateContentKey = normalizeString(source.aggregateContentKey);
+  const contentKey = tmdbTitle
+    || (canAggregate ? (aggregateContentKey || rawOriginalTitle || rawTitle) : '')
+    || normalizeString(source.contentKey)
+    || rawOriginalTitle
+    || rawTitle;
+  const nextTitle = tmdbTitle || rawOriginalTitle || rawTitle;
+  return {
+    ...source,
+    title: nextTitle,
+    contentKey,
+    tmdbId: 0,
+    tmdbType: '',
+  };
 };
 
 const compareSeasonEpisode = (left, right) => {
@@ -547,14 +571,15 @@ const mapTmdbItems = (data, settings, computeMatchScore) => {
       if (dedupeKey && seen.has(dedupeKey)) return null;
       seen.add(dedupeKey);
       const year = normalizeInt(item && item.year);
+      const contentKey = buildDisplayedContentKey(title, groupKey);
       return {
         id: `tmdb:${tmdbType}:${tmdbId}`,
-        contentKey: `tmdb:${tmdbType}:${tmdbId}`,
+        contentKey,
         sourceKind: 'tmdb',
         siteKey: 'tmdb',
         siteName: 'TMDB',
         spiderApi: '',
-        videoId: String(tmdbId),
+        siteDetail: String(tmdbId),
         title,
         poster: buildTmdbPoster(item, settings),
         textBadge: tmdbType === 'movie' && year > 0 ? String(year) : '',
@@ -579,13 +604,17 @@ const mapTmdbItems = (data, settings, computeMatchScore) => {
 const normalizeSiteSearchList = (data) => {
   const list = data && Array.isArray(data.list) ? data.list : [];
   return list
-    .map((item) => ({
-      id: normalizeString(item && (item.vod_id != null ? String(item.vod_id) : item.id != null ? String(item.id) : '')),
-      title: sanitizeDisplayTitle(item && (item.vod_name != null ? String(item.vod_name) : item.name != null ? String(item.name) : '')),
-      poster: normalizeString(item && (item.vod_pic != null ? String(item.vod_pic) : item.pic != null ? String(item.pic) : '')),
-      remark: normalizeString(item && (item.vod_remarks != null ? String(item.vod_remarks) : item.remark != null ? String(item.remark) : '')),
-    }))
-    .filter((item) => item.id && item.title);
+    .map((item) => {
+      const rawTitle = normalizeString(item && (item.vod_name != null ? String(item.vod_name) : item.name != null ? String(item.name) : ''));
+      return {
+        id: normalizeString(item && (item.vod_id != null ? String(item.vod_id) : item.id != null ? String(item.id) : '')),
+        rawTitle,
+        title: rawTitle,
+        poster: normalizeString(item && (item.vod_pic != null ? String(item.vod_pic) : item.pic != null ? String(item.pic) : '')),
+        remark: normalizeString(item && (item.vod_remarks != null ? String(item.vod_remarks) : item.remark != null ? String(item.remark) : '')),
+      };
+    })
+    .filter((item) => item.id && item.rawTitle);
 };
 
 export async function loadSearchConfig(baseBootstrap = {}) {
@@ -613,6 +642,7 @@ export async function loadSearchConfig(baseBootstrap = {}) {
     doubanDataCustom: normalizeString(mergedSettings.doubanDataCustom),
     doubanImgProxy: normalizeString(mergedSettings.doubanImgProxy),
     doubanImgCustom: normalizeString(mergedSettings.doubanImgCustom),
+    tmdbImageProxyBase: normalizeString(mergedSettings.tmdbImageProxyBase),
   };
 }
 
@@ -685,9 +715,9 @@ const buildBlockedMatchIndex = (items) => {
   const out = {};
   list.forEach((item) => {
     const siteKey = normalizeString(item && item.siteKey);
-    const videoId = normalizeString(item && item.videoId);
-    if (!siteKey || !videoId) return;
-    const key = `${siteKey}::${videoId}`;
+    const siteDetail = normalizeString(item && item.siteDetail);
+    if (!siteKey || !siteDetail) return;
+    const key = `${siteKey}::${siteDetail}`;
     const source = normalizeString(item && item.source);
     const panFlag = normalizeString(item && item.panFlag);
     const entry = out[key] || { blockAll: false, panFlags: [] };
@@ -743,7 +773,7 @@ export const fetchBlockedMatchIndex = async (keyword, aggregateRules = []) => {
     (Array.isArray(list) ? list : []).forEach((item) => {
       const dedupeKey = [
         normalizeString(item && item.siteKey),
-        normalizeString(item && item.videoId),
+        normalizeString(item && item.siteDetail),
         normalizeString(item && item.panFlag),
         normalizeString(item && item.source),
       ].join('::');
@@ -895,8 +925,13 @@ export async function streamSearch(query, config, { onUpdate, blockedSiteKeys = 
                 });
                 const list = normalizeSiteSearchList(payload);
                 list.slice(0, 12).forEach((item, innerIndex) => {
+                  const rawTitle = normalizeString(item.rawTitle || item.title);
+                  const aggregateContentKey = buildCanonicalSearchTitle(rawTitle, config.aggregateRules, {
+                    queryTrailingDigits,
+                    contentKind,
+                  }) || rawTitle;
                   const variantMeta = (() => {
-                    const titleMeta = extractSeriesVariantMetaFromText(item.title);
+                    const titleMeta = extractSeriesVariantMetaFromText(rawTitle);
                     if (normalizeInt(titleMeta && titleMeta.index) > 0) return titleMeta;
                     return extractSeriesVariantMetaFromText(item.remark);
                   })();
@@ -910,14 +945,17 @@ export async function streamSearch(query, config, { onUpdate, blockedSiteKeys = 
                     siteKey: normalizeString(site.key),
                     siteName: normalizeString(site.name) || normalizeString(site.key),
                     spiderApi: normalizeString(site.api),
-                    videoId: item.id,
-                    title: item.title,
+                    siteDetail: item.id,
+                    title: rawTitle,
+                    rawTitle,
+                    contentKey: rawTitle,
+                    aggregateContentKey,
                     poster: item.poster,
                     textBadge: item.remark,
                     siteLabel: normalizeString(site.name) || normalizeString(site.key),
-                    score: computeMatchScore(item.title),
+                    score: computeMatchScore(rawTitle),
                     seq: index * 100 + innerIndex,
-                    groupKey: buildSearchGroupKey(item.title, config.aggregateRules, {
+                    groupKey: buildSearchGroupKey(rawTitle, config.aggregateRules, {
                       queryTrailingDigits,
                       contentKind,
                     }),
@@ -948,16 +986,31 @@ export function buildDisplayedResults(searchState, config, { rawListMode = false
   const tmdbItems = Array.isArray(searchState && searchState.tmdbItems) ? searchState.tmdbItems : [];
   const siteItems = Array.isArray(searchState && searchState.siteItems) ? searchState.siteItems : [];
   const displayMode = normalizeString(searchState && searchState.displayMode) || normalizeString(config && config.searchDisplayMode);
-  let siteDisplay = siteItems.slice();
+  const tmdbByGroup = new Map();
+  tmdbItems.forEach((item) => {
+    const groupKey = normalizeString(item && item.groupKey);
+    if (!groupKey) return;
+    tmdbByGroup.set(groupKey, item);
+  });
+
+  const normalizedTmdbItems = tmdbItems.map((item) => ({
+    ...(item || {}),
+    contentKey: buildDisplayedContentKey(item && item.title, item && item.contentKey),
+  }));
+  const siteGroupCounts = new Map();
+  siteItems.forEach((item) => {
+    const groupKey = normalizeString(item && item.groupKey);
+    if (!groupKey) return;
+    siteGroupCounts.set(groupKey, (siteGroupCounts.get(groupKey) || 0) + 1);
+  });
+  let siteDisplay = siteItems.map((item) => {
+    const groupKey = normalizeString(item && item.groupKey);
+    const tmdbMatch = groupKey ? tmdbByGroup.get(groupKey) || null : null;
+    const canAggregate = !!tmdbMatch || (groupKey && (siteGroupCounts.get(groupKey) || 0) > 1);
+    return mergeDisplayedSiteItem(item, tmdbMatch, { canAggregate });
+  });
 
   if (!rawListMode) {
-    const tmdbByGroup = new Map();
-    tmdbItems.forEach((item) => {
-      const groupKey = normalizeString(item && item.groupKey);
-      if (!groupKey) return;
-      tmdbByGroup.set(groupKey, item);
-    });
-
     const groups = new Map();
     siteItems.forEach((item) => {
       const key = resolveDisplayedSiteGroupKey(item, tmdbByGroup, displayMode);
@@ -986,26 +1039,27 @@ export function buildDisplayedResults(searchState, config, { rawListMode = false
 
       if (tmdbMatch) {
         tmdbMatch.aggregateSourceCount = siteCount;
-        tmdbMatch.aggregateItems = group.items.slice();
+        tmdbMatch.aggregateItems = group.items.slice().map((item) => mergeDisplayedSiteItem(item, tmdbMatch));
         tmdbMatch.aggregateKind = 'tmdb';
+        tmdbMatch.contentKey = buildDisplayedContentKey(tmdbMatch.title, tmdbMatch.contentKey);
         if (aggregateRemark) tmdbMatch.textBadge = aggregateRemark;
         return [];
       }
 
       if (itemCount <= 1) {
         return [
-          {
+          mergeDisplayedSiteItem({
             ...representative,
             groupKey,
             textBadge: aggregateRemark || representative.textBadge,
             siteLabel: normalizeString(representative && representative.siteLabel)
               || normalizeString(representative && representative.siteName),
-          },
+          }, null, { canAggregate: false }),
         ];
       }
 
       return [
-        {
+        mergeDisplayedSiteItem({
           ...representative,
           id: `aggregate:${groupKey}`,
           groupKey,
@@ -1014,12 +1068,12 @@ export function buildDisplayedResults(searchState, config, { rawListMode = false
           aggregateSourceCount: siteCount,
           aggregateItems: group.items.slice(),
           aggregateKind: 'site',
-        },
+        }, null, { canAggregate: true }),
       ];
     });
   }
 
-  return [...tmdbItems, ...siteDisplay].sort((left, right) =>
+  return [...normalizedTmdbItems, ...siteDisplay].sort((left, right) =>
     compareDisplayedResults(left, right, {
       siteOrderMap: config.siteOrderMap,
       pinTmdbFirst: !!(searchState && searchState.pinTmdbFirst),

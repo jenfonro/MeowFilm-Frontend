@@ -1693,7 +1693,7 @@
                       <tr v-else-if="!smartMatchBlockItems.length">
                         <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="7">无数据</td>
                       </tr>
-                      <tr v-for="item in smartMatchBlockItems" :key="`${item.keyword}@@${item.siteKey}@@${item.videoId}@@${item.panFlag || ''}@@${item.source || ''}`">
+                      <tr v-for="item in smartMatchBlockItems" :key="`${item.keyword}@@${item.siteKey}@@${item.siteDetail}@@${item.panFlag || ''}@@${item.source || ''}`">
                         <td class="adm-px-3 adm-py-2">
                           <img
                             v-if="item.poster"
@@ -1713,7 +1713,7 @@
                         <td class="adm-px-3 adm-py-2 adm-text-xs" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ item.spiderApi || '-' }}</td>
                         <td class="adm-px-3 adm-py-2 adm-text-xs">{{ item.source || '-' }}</td>
                         <td class="adm-px-3 adm-py-2 adm-text-xs">{{ item.panFlag || '-' }}</td>
-                        <td class="adm-px-3 adm-py-2 adm-text-xs" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ item.videoId || '-' }}</td>
+                        <td class="adm-px-3 adm-py-2 adm-text-xs" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ item.siteDetail || '-' }}</td>
                         <td class="adm-px-3 adm-py-2">
                           <button
                             type="button"
@@ -4913,7 +4913,7 @@ async function loadSmartMatchBlockItems(keyword) {
       siteName: typeof item?.siteName === 'string' ? item.siteName : '',
       siteKey: typeof item?.siteKey === 'string' ? item.siteKey : '',
       spiderApi: typeof item?.spiderApi === 'string' ? item.spiderApi : '',
-      videoId: typeof item?.videoId === 'string' ? item.videoId : '',
+      siteDetail: typeof item?.siteDetail === 'string' ? item.siteDetail : '',
       poster: typeof item?.poster === 'string' ? item.poster : '',
       panFlag: typeof item?.panFlag === 'string' ? item.panFlag : '',
       source: typeof item?.source === 'string' ? item.source : ''
@@ -5019,12 +5019,12 @@ async function removeSmartMatchBlockItem(item) {
   if (smartMatchBlockItemsLoading.value) return;
   const keyword = typeof item?.keyword === 'string' ? item.keyword.trim() : '';
   const siteKey = typeof item?.siteKey === 'string' ? item.siteKey.trim() : '';
-  const videoId = typeof item?.videoId === 'string' ? item.videoId.trim() : '';
+  const siteDetail = typeof item?.siteDetail === 'string' ? item.siteDetail.trim() : '';
   const panFlag = typeof item?.panFlag === 'string' ? item.panFlag.trim() : '';
   const source = typeof item?.source === 'string' ? item.source.trim() : '';
-  if (!keyword || !siteKey || !videoId) return;
+  if (!keyword || !siteKey || !siteDetail) return;
   try {
-    await deleteSmartMatchBlockItem({ keyword, siteKey, videoId, panFlag, source });
+    await deleteSmartMatchBlockItem({ keyword, siteKey, siteDetail, panFlag, source });
     await loadSmartMatchBlockItems(keyword);
     await loadSmartMatchBlockKeywords();
     notifySuccess('已删除');

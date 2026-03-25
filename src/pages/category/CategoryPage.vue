@@ -77,7 +77,7 @@
             </a>
             <img
               v-if="item.poster"
-              :src="item.poster"
+              :src="displayPosterFor(item.poster)"
               :alt="item.title || currentCategory.label"
               loading="lazy"
             >
@@ -120,6 +120,7 @@ import {
   setCategoryCacheEntry,
 } from '../../shared/categoryRuntime';
 import { rewriteDoubanImageUrl } from '../../shared/doubanImage';
+import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { requestCatSpider } from '../../shared/catpawrunner';
 
 const PAGE_SIZE = 24;
@@ -353,8 +354,11 @@ const readSettings = () => {
     doubanDataCustom: typeof settings.doubanDataCustom === 'string' ? settings.doubanDataCustom.trim() : '',
     doubanImgProxy: typeof settings.doubanImgProxy === 'string' ? settings.doubanImgProxy.trim() : 'server-proxy',
     doubanImgCustom: typeof settings.doubanImgCustom === 'string' ? settings.doubanImgCustom.trim() : '',
+    tmdbImageProxyBase: typeof settings.tmdbImageProxyBase === 'string' ? settings.tmdbImageProxyBase.trim() : '',
   };
 };
+
+const displayPosterFor = (poster) => rewriteDisplayPosterUrl(poster, readSettings());
 
 const initFilters = (type) => {
   const cfg = CATEGORY_CONFIG[type] || CATEGORY_CONFIG.movie;
@@ -455,6 +459,7 @@ const normalizeSitePage = (data) => {
       .map((it) => ({
         id: it && (it.vod_id != null ? String(it.vod_id) : it.id != null ? String(it.id) : ''),
         title: it && (it.vod_name != null ? String(it.vod_name) : it.name != null ? String(it.name) : ''),
+        contentKey: it && (it.vod_name != null ? String(it.vod_name) : it.name != null ? String(it.name) : ''),
         poster: it && (it.vod_pic != null ? String(it.vod_pic) : it.pic != null ? String(it.pic) : ''),
         textBadge: it && (it.vod_remarks != null ? String(it.vod_remarks) : it.remark != null ? String(it.remark) : ''),
       }))
@@ -468,7 +473,7 @@ const normalizeSitePage = (data) => {
         siteKey: sourceResolved.value.siteKey,
         siteName: sourceResolved.value.siteName,
         spiderApi: sourceResolved.value.siteApi,
-        videoId: it.id,
+        siteDetail: it.id,
       })),
     page: Number.isFinite(page) && page > 0 ? page : 1,
     pageCount: Number.isFinite(pageCount) && pageCount > 0 ? pageCount : 0,
@@ -741,13 +746,14 @@ const openCard = (item, event = null) => {
     emit('open-item', {
       sourceKind: 'site',
       isTmdbMode: false,
+      contentKey: current.contentKey ? String(current.contentKey) : '',
       title: current.title ? String(current.title) : '',
       poster: current.poster ? String(current.poster) : '',
       remark: current.textBadge ? String(current.textBadge) : '',
       siteKey: current.siteKey ? String(current.siteKey) : sourceResolved.value.siteKey,
       siteName: current.siteName ? String(current.siteName) : sourceResolved.value.siteName,
       spiderApi: current.spiderApi ? String(current.spiderApi) : sourceResolved.value.siteApi,
-      videoId: current.videoId ? String(current.videoId) : current.id ? String(current.id) : '',
+      siteDetail: current.siteDetail ? String(current.siteDetail) : current.id ? String(current.id) : '',
     });
     return;
   }

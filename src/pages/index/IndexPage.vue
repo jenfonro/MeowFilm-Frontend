@@ -396,18 +396,17 @@ const searchRequest = ref({
 const playParams = ref({
   isTmdbMode: false,
   contentKey: '',
-  videoTitle: '',
   videoYear: '',
   searchType: '',
   siteKey: '',
   siteName: '',
   spiderApi: '',
-  videoId: '',
+  siteDetail: '',
   tmdbId: '',
   tmdbType: '',
   videoIntro: '',
-  videoPoster: '',
-  videoRemark: '',
+  Poster: '',
+  Remark: '',
   switchOnlyToken: 0,
   openFromSearch: 0,
   originSearchQuery: '',
@@ -724,24 +723,26 @@ const handleCategoryBack = () => {
 };
 const handleCategoryOpenItem = (payload = {}) => {
   if (payload.sourceKind === 'site' || payload.sourceKind === 'tmdb') {
+    const tmdbType = typeof payload.tmdbType === 'string' ? payload.tmdbType.trim().toLowerCase() : '';
+    const tmdbId = payload.tmdbId != null ? String(payload.tmdbId).trim() : '';
+    const isTmdbMode = !!tmdbId && (tmdbType === 'movie' || tmdbType === 'tv');
     isPlayView.value = true;
     playKey.value += 1;
     playParams.value = {
       ...playParams.value,
-      isTmdbMode: !!payload.isTmdbMode || payload.sourceKind === 'tmdb',
+      isTmdbMode,
       contentKey: typeof payload.contentKey === 'string' ? payload.contentKey : '',
-      videoTitle: typeof payload.title === 'string' ? payload.title : '',
       videoYear: '',
-      searchType: payload.sourceKind === 'tmdb' && typeof payload.tmdbType === 'string' ? payload.tmdbType : '',
+      searchType: isTmdbMode ? tmdbType : '',
       siteKey: typeof payload.siteKey === 'string' ? payload.siteKey : '',
       siteName: typeof payload.siteName === 'string' ? payload.siteName : '',
       spiderApi: typeof payload.spiderApi === 'string' ? payload.spiderApi : '',
-      videoId: typeof payload.videoId === 'string' ? payload.videoId : '',
-      tmdbId: payload.tmdbId != null ? String(payload.tmdbId) : '',
-      tmdbType: typeof payload.tmdbType === 'string' ? payload.tmdbType : '',
+      siteDetail: typeof payload.siteDetail === 'string' ? payload.siteDetail : '',
+      tmdbId,
+      tmdbType,
       videoIntro: '',
-      videoPoster: typeof payload.poster === 'string' ? payload.poster : '',
-      videoRemark: typeof payload.remark === 'string' ? payload.remark : '',
+      Poster: typeof payload.poster === 'string' ? payload.poster : '',
+      Remark: typeof payload.remark === 'string' ? payload.remark : '',
       switchOnlyToken: Number(playParams.value.switchOnlyToken || 0) + 1,
       openFromSearch: Number(payload.openFromSearch || 0) || 0,
       originSearchQuery: typeof payload.originSearchQuery === 'string' ? payload.originSearchQuery : '',

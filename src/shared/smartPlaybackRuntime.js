@@ -23,18 +23,17 @@ export const buildHistorySitePlaybackItem = (row) => {
   const item = row && typeof row === 'object' ? row : null;
   const siteKey = normalizeString(item && item.siteKey);
   const spiderApi = normalizeString(item && item.spiderApi);
-  const videoId = normalizeString(item && item.videoId);
+  const siteDetail = normalizeString(item && item.siteDetail);
   const siteName = normalizeString(item && item.siteName);
-  const title = normalizeString(item && item.videoTitle);
-  if (!siteKey || !spiderApi || !videoId || !siteName || !title) return null;
+  const title = normalizeString(item && item.contentKey);
+  if (!siteKey || !spiderApi || !siteDetail || !siteName || !title) return null;
   return {
-    id: `history:${siteKey}:${videoId}`,
+    id: `history:${siteKey}:${siteDetail}`,
     siteKey,
     spiderApi,
-    videoId,
+    siteDetail,
     siteName,
     title,
-    videoTitle: title,
     groupKey: '',
     _history: true,
   };
@@ -174,8 +173,8 @@ export const buildSiteSourceResultItemsFromSnapshot = ({
         normalizeString(resolveDisplayedSiteGroupKey(item, tmdbByGroup, displayMode)) === targetGroupKey &&
         !blockedKeySet.has(normalizeString(item.siteKey)) &&
         !(
-          blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.videoId)}`]
-          && blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.videoId)}`].blockAll
+          blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.siteDetail)}`]
+          && blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.siteDetail)}`].blockAll
         )
     )
     .slice()
@@ -911,12 +910,12 @@ export const ensureSiteResultDetailCached = async ({
   const settings = runtimeSettings && typeof runtimeSettings === 'object' ? runtimeSettings : null;
   const apiBase = normalizeString(settings && settings.catpawrunnerApiBase);
   const spiderApi = normalizeString(target && target.spiderApi);
-  const videoId = normalizeString(target && target.videoId);
-  if (!apiBase || !spiderApi || !videoId) return null;
+  const siteDetail = normalizeString(target && target.siteDetail);
+  if (!apiBase || !spiderApi || !siteDetail) return null;
   const detail = await fetchCatResolvedDetailCached({
     apiBase,
     spiderApi,
-    videoId,
+    siteDetail,
     timeoutMs,
     signal,
     onUpdate: (nextDetail) => {

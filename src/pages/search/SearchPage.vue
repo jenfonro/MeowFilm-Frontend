@@ -98,7 +98,7 @@
                   </div>
                   <img
                     v-if="item.poster"
-                    :src="item.poster"
+                    :src="displayPosterFor(item)"
                     :alt="item.title"
                     loading="lazy"
                   >
@@ -154,6 +154,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import '../../shared/contextMenu.css';
+import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { getSearchSessionAnyQuerySnapshot, getSearchSessionAnyQueryStatus, useSearchSession } from '../../shared/searchSession';
 import {
   addSmartMatchBlockItem,
@@ -210,6 +211,8 @@ const matchBlockMenu = ref({
 
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 
+const displayPosterFor = (item) => rewriteDisplayPosterUrl(item && item.poster, runtimeConfig.value || {});
+
 const matchBlockMenuLabel = computed(() => {
   if (matchBlockMenu.value.busy) return '处理中...';
   return matchBlockMenu.value.blocked ? '取消匹配禁用' : '加入匹配禁用';
@@ -249,10 +252,10 @@ const isItemMatchBlocked = (item) => {
   const current = item && typeof item === 'object' ? item : null;
   if (!current || current.sourceKind !== 'site' || current.aggregateKind) return false;
   const siteKey = normalizeString(current.siteKey);
-  const videoId = normalizeString(current.videoId);
-  if (!siteKey || !videoId) return false;
+  const siteDetail = normalizeString(current.siteDetail);
+  if (!siteKey || !siteDetail) return false;
   const entry = matchBlockedIndex.value && typeof matchBlockedIndex.value === 'object'
-    ? matchBlockedIndex.value[`${siteKey}::${videoId}`]
+    ? matchBlockedIndex.value[`${siteKey}::${siteDetail}`]
     : null;
   return !!(entry && entry.blockAll);
 };
@@ -270,8 +273,8 @@ const openMatchBlockMenu = async (event, item) => {
   }
   const keyword = normalizeString(activeQuery.value);
   const siteKey = normalizeString(current.siteKey);
-  const videoId = normalizeString(current.videoId);
-  if (!keyword || !siteKey || !videoId) {
+  const siteDetail = normalizeString(current.siteDetail);
+  if (!keyword || !siteKey || !siteDetail) {
     closeMatchBlockMenu();
     return;
   }
@@ -296,10 +299,10 @@ const toggleMatchBlockMenuItem = async () => {
     keyword,
     siteKey: normalizeString(current.siteKey),
     spiderApi: normalizeString(current.spiderApi),
-    videoId: normalizeString(current.videoId),
+    siteDetail: normalizeString(current.siteDetail),
     poster: normalizeString(current.poster),
   };
-  if (!payload.siteKey || !payload.videoId) return;
+  if (!payload.siteKey || !payload.siteDetail) return;
   matchBlockMenu.value = { ...matchBlockMenu.value, busy: true };
   try {
     if (matchBlockMenu.value.blocked) {
@@ -358,13 +361,16 @@ const openItem = (item) => {
     emit('open-item', {
       sourceKind: 'site',
       isTmdbMode: false,
+      contentKey: current.contentKey ? String(current.contentKey) : '',
       title: playTitle,
       poster: current.poster ? String(current.poster) : '',
       remark: current.textBadge ? String(current.textBadge) : '',
       siteKey: current.siteKey ? String(current.siteKey) : '',
       siteName: current.siteName ? String(current.siteName) : '',
       spiderApi: current.spiderApi ? String(current.spiderApi) : '',
-      videoId: current.videoId ? String(current.videoId) : '',
+      siteDetail: current.siteDetail ? String(current.siteDetail) : '',
+      tmdbId: 0,
+      tmdbType: '',
       openFromSearch: 1,
       originSearchQuery,
     });

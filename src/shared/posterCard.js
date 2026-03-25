@@ -1,29 +1,26 @@
 import { pauseCatLowPriority } from './catpawrunner';
-import { normalizeDoubanImageProxyMode, normalizeImageUrl, rewriteDoubanImageUrl } from './doubanImage';
+import { normalizeDoubanImageProxyMode, normalizeImageUrl } from './doubanImage';
+import { rewriteDisplayPosterUrl } from './posterUrl';
 
 export const TV_CARD_PLAY_ICON_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" class="tv-card-play-icon"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>';
 
-function readDoubanImgConfigFromDom() {
-  if (typeof document === 'undefined') return { mode: 'server-proxy', custom: '' };
+function readPosterConfigFromDom() {
+  if (typeof document === 'undefined') return { doubanImgProxy: 'server-proxy', doubanImgCustom: '', tmdbImageProxyBase: '' };
   const el = document.getElementById('homeDoubanConfig');
-  if (!el) return { mode: 'server-proxy', custom: '' };
+  if (!el) return { doubanImgProxy: 'server-proxy', doubanImgCustom: '', tmdbImageProxyBase: '' };
   const rawMode = (el.getAttribute('data-douban-img-proxy') || 'server-proxy').trim();
-  const mode = normalizeDoubanImageProxyMode(rawMode, 'server-proxy');
-  const custom = (el.getAttribute('data-douban-img-custom') || '').trim();
-  return { mode, custom };
+  return {
+    doubanImgProxy: normalizeDoubanImageProxyMode(rawMode, 'server-proxy'),
+    doubanImgCustom: (el.getAttribute('data-douban-img-custom') || '').trim(),
+    tmdbImageProxyBase: (el.getAttribute('data-tmdb-image-proxy-base') || '').trim(),
+  };
 }
 
 export function processPosterUrl(posterUrl) {
   const original = normalizeImageUrl(posterUrl);
   if (!original) return '';
-
-  const cfg = readDoubanImgConfigFromDom();
-  return rewriteDoubanImageUrl(original, {
-    mode: cfg && typeof cfg.mode === 'string' ? cfg.mode : 'server-proxy',
-    custom: cfg && typeof cfg.custom === 'string' ? cfg.custom : '',
-    defaultMode: 'server-proxy',
-  });
+  return rewriteDisplayPosterUrl(original, readPosterConfigFromDom());
 }
 
 export function bindActivate(el, activate) {
