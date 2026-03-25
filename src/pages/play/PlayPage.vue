@@ -427,6 +427,7 @@ import {
   patchCurrentPlaybackContext,
   clearCurrentPlaybackContext,
   executeResolvedSitePlayback,
+  executeProxyRetryPlayback,
   hasNonEmptyHeaders,
   doesQualityMatchResolution,
   inferQualityFromResolution,
@@ -2043,7 +2044,7 @@ export default {
       goProxyManualBase: '',
       goProxyInUseBase: '',
       lastGoProxyCandidate: null,
-      pendingProxyRetry: null,
+      autoProxyRetriedSeq: 0,
       proxyRetryInFlight: false,
       episodePanelResizeState: {
         dragging: false,
@@ -2229,7 +2230,6 @@ export default {
       this.playError = '';
       this.playerRuntimeError = '';
       this.playRequestStage = normalizeString(stage) || 'play_url';
-      this.pendingProxyRetry = null;
       this.lastGoProxyCandidate = null;
       this.resetPlayerReadyState();
     },
@@ -3444,7 +3444,6 @@ export default {
       sourceKind = '',
       fromHistoryPlayFlag = false,
       fromHistoryDetail = false,
-      forceProxy = false,
       selectedGoProxyBase = '',
     }) {
       if (!siteItem || !panEntry || !segment || !normalizeString(segment.episodeUrl)) return;
@@ -3490,13 +3489,13 @@ export default {
       this.playRequestStage = 'play_url';
       this.playError = '';
       this.playerRuntimeError = '';
+      this.autoProxyRetriedSeq = 0;
       this.playerMetaReady = false;
       this.playerFirstFrameReady = false;
       this.playerPlaybackStarted = false;
       this.playerBuffering = false;
       this.goProxyInUseBase = '';
       this.lastGoProxyCandidate = null;
-      this.pendingProxyRetry = null;
       this.syncPlayerStatsForResolvedSegment({ siteResultItem: siteItem, pan: panEntry, segment, candidate });
       try {
         const settings = await this.ensurePlayRuntimeSettings();
@@ -3515,13 +3514,11 @@ export default {
           segment,
           selectionKey,
           apiBase: normalizeString(settings && settings.catpawrunnerApiBase),
-          forceProxy: !!forceProxy,
           selectedGoProxyBase: normalizeString(selectedGoProxyBase),
         });
         if (seq !== this.playRequestSeq) return;
         this.lastGoProxyCandidate = result && result.lastGoProxyCandidate ? result.lastGoProxyCandidate : null;
         this.goProxyInUseBase = normalizeString(result && result.goProxyBase);
-        this.pendingProxyRetry = result && result.pendingProxyRetry ? result.pendingProxyRetry : null;
         this.playerUrl = normalizeString(result && result.playerUrl);
         this.playerHeaders = result && result.playerHeaders && typeof result.playerHeaders === 'object'
           ? result.playerHeaders
@@ -3553,7 +3550,6 @@ export default {
         this.playerHeaders = {};
         this.playRequestStage = '';
         this.clearPlayerStats();
-        this.pendingProxyRetry = null;
         this.lastGoProxyCandidate = null;
         this.playError = error && error.message ? String(error.message) : '播放失败';
         return false;
@@ -3921,47 +3917,39 @@ export default {
     async onGoProxySelect(base) {
       const nextBase = normalizeString(base);
       this.goProxyManualBase = nextBase;
-      const payload = this.lastResolvedPlaybackPayload && typeof this.lastResolvedPlaybackPayload === 'object'
-        ? this.lastResolvedPlaybackPayload
-        : null;
       const candidate = this.lastGoProxyCandidate && typeof this.lastGoProxyCandidate === 'object'
         ? this.lastGoProxyCandidate
         : null;
-      if (!payload || !candidate || !candidate.enabled || !normalizeString(candidate.url) || this.proxyRetryInFlight) return;
+      if (!candidate || !candidate.enabled || !normalizeString(candidate.url) || this.proxyRetryInFlight) return;
       this.goProxyInUseBase = '';
       this.proxyRetryInFlight = true;
       try {
-        await this.playResolvedSiteSegment({
-          ...payload,
-          forceProxy: true,
+        this.playerUrl = '';
+        this.playerHeaders = {};
+        this.playLoading = true;
+        this.playRequestStage = 'play_info';
+        this.playError = '';
+        this.playerRuntimeError = '';
+        await this.$nextTick();
+        const out = await executeProxyRetryPlayback({
+          candidate,
+          runtimeSettings: this.runtimeSettings,
           selectedGoProxyBase: this.goProxyManualBase,
         });
+        if (!out || !out.ok || !normalizeString(out.playerUrl)) {
+          this.playError = '代理切换失败';
+          return;
+        }
+        this.playerUrl = normalizeString(out.playerUrl);
+        this.playerHeaders = out.playerHeaders && typeof out.playerHeaders === 'object'
+          ? out.playerHeaders
+          : {};
+        this.goProxyInUseBase = normalizeString(out.goProxyBase);
+        this.playError = '';
+        this.playerRuntimeError = '';
       } finally {
-        this.proxyRetryInFlight = false;
-      }
-    },
-    isPendingProxyRetryForCurrentSelection() {
-      const pending = this.pendingProxyRetry && typeof this.pendingProxyRetry === 'object' ? this.pendingProxyRetry : null;
-      if (!pending) return false;
-      return normalizeString(pending.selectionKey) && normalizeString(pending.selectionKey) === normalizeString(this.selectedSiteEpisodeSelectionKey);
-    },
-    async retryPendingProxyPlayback() {
-      const pending = this.pendingProxyRetry && typeof this.pendingProxyRetry === 'object' ? this.pendingProxyRetry : null;
-      const payload = this.lastResolvedPlaybackPayload && typeof this.lastResolvedPlaybackPayload === 'object'
-        ? this.lastResolvedPlaybackPayload
-        : null;
-      if (!pending || !this.isPendingProxyRetryForCurrentSelection() || this.proxyRetryInFlight) return false;
-      if (!payload) return false;
-      this.pendingProxyRetry = null;
-      this.proxyRetryInFlight = true;
-      try {
-        await this.playResolvedSiteSegment({
-          ...payload,
-          forceProxy: true,
-          selectedGoProxyBase: this.goProxyManualBase,
-        });
-        return true;
-      } finally {
+        this.playLoading = false;
+        this.playRequestStage = '';
         this.proxyRetryInFlight = false;
       }
     },
@@ -4009,16 +3997,42 @@ export default {
         this.playError = '';
         this.playerRuntimeError = '';
       }
-      if (this.pendingProxyRetry && this.isPendingProxyRetryForCurrentSelection()) {
-        void this.retryPendingProxyPlayback().then((retried) => {
-          if (retried) return;
-          const pendingRunSeq = normalizeInt(this.smartPlaybackPendingRunSeq);
-          const confirmedRunSeq = normalizeInt(this.smartPlaybackConfirmedRunSeq);
-          if (pendingRunSeq > 0 && pendingRunSeq === this.smartPlaybackRunSeq && pendingRunSeq !== confirmedRunSeq) {
-            const resume = typeof this.smartPlaybackResume === 'function' ? this.smartPlaybackResume : null;
-            this.smartPlaybackPendingRunSeq = 0;
-            if (this.smartPlaybackAttemptRunSeq === pendingRunSeq) this.smartPlaybackAttemptRunSeq = 0;
-            if (resume) void resume();
+      const candidate = this.lastGoProxyCandidate && typeof this.lastGoProxyCandidate === 'object'
+        ? this.lastGoProxyCandidate
+        : null;
+      const canRetryWithProxy =
+        !this.proxyRetryInFlight
+        && normalizeInt(this.autoProxyRetriedSeq) !== normalizeInt(this.playRequestSeq)
+        && candidate
+        && candidate.enabled
+        && hasNonEmptyHeaders(candidate.headers)
+        && normalizeString(candidate.url);
+      if (canRetryWithProxy) {
+        this.autoProxyRetriedSeq = normalizeInt(this.playRequestSeq);
+        this.proxyRetryInFlight = true;
+        this.playerUrl = '';
+        this.playerHeaders = {};
+        this.playLoading = true;
+        this.playRequestStage = 'play_info';
+        this.$nextTick().then(async () => {
+          try {
+            const out = await executeProxyRetryPlayback({
+              candidate,
+              runtimeSettings: this.runtimeSettings,
+              selectedGoProxyBase: this.goProxyManualBase,
+            });
+            if (!out || !out.ok || !normalizeString(out.playerUrl)) return;
+            this.playerUrl = normalizeString(out.playerUrl);
+            this.playerHeaders = out.playerHeaders && typeof out.playerHeaders === 'object'
+              ? out.playerHeaders
+              : {};
+            this.goProxyInUseBase = normalizeString(out.goProxyBase);
+            this.playError = '';
+            this.playerRuntimeError = '';
+          } finally {
+            this.playLoading = false;
+            this.playRequestStage = '';
+            this.proxyRetryInFlight = false;
           }
         });
         return;
@@ -4060,7 +4074,6 @@ export default {
       this.playLoading = false;
       this.playerRuntimeError = '';
       this.playerPlaybackStarted = true;
-      this.pendingProxyRetry = null;
       this.activePlayerControlAction = '';
       this.finishPlayerSwitchTransition();
     },
@@ -4070,7 +4083,6 @@ export default {
       this.playerBuffering = false;
       this.playerFirstFrameReady = true;
       this.playRequestStage = '';
-      this.pendingProxyRetry = null;
       this.activePlayerControlAction = '';
       this.finishPlayerSwitchTransition();
       await this.applyPlayHistoryResume('firstframe');

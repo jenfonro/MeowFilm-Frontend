@@ -999,7 +999,6 @@ export const executeResolvedSitePlayback = async ({
   segment,
   selectionKey,
   apiBase,
-  forceProxy = false,
   selectedGoProxyBase = '',
 } = {}) => {
   const item = siteItem && typeof siteItem === 'object' ? siteItem : null;
@@ -1059,39 +1058,7 @@ export const executeResolvedSitePlayback = async ({
   })();
   const sourceUrl = normalizeString(resolvedPlay && resolvedPlay.proxySourceUrl) || finalUrl;
   const relayResolveUrl = normalizeString(resolvedPlay && resolvedPlay.relayResolveUrl);
-  let goProxyBase = '';
-  let relayBase = '';
-  if (forceProxy) {
-    const proxied = await applyPlaybackProxyChain({
-      apiBase: resolvedApiBase,
-      tvUser,
-      sourceUrl,
-      playUrl: finalUrl,
-      playHeaders: finalHeaders,
-      relayResolveUrl,
-      preferredPan,
-      runtimeSettings: settings,
-      selectedGoProxyBase,
-    });
-    finalUrl = normalizeString(proxied && proxied.url);
-    finalHeaders = proxied && proxied.headers && typeof proxied.headers === 'object'
-      ? proxied.headers
-      : {};
-    goProxyBase = normalizeString(proxied && proxied.goProxyBase);
-    relayBase = normalizeString(proxied && proxied.relayBase);
-    if (!finalUrl) throw new Error('无可用播放地址');
-  }
-  const lastGoProxyCandidate = {
-    apiBase: resolvedApiBase,
-    tvUser,
-    url: finalUrl,
-    sourceUrl,
-    relayResolveUrl,
-    headers: finalHeaders,
-    preferredPan,
-    enabled: hasNonEmptyHeaders(finalHeaders),
-  };
-  const pendingProxyRetry = hasNonEmptyHeaders(finalHeaders)
+  const proxyRetryCandidate = hasNonEmptyHeaders(finalHeaders)
     ? {
       selectionKey: normalizeString(selectionKey),
       apiBase: resolvedApiBase,
@@ -1103,13 +1070,22 @@ export const executeResolvedSitePlayback = async ({
       preferredPan,
     }
     : null;
+  const lastGoProxyCandidate = {
+    apiBase: resolvedApiBase,
+    tvUser,
+    url: proxyRetryCandidate ? proxyRetryCandidate.url : finalUrl,
+    sourceUrl,
+    relayResolveUrl,
+    headers: proxyRetryCandidate ? proxyRetryCandidate.headers : finalHeaders,
+    preferredPan,
+    enabled: !!proxyRetryCandidate || hasNonEmptyHeaders(finalHeaders),
+  };
   return {
     playerUrl: finalUrl,
     playerHeaders: finalHeaders,
-    goProxyBase,
-    relayBase,
+    goProxyBase: '',
+    relayBase: '',
     lastGoProxyCandidate,
-    pendingProxyRetry,
   };
 };
 
