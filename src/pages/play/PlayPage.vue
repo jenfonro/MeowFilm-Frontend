@@ -952,8 +952,6 @@ export default {
     Poster: { type: String, default: '' },
     Remark: { type: String, default: '' },
     switchOnlyToken: { type: Number, default: 0 },
-    openFromSearch: { type: Number, default: 0 },
-    originSearchQuery: { type: String, default: '' },
   },
   computed: {
     episodeButtonWidth() {
@@ -1395,45 +1393,27 @@ export default {
     playSearchQuery() {
       return normalizeSearchKey(this.displayTitle);
     },
-    searchReuseQuery() {
-      return normalizeSearchKey(this.originSearchQuery);
-    },
     playSearchContentKind() {
       return this.isTmdbMode && this.tmdbMovieMode ? 'movie' : 'tv';
     },
     playSearchScope() {
       return `${PLAY_SEARCH_SCOPE}:${this.playSearchContentKind}`;
     },
-    searchReuseEligible() {
-      if (!normalizeInt(this.openFromSearch) || !this.searchReuseQuery || !this.playSearchQuery) return false;
-      const runtimeConfig = this.playSearchRuntimeConfig;
-      const aggregateRules = runtimeConfig && Array.isArray(runtimeConfig.aggregateRules)
-        ? runtimeConfig.aggregateRules
-        : [];
-      const contentKind = this.playSearchContentKind;
-      const queryGroupKey = buildSearchGroupKey(this.searchReuseQuery, aggregateRules, { contentKind });
-      const titleGroupKey = buildSearchGroupKey(this.playSearchQuery, aggregateRules, { contentKind });
-      return !!queryGroupKey && queryGroupKey === titleGroupKey;
-    },
     effectivePlaySearchScope() {
-      return this.searchReuseEligible ? 'default' : this.playSearchScope;
-    },
-    isUsingSearchOriginScope() {
-      return this.effectivePlaySearchScope === 'default';
+      return this.playSearchScope;
     },
     siteSourceSearchState() {
       return normalizeString(this.playSearchLiveStatus) || getSearchSessionAnyQueryStatus(this.playSearchQuery, this.effectivePlaySearchScope);
     },
     showSiteSourceSearchOption() {
       if (!this.playSearchQuery) return false;
-      if (this.isUsingSearchOriginScope) return this.siteSourceSearchState === 'loading';
       return this.siteSourceSearchState !== 'completed';
     },
     siteSourceSearchBusy() {
       return this.siteSourceSearchManualLoading || this.siteSourceSearchState === 'loading';
     },
     siteSourceSearchInteractive() {
-      return !this.isUsingSearchOriginScope && !this.siteSourceSearchBusy;
+      return !this.siteSourceSearchBusy;
     },
     siteSourceSearchLabel() {
       return this.siteSourceSearchBusy ? '加载中...' : '加载更多...';

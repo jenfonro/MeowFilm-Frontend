@@ -408,8 +408,6 @@ const playParams = ref({
   Poster: '',
   Remark: '',
   switchOnlyToken: 0,
-  openFromSearch: 0,
-  originSearchQuery: '',
 });
 
 const mobileHeaderTitle = computed(() => {
@@ -744,8 +742,6 @@ const handleCategoryOpenItem = (payload = {}) => {
       Poster: typeof payload.poster === 'string' ? payload.poster : '',
       Remark: typeof payload.remark === 'string' ? payload.remark : '',
       switchOnlyToken: Number(playParams.value.switchOnlyToken || 0) + 1,
-      openFromSearch: Number(payload.openFromSearch || 0) || 0,
-      originSearchQuery: typeof payload.originSearchQuery === 'string' ? payload.originSearchQuery : '',
     };
     mobileMenuOpen.value = false;
     return;

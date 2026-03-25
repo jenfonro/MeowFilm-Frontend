@@ -371,8 +371,6 @@ export const collectRecognitionCandidatesForTarget = ({
     ];
     tiers.forEach((list, tierIndex) => {
       list.forEach((candidate) => {
-        const resolutionMode = normalizeString(candidate && candidate.resolutionMode);
-        if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) return;
         if (matchKind === 'movie') {
           if (normalizeString(candidate && candidate.matchKind) !== 'movie' || !(candidate && candidate.movieMatched)) return;
           const itemIndex = normalizeInt(candidate && candidate.itemIndex);
@@ -387,6 +385,8 @@ export const collectRecognitionCandidatesForTarget = ({
           });
           return;
         }
+        const resolutionMode = normalizeString(candidate && candidate.resolutionMode);
+        if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) return;
         const mapping = candidate && candidate.mapping && typeof candidate.mapping === 'object' ? candidate.mapping : null;
         if (!mapping) return;
         const strictMatch = normalizeInt(mapping.global) === targetGlobal;
@@ -716,12 +716,12 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
     const list = tiers[tierIndex];
     for (let i = 0; i < list.length; i += 1) {
       const candidate = list[i];
-      const resolutionMode = normalizeString(candidate && candidate.resolutionMode);
-      if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) continue;
       let looseMatch = false;
       if (matchKind === 'movie') {
         if (normalizeString(candidate && candidate.matchKind) !== 'movie' || !(candidate && candidate.movieMatched)) continue;
       } else {
+        const resolutionMode = normalizeString(candidate && candidate.resolutionMode);
+        if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) continue;
         const mapping = candidate && candidate.mapping && typeof candidate.mapping === 'object' ? candidate.mapping : null;
         if (!mapping) continue;
         const strictMatch = normalizeInt(mapping.global) === targetGlobal;

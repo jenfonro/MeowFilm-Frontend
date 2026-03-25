@@ -356,7 +356,6 @@ const openItem = (item) => {
   const current = item && typeof item === 'object' ? item : null;
   if (!current) return;
   const playTitle = current.title ? String(current.title) : '';
-  const originSearchQuery = activeQuery.value ? String(activeQuery.value) : '';
   if (current.sourceKind === 'site') {
     emit('open-item', {
       sourceKind: 'site',
@@ -371,8 +370,6 @@ const openItem = (item) => {
       siteDetail: current.siteDetail ? String(current.siteDetail) : '',
       tmdbId: 0,
       tmdbType: '',
-      openFromSearch: 1,
-      originSearchQuery,
     });
     return;
   }
@@ -385,8 +382,6 @@ const openItem = (item) => {
     remark: current.textBadge ? String(current.textBadge) : '',
     tmdbId: current.tmdbId,
     tmdbType: current.tmdbType,
-    openFromSearch: 1,
-    originSearchQuery,
   });
 };
 
