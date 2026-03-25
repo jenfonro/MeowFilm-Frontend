@@ -218,6 +218,26 @@ export async function saveMetadataSettings(payload) {
   return postJson('/dashboard/metadata/settings', payload);
 }
 
+export async function clearMetadataCache(scope) {
+  const target = typeof scope === 'string' ? scope.trim().toLowerCase() : '';
+  if (target !== 'douban' && target !== 'tmdb' && target !== 'all') {
+    throw new Error('缓存清理类型无效');
+  }
+  return postJson('/dashboard/metadata/cache/clear', { scope: target });
+}
+
+export async function clearDoubanMetadataCache() {
+  return clearMetadataCache('douban');
+}
+
+export async function clearTMDBMetadataCache() {
+  return clearMetadataCache('tmdb');
+}
+
+export async function clearAllMetadataCache() {
+  return clearMetadataCache('all');
+}
+
 export async function fetchMagicSettings() {
   return getSuccessJson('/dashboard/magic/settings');
 }

@@ -2117,6 +2117,100 @@
               </div>
             </div>
 
+            <div class="dashboard-card adm-space-y-4">
+              <div class="adm-flex adm-items-center adm-gap-3">
+                <div class="adm-text-sm adm-font-semibold adm-text-gray-700">缓存清理</div>
+              </div>
+              <div class="adm-flex adm-items-center adm-gap-3 adm-flex-wrap">
+                <template v-if="metadataCacheConfirmingKey !== 'douban'">
+                  <button
+                    type="button"
+                    class="btn-ghost-red"
+                    :disabled="metadataPanelBusy || !!metadataCacheClearingKey"
+                    @click="beginMetadataCacheClearConfirm('douban')"
+                  >
+                    清除豆瓣缓存
+                  </button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    class="btn-ghost-red"
+                    :disabled="metadataPanelBusy || metadataCacheClearingKey === 'tmdb' || metadataCacheClearingKey === 'all'"
+                    @click="confirmMetadataCacheClear('douban')"
+                  >
+                    {{ metadataCacheClearingKey === 'douban' ? '清理中' : '确定' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-ghost-blue"
+                    :disabled="!!metadataCacheClearingKey"
+                    @click="cancelMetadataCacheClearConfirm"
+                  >
+                    取消
+                  </button>
+                </template>
+
+                <template v-if="metadataCacheConfirmingKey !== 'tmdb'">
+                  <button
+                    type="button"
+                    class="btn-ghost-red"
+                    :disabled="metadataPanelBusy || !!metadataCacheClearingKey"
+                    @click="beginMetadataCacheClearConfirm('tmdb')"
+                  >
+                    清除TMDB缓存
+                  </button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    class="btn-ghost-red"
+                    :disabled="metadataPanelBusy || metadataCacheClearingKey === 'douban' || metadataCacheClearingKey === 'all'"
+                    @click="confirmMetadataCacheClear('tmdb')"
+                  >
+                    {{ metadataCacheClearingKey === 'tmdb' ? '清理中' : '确定' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-ghost-blue"
+                    :disabled="!!metadataCacheClearingKey"
+                    @click="cancelMetadataCacheClearConfirm"
+                  >
+                    取消
+                  </button>
+                </template>
+
+                <template v-if="metadataCacheConfirmingKey !== 'all'">
+                  <button
+                    type="button"
+                    class="btn-ghost-red"
+                    :disabled="metadataPanelBusy || !!metadataCacheClearingKey"
+                    @click="beginMetadataCacheClearConfirm('all')"
+                  >
+                    清除所有缓存
+                  </button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    class="btn-ghost-red"
+                    :disabled="metadataPanelBusy || metadataCacheClearingKey === 'douban' || metadataCacheClearingKey === 'tmdb'"
+                    @click="confirmMetadataCacheClear('all')"
+                  >
+                    {{ metadataCacheClearingKey === 'all' ? '清理中' : '确定' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-ghost-blue"
+                    :disabled="!!metadataCacheClearingKey"
+                    @click="cancelMetadataCacheClearConfirm"
+                  >
+                    取消
+                  </button>
+                </template>
+              </div>
+            </div>
+
             <div class="adm-pt-1 adm-flex adm-justify-start">
               <button type="submit" class="btn-green" :disabled="metadataLoading || metadataSaving">
                 {{ metadataSaving ? '保存中' : '保存' }}
@@ -2206,6 +2300,9 @@ import {
   saveMagicSettings,
   saveSmartSettings,
   saveThirdpartySettings,
+  clearDoubanMetadataCache,
+  clearTMDBMetadataCache,
+  clearAllMetadataCache,
   savePanLoginSettings,
   startPanQrLogin,
   syncPanLoginSettingsToCatpawrunner,
@@ -2402,6 +2499,8 @@ const backupExporting = ref(false);
 const backupImporting = ref(false);
 const metadataLoading = ref(false);
 const metadataSaving = ref(false);
+const metadataCacheConfirmingKey = ref('');
+const metadataCacheClearingKey = ref('');
 const thirdPartyLoading = ref(false);
 const thirdPartySaving = ref(false);
 const searchDisplayDropdownOpen = ref(false);
@@ -2763,7 +2862,14 @@ const currentDoubanImgProxyLabel = computed(() => {
   return matched ? matched.label : '请选择';
 });
 
+const metadataPanelBusy = computed(() => metadataLoading.value || metadataSaving.value);
 const thirdPartyBusy = computed(() => thirdPartyLoading.value || thirdPartySaving.value);
+
+const metadataCacheActionLabels = {
+  douban: '豆瓣缓存',
+  tmdb: 'TMDB缓存',
+  all: '所有缓存'
+};
 
 const currentSmartSourceExtractPriorityLabel = computed(() => {
   const matched = smartSourceExtractPriorityOptions.find((option) => option.value === smartSourceExtractPriority.value);
@@ -5986,6 +6092,40 @@ async function saveMetadataPanel() {
     notifyError((err && err.message) || '保存失败');
   } finally {
     metadataSaving.value = false;
+  }
+}
+
+function beginMetadataCacheClearConfirm(scope) {
+  const key = typeof scope === 'string' ? scope.trim().toLowerCase() : '';
+  if (key !== 'douban' && key !== 'tmdb' && key !== 'all') return;
+  if (metadataPanelBusy.value || metadataCacheClearingKey.value) return;
+  metadataCacheConfirmingKey.value = key;
+}
+
+function cancelMetadataCacheClearConfirm() {
+  if (metadataCacheClearingKey.value) return;
+  metadataCacheConfirmingKey.value = '';
+}
+
+async function confirmMetadataCacheClear(scope) {
+  const key = typeof scope === 'string' ? scope.trim().toLowerCase() : '';
+  if (key !== 'douban' && key !== 'tmdb' && key !== 'all') return;
+  if (!isAdmin.value || metadataPanelBusy.value || metadataCacheClearingKey.value || metadataCacheConfirmingKey.value !== key) return;
+  metadataCacheClearingKey.value = key;
+  try {
+    if (key === 'douban') {
+      await clearDoubanMetadataCache();
+    } else if (key === 'tmdb') {
+      await clearTMDBMetadataCache();
+    } else {
+      await clearAllMetadataCache();
+    }
+    notifySuccess(`已清除${metadataCacheActionLabels[key] || '缓存'}`);
+    metadataCacheConfirmingKey.value = '';
+  } catch (err) {
+    notifyError((err && err.message) || '缓存清理失败');
+  } finally {
+    metadataCacheClearingKey.value = '';
   }
 }
 
