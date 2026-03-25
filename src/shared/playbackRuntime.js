@@ -566,9 +566,6 @@ export const normalizeRelayServers = (value) => {
         : ((item && (item.base || item.apiBase || item.api || item.url)) || '')
     );
     if (!base || seen.has(base)) return;
-    const pans = item && typeof item === 'object' && item.pans && typeof item.pans === 'object' ? item.pans : {};
-    const hasBaidu = Object.prototype.hasOwnProperty.call(pans, 'baidu');
-    const hasQuark = Object.prototype.hasOwnProperty.call(pans, 'quark');
     let label = '';
     let secret = '';
     if (item && typeof item === 'object') {
@@ -586,69 +583,36 @@ export const normalizeRelayServers = (value) => {
       base,
       label,
       secret,
-      pans: {
-        baidu: hasBaidu ? !!pans.baidu : true,
-        quark: hasQuark ? !!pans.quark : true,
-      },
     });
     seen.add(base);
   });
   return out;
 };
 
-const buildRelayPlaybackUrl = ({ base, resolveUrl, secret, sizeMode = false }) => {
+const buildRelayPlaybackUrl = ({ base, resolveUrl, secret }) => {
   const relayBase = normalizeHttpBase(base);
   const targetResolveUrl = normalizeString(resolveUrl);
   const accessSecret = normalizeString(secret);
   if (!relayBase || !isHttpPlayableUrl(targetResolveUrl) || !accessSecret) return '';
-  const pathPrefix = sizeMode ? 'size/' : '';
   const separator = targetResolveUrl.includes('?') ? '&' : '?';
-  return `${relayBase}/${pathPrefix}${targetResolveUrl}${separator}secret=${encodeURIComponent(accessSecret)}`;
+  return `${relayBase}/${targetResolveUrl}${separator}secret=${encodeURIComponent(accessSecret)}`;
 };
 
-const probeRelaySize = async ({ base, resolveUrl, secret }) => {
-  const target = buildRelayPlaybackUrl({ base, resolveUrl, secret, sizeMode: true });
-  if (!target) throw new Error('relay size url invalid');
-  const resp = await fetch(target, {
-    method: 'GET',
-    credentials: 'omit',
-    headers: { Accept: 'application/json' },
-  });
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    throw new Error((data && (data.message || data.error)) || `HTTP ${resp.status}`);
-  }
-  const size = Number(data && data.size);
-  if (!Number.isFinite(size) || size <= 0) {
-    throw new Error('invalid relay size');
-  }
-  return Math.trunc(size);
-};
-
-const resolveRelayGoProxyThresholdBytes = (value) => {
-  const thresholdGB = Math.max(0, Math.trunc(Number(value) || 0));
-  if (thresholdGB <= 0) return 0;
-  return thresholdGB * 1024 * 1024 * 1024;
-};
-
-const pickEligibleRelayServers = ({ relayServers, preferredPan }) => {
+const pickEligibleRelayServers = ({ relayServers }) => {
   const servers = normalizeRelayServers(relayServers);
-  const pan = normalizeString(preferredPan).toLowerCase();
-  if (pan !== 'baidu' && pan !== 'quark') return servers;
-  return servers.filter((item) => item && item.pans && item.pans[pan]);
+  return servers.filter((item) => item && item.base && item.secret);
 };
 
 export const maybeUseRelayForPlayback = async ({
   relayEnabled,
   relayServers,
-  preferredPan,
   resolveUrl,
 }) => {
   const targetResolveUrl = normalizeString(resolveUrl);
   if (!relayEnabled || !targetResolveUrl) {
     return { url: '', relayBase: '' };
   }
-  const eligible = pickEligibleRelayServers({ relayServers, preferredPan });
+  const eligible = pickEligibleRelayServers({ relayServers });
   if (!eligible.length) return { url: '', relayBase: '' };
   const picked = eligible.find((item) => item && item.base && item.secret) || null;
   if (!picked) return { url: '', relayBase: '' };
@@ -657,7 +621,6 @@ export const maybeUseRelayForPlayback = async ({
       base: picked.base,
       resolveUrl: targetResolveUrl,
       secret: picked.secret,
-      sizeMode: false,
     }),
     relayBase: picked.base,
   };
@@ -869,16 +832,14 @@ export const applyPlaybackProxyChain = async ({
   const relayEnabled = !!(settings && settings.relayEnabled);
   const relayServers = settings && settings.relayServers;
   const goProxyEnabled = !!(settings && settings.goProxyEnabled);
-  const relayGoProxyThresholdBytes = resolveRelayGoProxyThresholdBytes(settings && settings.relayGoProxyThresholdGB);
   const hasRelayResolve = isHttpPlayableUrl(relayResolveUrl);
-  const relayEligible = relayEnabled && hasRelayResolve && pickEligibleRelayServers({ relayServers, preferredPan }).some((item) => item && item.base && item.secret);
+  const relayEligible = relayEnabled && hasRelayResolve && pickEligibleRelayServers({ relayServers }).some((item) => item && item.base && item.secret);
   const goProxyEligible = hasNonEmptyHeaders(finalHeaders) && goProxyEnabled && normalizeGoProxyServers(settings && settings.goProxyServers).length > 0;
 
   if (relayEligible && !goProxyEligible) {
     const out = await maybeUseRelayForPlayback({
       relayEnabled,
       relayServers,
-      preferredPan,
       resolveUrl: relayResolveUrl,
     });
     if (out && normalizeString(out.url)) {
@@ -903,51 +864,15 @@ export const applyPlaybackProxyChain = async ({
       }
     } catch (_error) {}
   } else if (relayEligible && goProxyEligible) {
-    let useRelay = false;
-    if (relayGoProxyThresholdBytes <= 0) {
-      useRelay = true;
-    } else {
-      try {
-        const eligibleRelay = pickEligibleRelayServers({ relayServers, preferredPan });
-        const pickedRelay = eligibleRelay.find((item) => item && item.base && item.secret) || null;
-        if (pickedRelay) {
-          const size = await probeRelaySize({
-            base: pickedRelay.base,
-            resolveUrl: relayResolveUrl,
-            secret: pickedRelay.secret,
-          });
-          useRelay = size > 0 && size < relayGoProxyThresholdBytes;
-        }
-      } catch (_error) {}
-    }
-    if (useRelay) {
-      const out = await maybeUseRelayForPlayback({
-        relayEnabled,
-        relayServers,
-        preferredPan,
-        resolveUrl: relayResolveUrl,
-      });
-      if (out && normalizeString(out.url)) {
-        finalUrl = normalizeString(out.url);
-        finalHeaders = {};
-        relayBase = normalizeString(out.relayBase);
-      }
-    } else {
-      try {
-        const out = await maybeUseGoProxyForPlayback({
-          playUrl: finalUrl,
-          playHeaders: finalHeaders,
-          goProxyEnabled,
-          goProxyServers: settings.goProxyServers,
-          preferredPan,
-          selectedBase: selectedGoProxyBase,
-        });
-        if (out && normalizeString(out.url)) {
-          finalUrl = normalizeString(out.url);
-          finalHeaders = out.headers && typeof out.headers === 'object' ? out.headers : {};
-          goProxyBase = normalizeString(out.goProxyBase);
-        }
-      } catch (_error) {}
+    const out = await maybeUseRelayForPlayback({
+      relayEnabled,
+      relayServers,
+      resolveUrl: relayResolveUrl,
+    });
+    if (out && normalizeString(out.url)) {
+      finalUrl = normalizeString(out.url);
+      finalHeaders = {};
+      relayBase = normalizeString(out.relayBase);
     }
   }
   if (hasNonEmptyHeaders(finalHeaders) && isProbablyM3U8Url(finalUrl)) {

@@ -134,6 +134,7 @@
     </div>
     <div
       v-if="matchBlockMenu.open"
+      ref="matchBlockMenuRef"
       class="search-matchblock-menu"
       :style="matchBlockMenuStyle"
       @click.stop
@@ -155,10 +156,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import '../../shared/contextMenu.css';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
-import { getSearchSessionAnyQuerySnapshot, getSearchSessionAnyQueryStatus, useSearchSession } from '../../shared/searchSession';
+import { useSearchSession } from '../../shared/searchSession';
 import {
   addSmartMatchBlockItem,
-  clearBlockedMatchCaches,
   deleteSmartMatchBlockItem,
   fetchBlockedMatchIndex,
 } from '../../shared/searchRuntime';
@@ -176,6 +176,7 @@ const props = defineProps({
 
 const emit = defineEmits(['open-item']);
 const externalToken = ref(0);
+const matchBlockMenuRef = ref(null);
 const {
   inputValue,
   activeQuery,
@@ -260,9 +261,36 @@ const isItemMatchBlocked = (item) => {
   return !!(entry && entry.blockAll);
 };
 
-const refreshMatchBlockedIndex = async () => {
-  clearBlockedMatchCaches();
-  await loadMatchBlockedIndex();
+const buildMatchBlockedEntryKey = (siteKey, siteDetail) => {
+  const safeSiteKey = normalizeString(siteKey);
+  const safeSiteDetail = normalizeString(siteDetail);
+  if (!safeSiteKey || !safeSiteDetail) return '';
+  return `${safeSiteKey}::${safeSiteDetail}`;
+};
+
+const applyMatchBlockedIndexMutation = (payload, blocked) => {
+  const current = matchBlockedIndex.value && typeof matchBlockedIndex.value === 'object'
+    ? { ...matchBlockedIndex.value }
+    : {};
+  const entryKey = buildMatchBlockedEntryKey(payload && payload.siteKey, payload && payload.siteDetail);
+  if (!entryKey) {
+    matchBlockedIndex.value = current;
+    return current;
+  }
+  if (blocked) {
+    current[entryKey] = {
+      ...(current[entryKey] && typeof current[entryKey] === 'object' ? current[entryKey] : {}),
+      blockAll: true,
+      siteKey: normalizeString(payload && payload.siteKey),
+      siteDetail: normalizeString(payload && payload.siteDetail),
+      spiderApi: normalizeString(payload && payload.spiderApi),
+      poster: normalizeString(payload && payload.poster),
+    };
+  } else {
+    delete current[entryKey];
+  }
+  matchBlockedIndex.value = current;
+  return current;
 };
 
 const openMatchBlockMenu = async (event, item) => {
@@ -278,7 +306,6 @@ const openMatchBlockMenu = async (event, item) => {
     closeMatchBlockMenu();
     return;
   }
-  await loadMatchBlockedIndex();
   matchBlockMenu.value = {
     open: true,
     x: event && typeof event.clientX === 'number' ? event.clientX : 0,
@@ -295,6 +322,7 @@ const toggleMatchBlockMenuItem = async () => {
     : null;
   const keyword = normalizeString(activeQuery.value);
   if (!current || !keyword || matchBlockMenu.value.busy) return;
+  const nextBlocked = !matchBlockMenu.value.blocked;
   const payload = {
     keyword,
     siteKey: normalizeString(current.siteKey),
@@ -310,16 +338,19 @@ const toggleMatchBlockMenuItem = async () => {
     } else {
       await addSmartMatchBlockItem(payload);
     }
-    await refreshMatchBlockedIndex();
+    applyMatchBlockedIndexMutation(payload, nextBlocked);
     try {
-      window.dispatchEvent(new CustomEvent('tv:smart-matchblock-updated', { detail: { keyword } }));
+      window.dispatchEvent(new CustomEvent('tv:smart-matchblock-updated', { detail: { keyword, payload, blocked: nextBlocked } }));
     } catch (_error) {}
   } finally {
     closeMatchBlockMenu();
   }
 };
 
-const handleDocumentPointer = () => {
+const handleDocumentPointer = (event) => {
+  const menuEl = matchBlockMenuRef.value;
+  const target = event && event.target ? event.target : null;
+  if (menuEl && target && typeof menuEl.contains === 'function' && menuEl.contains(target)) return;
   closeMatchBlockMenu();
 };
 
@@ -327,8 +358,17 @@ const handleWindowEscape = (event) => {
   if (event && event.key === 'Escape') closeMatchBlockMenu();
 };
 
-const handleSmartMatchBlockUpdated = async () => {
-  await refreshMatchBlockedIndex();
+const handleSmartMatchBlockUpdated = async (event) => {
+  const updatedKeyword = normalizeString(event && event.detail && event.detail.keyword);
+  const activeKeyword = normalizeString(activeQuery.value);
+  if (updatedKeyword && activeKeyword && updatedKeyword !== activeKeyword) return;
+  const payload = event && event.detail && event.detail.payload && typeof event.detail.payload === 'object'
+    ? event.detail.payload
+    : null;
+  const blocked = !!(event && event.detail && event.detail.blocked);
+  if (payload) {
+    applyMatchBlockedIndexMutation(payload, blocked);
+  }
 };
 
 const performSearch = async (query, { saveHistoryEnabled = true } = {}) => {
@@ -356,6 +396,7 @@ const openItem = (item) => {
   const current = item && typeof item === 'object' ? item : null;
   if (!current) return;
   const playTitle = current.title ? String(current.title) : '';
+  const displayRemark = normalizeString(current.textBadge);
   if (current.sourceKind === 'site') {
     emit('open-item', {
       sourceKind: 'site',
@@ -363,7 +404,7 @@ const openItem = (item) => {
       contentKey: current.contentKey ? String(current.contentKey) : '',
       title: playTitle,
       poster: current.poster ? String(current.poster) : '',
-      remark: current.textBadge ? String(current.textBadge) : '',
+      remark: displayRemark,
       siteKey: current.siteKey ? String(current.siteKey) : '',
       siteName: current.siteName ? String(current.siteName) : '',
       spiderApi: current.spiderApi ? String(current.spiderApi) : '',
@@ -379,7 +420,7 @@ const openItem = (item) => {
     contentKey: current.contentKey ? String(current.contentKey) : (current.id ? String(current.id) : ''),
     title: playTitle,
     poster: current.poster ? String(current.poster) : '',
-    remark: current.textBadge ? String(current.textBadge) : '',
+    remark: displayRemark,
     tmdbId: current.tmdbId,
     tmdbType: current.tmdbType,
   });
@@ -391,15 +432,7 @@ watch(
     const token = Number.isFinite(Number(value && value.token)) ? Number(value.token) : 0;
     if (token <= 0 || token === externalToken.value) return;
     const keyword = value && typeof value.query === 'string' ? value.query : '';
-    const normalizedKeyword = normalizeString(keyword);
-    const cachedStatus = getSearchSessionAnyQueryStatus(normalizedKeyword, 'default');
-    const cachedSnapshot = getSearchSessionAnyQuerySnapshot(normalizedKeyword, 'default');
-    const sameActiveQuery = normalizeString(activeQuery.value) === normalizedKeyword;
     externalToken.value = token;
-    if (normalizedKeyword && sameActiveQuery && (cachedStatus === 'loading' || cachedStatus === 'completed' || cachedStatus === 'error' || !!cachedSnapshot)) {
-      await loadMatchBlockedIndex();
-      return;
-    }
     await performSearch(keyword, { saveHistoryEnabled: true });
   },
   { deep: true, immediate: true }
@@ -429,7 +462,9 @@ onBeforeUnmount(() => {
 
 watch(activeQuery, async () => {
   closeMatchBlockMenu();
-  await loadMatchBlockedIndex();
+  if (!normalizeString(activeQuery.value)) {
+    matchBlockedIndex.value = {};
+  }
 });
 </script>
 

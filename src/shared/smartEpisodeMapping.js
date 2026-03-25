@@ -3,48 +3,51 @@ const normalizeInt = (value) => {
   return Number.isFinite(num) ? Math.trunc(num) : 0;
 };
 
-const buildTMDBRenderedSeasonRows = (detail) => {
-  const latestGlobal = Math.max(0, normalizeInt(detail && detail.latestGlobal));
-  if (latestGlobal <= 0) return [];
-  const seasons = Array.isArray(detail && detail.seasons) ? detail.seasons : [];
-  const rows = seasons
-    .map((item) => ({
-      season: normalizeInt(item && item.season),
-      episodeCount: normalizeInt(item && item.episodes),
-    }))
-    .filter((item) => item.season > 0 && item.episodeCount > 0)
-    .sort((left, right) => left.season - right.season);
-  if (!rows.length) return [];
-  if (rows.length === 1) {
-    return [{ season: rows[0].season, episodeCount: latestGlobal }];
-  }
-  let remaining = latestGlobal;
-  return rows
+const normalizeSeasonRows = (rows, { seasonKeys = [], episodeKeys = [] } = {}) => (
+  (Array.isArray(rows) ? rows : [])
     .map((item) => {
-      if (remaining <= 0) return null;
-      const count = Math.min(item.episodeCount, remaining);
-      remaining -= count;
-      if (count <= 0) return null;
-      return {
-        season: item.season,
-        episodeCount: count,
-      };
+      const season = seasonKeys.reduce((out, key) => (out > 0 ? out : normalizeInt(item && item[key])), 0);
+      const episodeCount = episodeKeys.reduce((out, key) => (out > 0 ? out : normalizeInt(item && item[key])), 0);
+      return { season, episodeCount };
     })
-    .filter(Boolean);
+    .filter((item) => item.season > 0 && item.episodeCount > 0)
+    .sort((left, right) => left.season - right.season)
+);
+
+const buildTMDBRenderedSeasonRows = (detail) => {
+  const seasons = Array.isArray(detail && detail.seasons) ? detail.seasons : [];
+  return normalizeSeasonRows(seasons, {
+    seasonKeys: ['season', 'season_number'],
+    episodeKeys: ['episodes', 'episodeCount', 'episode_count'],
+  });
 };
 
 const buildDoubanSeasonRows = (meta) => {
-  const seasons = Array.isArray(meta && meta.seasons) ? meta.seasons : [];
-  return seasons
-    .map((item) => ({
-      season: normalizeInt(item && item.season),
-      episodeCount: normalizeInt(item && item.episodeCount),
-      title: typeof item?.title === 'string' ? item.title.trim() : '',
-      displayLabel: typeof item?.displayLabel === 'string' ? item.displayLabel.trim() : '',
-      doubanId: typeof item?.doubanId === 'string' ? item.doubanId.trim() : '',
-    }))
-    .filter((item) => item.season > 0 && item.episodeCount > 0)
-    .sort((left, right) => left.season - right.season);
+  const seasons = Array.isArray(meta && meta.doubanSeasons) ? meta.doubanSeasons : [];
+  return normalizeSeasonRows(seasons, {
+    seasonKeys: ['season', 'season_number'],
+    episodeKeys: ['episodeCount', 'episode_count', 'episodes'],
+  });
+};
+
+export const clipSeasonRowsToTotalEpisodes = (rows, totalEpisodes) => {
+  const list = Array.isArray(rows) ? rows : [];
+  const limit = Math.max(0, normalizeInt(totalEpisodes));
+  if (!list.length || limit <= 0) return [];
+  const out = [];
+  let left = limit;
+  for (let i = 0; i < list.length; i += 1) {
+    const row = list[i];
+    const season = normalizeInt(row && row.season);
+    const episodeCount = normalizeInt(row && row.episodeCount);
+    if (season <= 0 || episodeCount <= 0 || left <= 0) continue;
+    const clippedCount = Math.min(episodeCount, left);
+    if (clippedCount <= 0) break;
+    out.push({ season, episodeCount: clippedCount });
+    left -= clippedCount;
+    if (left <= 0) break;
+  }
+  return out;
 };
 
 export const tmdbSeasonEpisodeOfGlobal = (detail, globalNo) => {
@@ -124,12 +127,13 @@ export const doubanSeasonEpisodeOfGlobal = (meta, globalNo) => {
 export const buildSmartEpisodeMapping = ({ tmdbDetail, doubanMeta } = {}) => {
   const tmdbRows = buildTMDBRenderedSeasonRows(tmdbDetail);
   const doubanRows = buildDoubanSeasonRows(doubanMeta);
-  const totalEpisodes = Math.max(0, normalizeInt(tmdbDetail && tmdbDetail.latestGlobal));
+  const totalEpisodes = tmdbRows.reduce((sum, item) => sum + Math.max(0, normalizeInt(item && item.episodeCount)), 0);
+  const clippedDoubanRows = clipSeasonRowsToTotalEpisodes(doubanRows, totalEpisodes);
   if (!tmdbRows.length || totalEpisodes <= 0) {
     return {
       totalEpisodes: 0,
       tmdbSeasons: tmdbRows,
-      doubanSeasons: doubanRows,
+      doubanSeasons: clippedDoubanRows,
       items: [],
     };
   }
@@ -143,8 +147,11 @@ export const buildSmartEpisodeMapping = ({ tmdbDetail, doubanMeta } = {}) => {
   }
   return {
     totalEpisodes,
+    tmdbTotalEpisodeCount: totalEpisodes,
+    doubanTotalEpisodeCount: clippedDoubanRows.reduce((sum, item) => sum + Math.max(0, normalizeInt(item && item.episodeCount)), 0),
+    doubanLeads: !!(doubanMeta && doubanMeta.doubanLeads),
     tmdbSeasons: tmdbRows,
-    doubanSeasons: doubanRows,
+    doubanSeasons: clippedDoubanRows,
     items,
   };
 };

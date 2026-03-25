@@ -1507,8 +1507,7 @@ function normalizeRelayServers(value) {
         name: normalizeString(row.name, ''),
         displayName: normalizeString(row.displayName, ''),
         base: normalizeHttpBase(row.base),
-        secret: normalizeString(row.secret, ''),
-        pans: normalizeGoProxyPanMap(row.pans)
+        secret: normalizeString(row.secret, '')
       };
     })
     .filter((item) => item.name && item.base);
@@ -1654,10 +1653,6 @@ export function normalizeDashboardBackupSchema(rawBackup, options = {}) {
     relay: {
       enabled: normalizeBoolean(relayRoot.enabled ?? siteSettings.relayEnabled ?? appConfig.RelayEnabled, false),
       auth: normalizeString(relayRoot.auth || siteSettings.auth || appConfig.auth || appConfig.RelayAuthToken, ''),
-      goProxyThresholdGB: normalizeInteger(
-        relayRoot.goProxyThresholdGB ?? relayRoot.relayGoProxyThresholdGB ?? siteSettings.relayGoProxyThresholdGB ?? appConfig.RelayGoProxyThresholdGB,
-        0
-      ),
       servers: normalizeRelayServers(root.relay?.servers || legacyRelayServers)
     },
     videoSource: {

@@ -22,8 +22,6 @@ export const runSmartPlaybackController = async ({
   singleSiteThread = false,
   matchOptions = null,
   constraintStages = null,
-  allowDegradedMapping = true,
-  requireDoubanReadyForMultiSeasonFallback = true,
   globalEpisode = 0,
   wantEpisodeInSeason = 0,
   isRunStopped,
@@ -49,9 +47,7 @@ export const runSmartPlaybackController = async ({
   const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
   const targetLoose = Math.max(0, normalizeInt(wantEpisodeInSeason));
   const matchKind = normalizeMatchKind(matchOptions);
-  const allowResolutionModes = allowDegradedMapping
-    ? ['strict-tmdb', 'strict-douban', 'degraded-single-baseline']
-    : ['strict-tmdb'];
+  const allowResolutionModes = ['strict-tmdb', 'strict-douban'];
   if (!runSeq || !query || (matchKind === 'episode' && targetGlobal <= 0)) return;
 
   const candidateBuckets = { 1: [], 2: [], 3: [] };
@@ -271,7 +267,6 @@ export const runSmartPlaybackController = async ({
     if (await requestResolvePlayback(true)) return;
     if (safeStopped()) return;
     if (typeof onLoadingStateChange === 'function') onLoadingStateChange(false);
-    if (!allowDegradedMapping && requireDoubanReadyForMultiSeasonFallback) return;
     if (typeof onErrorTextChange === 'function') onErrorTextChange('暂无可匹配片源');
   };
 

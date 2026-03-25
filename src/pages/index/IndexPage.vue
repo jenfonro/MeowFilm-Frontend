@@ -166,7 +166,7 @@
         <div class="index-sidebar-panel">
           <AppSidebar
             :bootstrap="bootstrap"
-            :active-page="isPlayView ? 'play' : currentView"
+            :active-page="currentView"
             :douban-type="categoryType"
             :active-site-key="sidebarActiveSiteKey"
             site-nav-variant="index"
@@ -353,6 +353,10 @@ const frontendCommit =
   (typeof window !== 'undefined' && window.__MEOWFILM_FRONTEND_COMMIT__) || appVersion;
 const THEME_STORAGE_KEY = 'meowfilm_theme';
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+const normalizeInt = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.trunc(num) : 0;
+};
 
 const isPlayView = ref(false);
 const mobileHeaderEl = ref(null);
@@ -402,7 +406,7 @@ const playParams = ref({
   siteName: '',
   spiderApi: '',
   siteDetail: '',
-  tmdbId: '',
+  tmdbId: 0,
   tmdbType: '',
   videoIntro: '',
   Poster: '',
@@ -429,9 +433,6 @@ const mobileHeaderTitle = computed(() => {
 });
 
 const sidebarActiveSiteKey = computed(() => {
-  if (isPlayView.value) {
-    return typeof playParams.value.siteKey === 'string' ? playParams.value.siteKey : '';
-  }
   if (currentView.value === 'category' && categorySource.value.kind === 'site') {
     return typeof categorySource.value.siteKey === 'string' ? categorySource.value.siteKey : '';
   }
@@ -722,8 +723,8 @@ const handleCategoryBack = () => {
 const handleCategoryOpenItem = (payload = {}) => {
   if (payload.sourceKind === 'site' || payload.sourceKind === 'tmdb') {
     const tmdbType = typeof payload.tmdbType === 'string' ? payload.tmdbType.trim().toLowerCase() : '';
-    const tmdbId = payload.tmdbId != null ? String(payload.tmdbId).trim() : '';
-    const isTmdbMode = !!tmdbId && (tmdbType === 'movie' || tmdbType === 'tv');
+    const tmdbId = Math.max(0, normalizeInt(payload.tmdbId));
+    const isTmdbMode = tmdbId > 0 && (tmdbType === 'movie' || tmdbType === 'tv');
     isPlayView.value = true;
     playKey.value += 1;
     playParams.value = {

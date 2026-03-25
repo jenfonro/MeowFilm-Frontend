@@ -1,8 +1,17 @@
 import { fetchBootstrap } from './bootstrap';
 import { requestCatSpider } from './catpawrunner';
-import { normalizeImageUrl } from './doubanImage';
-import { formatTMDBTVRemark } from './tmdbBadge';
 import { fetchTMDBDetailCached } from './tmdbRuntime';
+import {
+  buildTMDBDetailTextBadge,
+  getTMDBBackdropPath,
+  getTMDBDetailTitle,
+  getTMDBPosterPath,
+  getTMDBSearchResults,
+  getTMDBSearchTitle,
+  getTMDBYear,
+  normalizeTMDBID,
+  normalizeTMDBMediaType,
+} from './tmdbRaw';
 
 const SEARCH_HISTORY_ENDPOINT = '/api/searchhistory';
 const USER_SITES_ENDPOINT = '/api/user/sites';
@@ -31,14 +40,6 @@ const requestJson = async (url, options = {}) => {
     throw new Error(message);
   }
   return data;
-};
-
-const normalizeTmdbMediaType = (value) => {
-  const raw = normalizeString(value).toLowerCase();
-  if (raw === 'movie' || raw === 'tv') return raw;
-  if (raw === 'film') return 'movie';
-  if (raw === 'series') return 'tv';
-  return '';
 };
 
 const normalizeForMatch = (value) =>
@@ -172,9 +173,6 @@ export const resolveDisplayedSiteGroupKey = (item, tmdbByGroup, displayMode) => 
   if (!strippedGroupKey) return baseGroupKey;
   const tmdbMatch = tmdbByGroup.get(strippedGroupKey) || null;
   if (!tmdbMatch || tmdbMatch.tmdbType !== 'tv') return baseGroupKey;
-  const seasonHint = normalizeInt(item && item.seasonHint);
-  const tmdbSeasonCount = normalizeInt(tmdbMatch && tmdbMatch.seasonCount);
-  if (seasonHint > 0 && tmdbSeasonCount > 0 && seasonHint > tmdbSeasonCount) return baseGroupKey;
   return strippedGroupKey;
 };
 
@@ -347,10 +345,48 @@ const snapshotSearchState = (state, { progressDone = 0, progressTotal = 0 } = {}
   progressTotal,
 });
 
-const buildTmdbPoster = (item, settings) => {
-  const poster = normalizeString(item && (item.poster || item.backdrop || item.image));
-  if (!poster) return '';
-  return normalizeImageUrl(poster);
+const buildTmdbPoster = (item) => {
+  return getTMDBPosterPath(item);
+};
+
+const buildTMDBSearchTextBadge = (item, tmdbType) => {
+  if (tmdbType !== 'movie') return '';
+  const year = getTMDBYear(item);
+  return year > 0 ? String(year) : '';
+};
+
+const enrichTMDBItemWithDetail = async (item) => {
+  const tmdbType = normalizeTMDBMediaType(item && item.tmdbType);
+  const tmdbId = normalizeTMDBID(item && item.tmdbId);
+  if (!tmdbType || tmdbId <= 0) return item;
+
+  try {
+    const detail = await fetchTMDBDetailCached({ type: tmdbType, id: tmdbId });
+    if (!detail || typeof detail !== 'object') return item;
+    const poster = getTMDBPosterPath(detail);
+    const backdrop = getTMDBBackdropPath(detail);
+    const title = sanitizeDisplayTitle(getTMDBDetailTitle(detail, tmdbType) || item.title);
+    const year = getTMDBYear(detail);
+    const textBadge = buildTMDBDetailTextBadge(detail, tmdbType);
+
+    return {
+      ...item,
+      title: title || item.title,
+      poster,
+      backdrop: backdrop,
+      year: year > 0 ? year : 0,
+      textBadge,
+    };
+  } catch (_error) {
+    return item;
+  }
+};
+
+const enrichTMDBItemsWithDetail = async (items) => {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return list;
+  const enriched = await Promise.all(list.map((item) => enrichTMDBItemWithDetail(item)));
+  return enriched;
 };
 
 const normalizeInt = (value) => {
@@ -459,119 +495,51 @@ export const buildSearchGroupKey = (title, compiledRules, { queryTrailingDigits 
 };
 
 const formatAggregateTVRemark = ({ tmdbMatch, groupTitle, sources } = {}) => {
-  const title = normalizeString(groupTitle);
   const tmdbItem = tmdbMatch && typeof tmdbMatch === 'object' ? tmdbMatch : null;
-  const tmdbSeasonCount = normalizeInt(tmdbItem && tmdbItem.seasonCount);
-  const tmdbEpisodeCount = normalizeInt(tmdbItem && tmdbItem.episodeCount);
-  const tmdbLatest = {
-    season: normalizeInt(tmdbItem && tmdbItem.latestSeason),
-    episode: normalizeInt(tmdbItem && tmdbItem.latestEpisode),
-  };
-  const tmdbEnded = String(tmdbItem && tmdbItem.status ? tmdbItem.status : '').trim().toLowerCase() === 'ended';
-
-  if (tmdbEnded) {
-    if (tmdbSeasonCount >= 2 && tmdbEpisodeCount > 0) return `共${tmdbSeasonCount}季${tmdbEpisodeCount}集`;
-    if (tmdbEpisodeCount > 0) return `共${tmdbEpisodeCount}集`;
-    return '已完结';
-  }
-
-  const tmdbBaseRemark = tmdbItem
-    ? formatTMDBTVRemark({
-        badge: tmdbItem.baseTextBadge || tmdbItem.textBadge,
-        status: tmdbItem.status,
-        seasonCount: tmdbSeasonCount,
-        episodeCount: tmdbEpisodeCount,
-        title: tmdbItem.title || title,
-      }) || ''
-    : '';
-
+  const tmdbBaseRemark = tmdbItem ? normalizeString(tmdbItem.textBadge) : '';
+  const tmdbSeasoned = parseSeasonedProgress(tmdbBaseRemark);
   const list = Array.isArray(sources) ? sources : [];
-  const isMulti = tmdbItem ? tmdbSeasonCount >= 2 || tmdbLatest.season >= 2 : false;
+  let bestSeasoned = null;
+  let bestUnseasoned = 0;
 
-  if (!isMulti) {
-    let bestEpisode = 0;
-    list.forEach((source) => {
-      const joined = `${source && source.textBadge ? String(source.textBadge) : ''} ${source && source.title ? String(source.title) : ''}`.trim();
-      if (!joined || hasAnySeasonMarker(joined)) return;
-      const episode = parseUnseasonedUpdateEpisode(joined);
-      if (episode > bestEpisode) bestEpisode = episode;
-    });
-    if (tmdbLatest.episode > 0 && bestEpisode > tmdbLatest.episode + 5) bestEpisode = 0;
-    if (bestEpisode > tmdbLatest.episode) return `更新至第${bestEpisode}集`;
-    return tmdbBaseRemark || '';
-  }
-
-  let best = null;
   list.forEach((source) => {
     const joined = `${source && source.textBadge ? String(source.textBadge) : ''} ${source && source.title ? String(source.title) : ''}`.trim();
     if (!joined) return;
-    const parsed = parseSeasonedProgress(joined);
-    if (!parsed) return;
-    if (tmdbSeasonCount >= 2 && parsed.season > tmdbSeasonCount) return;
-    if (
-      tmdbLatest.season > 0 &&
-      tmdbLatest.episode > 0 &&
-      parsed.season === tmdbLatest.season &&
-      parsed.episode > tmdbLatest.episode + 5
-    ) {
+    const seasoned = parseSeasonedProgress(joined);
+    if (seasoned) {
+      if (!bestSeasoned || compareSeasonEpisode(seasoned, bestSeasoned) > 0) bestSeasoned = seasoned;
       return;
     }
-    if (!best || compareSeasonEpisode(parsed, best) > 0) best = parsed;
+    if (hasAnySeasonMarker(joined)) return;
+    const episode = parseUnseasonedUpdateEpisode(joined);
+    if (episode > bestUnseasoned) bestUnseasoned = episode;
   });
-  if (best && compareSeasonEpisode(best, tmdbLatest) > 0) return `更新至第${best.season}季第${best.episode}集`;
+
+  if (bestSeasoned) {
+    if (tmdbSeasoned && compareSeasonEpisode(bestSeasoned, tmdbSeasoned) < 0) return tmdbBaseRemark;
+    return `更新至第${bestSeasoned.season}季第${bestSeasoned.episode}集`;
+  }
+  if (tmdbSeasoned) return tmdbBaseRemark || '';
+  if (bestUnseasoned > 0) return `更新至第${bestUnseasoned}集`;
   return tmdbBaseRemark || '';
 };
 
-const hydrateTmdbDetails = async (items) => {
-  const list = Array.isArray(items) ? items : [];
-  await Promise.all(
-    list.map(async (item) => {
-      if (!item || item.sourceKind !== 'tmdb') return;
-      if (item.tmdbType !== 'tv') return;
-      try {
-        const detail = await fetchTMDBDetailCached({
-          type: item.tmdbType,
-          id: String(item.tmdbId),
-        });
-        const badge = normalizeString(detail && detail.badge);
-        const status = normalizeString(detail && detail.status);
-        const seasonCount = normalizeInt(detail && detail.seasonCount);
-        const episodeCount = normalizeInt(detail && detail.episodeCount);
-        const latestSeason = normalizeInt(detail && detail.latestSeason);
-        const latestEpisode = normalizeInt(detail && detail.latestEpisode);
-        item.baseTextBadge = formatTMDBTVRemark({
-          badge,
-          status,
-          seasonCount,
-          episodeCount,
-          title: item.title,
-        });
-        item.textBadge = item.baseTextBadge;
-        item.status = status;
-        item.seasonCount = seasonCount;
-        item.episodeCount = episodeCount;
-        item.latestSeason = latestSeason;
-        item.latestEpisode = latestEpisode;
-      } catch (_error) {}
-    })
-  );
-};
-
 const mapTmdbItems = (data, settings, computeMatchScore) => {
-  const list = data && Array.isArray(data.list) ? data.list : [];
+  const list = getTMDBSearchResults(data);
   const seen = new Set();
   return list
     .map((item, index) => {
-      const title = sanitizeDisplayTitle(item && item.title);
-      const tmdbType = normalizeTmdbMediaType(item && item.type);
-      const tmdbId = normalizeInt(item && item.id);
+      const title = sanitizeDisplayTitle(getTMDBSearchTitle(item));
+      const tmdbType = normalizeTMDBMediaType(item && item.media_type);
+      const tmdbId = normalizeTMDBID(item && item.id);
       if (!title || !tmdbType || tmdbId <= 0) return null;
       const groupKey = buildSearchGroupKey(title, [], { contentKind: tmdbType });
       const dedupeKey = `${tmdbType}::${groupKey}`;
       if (dedupeKey && seen.has(dedupeKey)) return null;
       seen.add(dedupeKey);
-      const year = normalizeInt(item && item.year);
+      const year = getTMDBYear(item);
       const contentKey = buildDisplayedContentKey(title, groupKey);
+      const textBadge = buildTMDBSearchTextBadge(item, tmdbType);
       return {
         id: `tmdb:${tmdbType}:${tmdbId}`,
         contentKey,
@@ -581,8 +549,10 @@ const mapTmdbItems = (data, settings, computeMatchScore) => {
         spiderApi: '',
         siteDetail: String(tmdbId),
         title,
-        poster: buildTmdbPoster(item, settings),
-        textBadge: tmdbType === 'movie' && year > 0 ? String(year) : '',
+        poster: buildTmdbPoster(item),
+        backdrop: getTMDBBackdropPath(item),
+        year: year > 0 ? year : 0,
+        textBadge,
         siteLabel: tmdbType === 'movie' ? '电影' : '剧集',
         score: computeMatchScore(title),
         seq: index,
@@ -590,12 +560,6 @@ const mapTmdbItems = (data, settings, computeMatchScore) => {
         tmdbId,
         tmdbType,
         tmdbRank: index + 1,
-        baseTextBadge: '',
-        status: '',
-        seasonCount: 0,
-        episodeCount: 0,
-        latestSeason: 0,
-        latestEpisode: 0,
       };
     })
     .filter(Boolean);
@@ -890,7 +854,8 @@ export async function streamSearch(query, config, { onUpdate, blockedSiteKeys = 
             output.pinTmdbFirst = output.tmdbItems.some((item) => item.score >= 1000);
             progressDone += 1;
             publish();
-            await hydrateTmdbDetails(output.tmdbItems);
+            output.tmdbItems = await enrichTMDBItemsWithDetail(output.tmdbItems);
+            output.pinTmdbFirst = output.tmdbItems.some((item) => item.score >= 1000);
             publish();
           } catch (error) {
             if (config.searchDisplayMode === 'tmdb') throw error;

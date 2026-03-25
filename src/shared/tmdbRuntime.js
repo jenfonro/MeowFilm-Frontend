@@ -1,4 +1,7 @@
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+const normalizeTMDBID = (value) => (
+  typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0
+);
 
 const requestJson = async (url, options = {}) => {
   const resp = await fetch(url, options);
@@ -12,9 +15,9 @@ const requestJson = async (url, options = {}) => {
 
 const buildTMDBDetailURL = ({ type, id } = {}) => {
   const tmdbType = normalizeString(type).toLowerCase();
-  const tmdbId = normalizeString(id);
-  if (!tmdbId || (tmdbType !== 'movie' && tmdbType !== 'tv')) return '';
-  const searchParams = new URLSearchParams({ type: tmdbType, id: tmdbId });
+  const tmdbId = normalizeTMDBID(id);
+  if (tmdbId <= 0 || (tmdbType !== 'movie' && tmdbType !== 'tv')) return '';
+  const searchParams = new URLSearchParams({ type: tmdbType, id: String(tmdbId) });
   return `/api/tmdb/detail?${searchParams.toString()}`;
 };
 
@@ -22,12 +25,12 @@ const tmdbDetailCache = new Map();
 
 export const fetchTMDBDetailCached = async ({ type, id } = {}) => {
   const tmdbType = normalizeString(type).toLowerCase();
-  const tmdbId = normalizeString(id);
-  if (!tmdbId || (tmdbType !== 'movie' && tmdbType !== 'tv')) {
+  const tmdbId = normalizeTMDBID(id);
+  if (tmdbId <= 0 || (tmdbType !== 'movie' && tmdbType !== 'tv')) {
     throw new Error('TMDB 参数无效');
   }
 
-  const cacheKey = `${tmdbType}:${tmdbId}`;
+  const cacheKey = `${tmdbType}:${String(tmdbId)}`;
   const cached = tmdbDetailCache.get(cacheKey);
   if (cached && cached.status === 'resolved') return cached.data;
   if (cached && cached.status === 'pending') return cached.promise;

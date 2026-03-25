@@ -932,11 +932,6 @@
             </div>
 
             <div class="adm-space-y-2">
-              <div class="adm-text-sm adm-font-medium adm-text-gray-700">超过 <input v-model="relayForm.goProxyThresholdGB" type="number" min="0" step="1" class="tv-field adm-inline-block" style="width: 96px;" /> G 的文件由 GoProxy 服务器进行代理</div>
-              <div class="adm-text-xs adm-text-gray-500">填 0 则不检测文件大小，始终走函数服务器逻辑。</div>
-            </div>
-
-            <div class="adm-space-y-2">
               <div class="adm-flex adm-items-center adm-gap-2 adm-mb-1">
                 <div class="adm-text-sm adm-font-medium adm-text-gray-700">函数服务器</div>
                 <button type="button" class="btn-green" @click="openRelayEditorForCreate">添加</button>
@@ -957,19 +952,6 @@
                     <span class="adm-text-sm adm-font-medium adm-text-gray-700 user-form-grid__label">密钥：</span>
                     <input v-model="relayEditorForm.secret" class="tv-field" placeholder="密钥" autocomplete="off" />
                   </div>
-                  <div class="adm-pt-2 adm-space-y-2">
-                    <div class="adm-text-sm adm-font-medium adm-text-gray-700">网盘启用</div>
-                    <div class="adm-flex adm-items-center adm-gap-3 adm-flex-wrap">
-                      <label class="adm-flex adm-items-center adm-gap-2 adm-text-sm adm-text-gray-700">
-                        <input v-model="relayEditorForm.pans.baidu" type="checkbox" />
-                        <span>百度</span>
-                      </label>
-                      <label class="adm-flex adm-items-center adm-gap-2 adm-text-sm adm-text-gray-700">
-                        <input v-model="relayEditorForm.pans.quark" type="checkbox" />
-                        <span>夸克</span>
-                      </label>
-                    </div>
-                  </div>
                   <div class="adm-flex adm-justify-start adm-items-center adm-gap-3 adm-mt-3">
                     <button type="button" class="btn-green" :disabled="!canSaveRelayEditor" @click="confirmRelayEditor">
                       {{ relayEditorMode === 'edit' ? '保存' : '添加' }}
@@ -988,13 +970,12 @@
                         <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">版本</th>
                         <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">状态</th>
                         <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">密钥</th>
-                        <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">网盘启用</th>
                         <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">操作</th>
                       </tr>
                     </thead>
                     <tbody>
                       <tr v-if="!relayServers.length">
-                        <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="8">无数据</td>
+                        <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="7">无数据</td>
                       </tr>
                       <tr v-for="server in relayServers" :key="server.base">
                         <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ server.name || '-' }}</td>
@@ -1011,32 +992,6 @@
                           </span>
                         </td>
                         <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ server.secret ? '已设置' : '未设置' }}</td>
-                        <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">
-                          <div class="go-proxy-pan-switches">
-                            <div class="go-proxy-pan-switch">
-                              <span>百度</span>
-                              <label class="enable-switch" title="百度">
-                                <input
-                                  :checked="normalizeGoProxyPanMap(server.pans).baidu"
-                                  type="checkbox"
-                                  @change="setRelayPanEnabled(server.base, 'baidu', $event.target.checked)"
-                                />
-                                <span class="enable-slider"></span>
-                              </label>
-                            </div>
-                            <div class="go-proxy-pan-switch">
-                              <span>夸克</span>
-                              <label class="enable-switch" title="夸克">
-                                <input
-                                  :checked="normalizeGoProxyPanMap(server.pans).quark"
-                                  type="checkbox"
-                                  @change="setRelayPanEnabled(server.base, 'quark', $event.target.checked)"
-                                />
-                                <span class="enable-slider"></span>
-                              </label>
-                            </div>
-                          </div>
-                        </td>
                         <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">
                           <div class="action-group">
                             <button type="button" class="action-btn blue" @click="openRelayEditorForEdit(server)">修改</button>
@@ -2574,8 +2529,7 @@ const goProxyEditorForm = ref({
 const relaySaving = ref(false);
 const relayForm = ref({
   enabled: false,
-  auth: '',
-  goProxyThresholdGB: '0'
+  auth: ''
 });
 const relayServers = ref([]);
 const relayProbes = ref({});
@@ -2586,8 +2540,7 @@ const relayEditorForm = ref({
   name: '',
   displayName: '',
   base: '',
-  secret: '',
-  pans: { baidu: true, quark: true }
+  secret: ''
 });
 const videoLoading = ref(false);
 const videoImporting = ref(false);
@@ -4080,8 +4033,7 @@ function normalizeRelayServerRow(server) {
     name: typeof row.name === 'string' ? row.name : '',
     displayName: typeof row.displayName === 'string' ? row.displayName : '',
     base: normalizeHttpBase(row.base),
-    secret: typeof row.secret === 'string' ? row.secret.trim() : '',
-    pans: normalizeGoProxyPanMap(row.pans)
+    secret: typeof row.secret === 'string' ? row.secret.trim() : ''
   };
 }
 
@@ -4453,7 +4405,6 @@ async function loadInterfacePanel() {
     await probeAllGoProxyServers();
     relayForm.value.enabled = !!settings.relayEnabled;
     relayForm.value.auth = typeof settings.auth === 'string' ? settings.auth : '';
-    relayForm.value.goProxyThresholdGB = String(Math.max(0, Math.trunc(Number(settings.relayGoProxyThresholdGB) || 0)));
     relayServers.value = normalizeRelayServersJson(settings.relayServersJson);
     await probeAllRelayServers();
     if (catSelectedServerKey.value) {
@@ -5700,8 +5651,7 @@ function resetRelayEditorForm() {
     name: '',
     displayName: '',
     base: '',
-    secret: '',
-    pans: { baidu: true, quark: true }
+    secret: ''
   };
 }
 
@@ -5742,8 +5692,7 @@ function openRelayEditorForEdit(server) {
     name: row.name,
     displayName: row.displayName,
     base: row.base,
-    secret: row.secret,
-    pans: normalizeGoProxyPanMap(row.pans)
+    secret: row.secret
   };
   relayEditorOpen.value = true;
 }
@@ -5773,21 +5722,6 @@ function removeRelayServer(base) {
   }
 }
 
-function setRelayPanEnabled(base, panKey, checked) {
-  const target = normalizeHttpBase(base);
-  if (!target) return;
-  relayServers.value = relayServers.value.map((server) => {
-    if (server.base !== target) return server;
-    return {
-      ...server,
-      pans: {
-        ...normalizeGoProxyPanMap(server.pans),
-        [panKey]: !!checked
-      }
-    };
-  });
-}
-
 async function probeOneRelayServer(base) {
   const target = normalizeHttpBase(base);
   if (!target) return;
@@ -5813,12 +5747,9 @@ async function saveRelaySettings() {
   if (relaySaving.value) return;
   relaySaving.value = true;
   try {
-    const relayGoProxyThresholdGB = String(Math.max(0, Math.trunc(Number(relayForm.value.goProxyThresholdGB) || 0)));
-    relayForm.value.goProxyThresholdGB = relayGoProxyThresholdGB;
     await saveDashboardRelaySettings({
       relayEnabled: relayForm.value.enabled ? '1' : '0',
       auth: relayForm.value.auth || '',
-      relayGoProxyThresholdGB,
       relayServersJson: JSON.stringify(relayServers.value)
     });
     notifySuccess('保存成功');

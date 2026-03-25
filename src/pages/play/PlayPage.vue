@@ -6,7 +6,7 @@
     <div class="play-page__content">
       <div class="play-header ui-page-header">
         <div class="play-header__row ui-page-header__row">
-          <button type="button" class="ui-nav-back-btn" aria-label="返回" @click="$emit('back')">
+          <button type="button" class="ui-nav-back-btn" aria-label="返回" @click="onBackClick">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="m15 18-6-6 6-6"></path>
             </svg>
@@ -236,7 +236,6 @@
                     </div>
                   </div>
                   <div class="ui-select-row__actions">
-                    <button v-if="showProjectionSwitchButton" type="button" class="ui-control-btn" @click="cycleProjectionSource">切换</button>
                     <button v-if="!forceRawListMode" type="button" class="ui-control-btn" @click="toggleRawList">
                       {{ rawListMode ? '返回选集' : '原始列表' }}
                     </button>
@@ -276,11 +275,11 @@
                 </div>
                 <div class="play-episode-content">
                   <div v-if="showSeasonBar || showRangeBar" class="play-episode-divider"></div>
-                  <div v-if="showEpisodeLoadingState" class="play-episode-loading ui-loading-state">
+                  <div v-if="episodeContentState === 'loading'" class="play-episode-loading ui-loading-state">
                     <div class="ui-loading-state__spinner" aria-hidden="true"></div>
                     <div class="ui-loading-state__text">加载中...</div>
                   </div>
-                  <div v-else-if="rawListMode && showPanSourceRow" class="play-raw-list">
+                  <div v-else-if="episodeContentState === 'raw'" class="play-raw-list">
                     <div v-if="rawListDisplayPath" class="play-raw-list__path">
                       <span class="play-raw-list__pathText" :title="rawListDisplayPath">{{ rawListDisplayPath }}</span>
                       <button
@@ -313,14 +312,14 @@
                       </div>
                     </div>
                   </div>
-                  <div v-else-if="siteResultEpisodeStatusText" class="play-episode-overlay">
+                  <div v-else-if="episodeContentState === 'status'" class="play-episode-overlay">
                     <div class="play-episode-overlay__inner">
                       <div class="play-raw-list__empty">
-                    {{ siteResultEpisodeStatusText }}
+                    {{ episodeOverlayText }}
                       </div>
                     </div>
                   </div>
-                  <div v-else-if="showTmdbMovieCandidateList" class="play-raw-list">
+                  <div v-else-if="episodeContentState === 'movie-candidates'" class="play-raw-list">
                     <div v-if="tmdbMovieCandidateItems.length" class="play-raw-list__items">
                       <button
                         v-for="item in tmdbMovieCandidateItems"
@@ -418,7 +417,6 @@
 import ArtPlayer from '../../shared/ArtPlayer.vue';
 import { fetchBootstrap } from '../../shared/bootstrap';
 import { extractRawNamesFromEpisodeUrl, fetchCatResolvedDetailCached, requestCatPlay } from '../../shared/catpawrunner';
-import { fetchDoubanSeasonMetaCached } from '../../shared/doubanRuntime';
 import {
   playbackSessionState,
   buildPlayerControlUiState,
@@ -458,6 +456,7 @@ import { addSmartMatchBlockItem, buildSearchGroupKey, clearBlockedMatchCaches, f
 import { runSmartPlaybackController } from '../../shared/smartPlaybackController';
 import {
   buildSmartEpisodeMapping,
+  clipSeasonRowsToTotalEpisodes,
   doubanGlobalEpisodeNoOf,
   doubanSeasonEpisodeOfGlobal,
   tmdbGlobalEpisodeNoOf,
@@ -479,6 +478,15 @@ import {
   setSiteResultDetailCacheEntry as setSiteResultDetailCacheEntryRuntime,
 } from '../../shared/smartPlaybackRuntime';
 import { fetchTMDBDetailCached } from '../../shared/tmdbRuntime';
+import { fetchTVMetaCached, normalizeTVMetaPayload } from '../../shared/tvMetaRuntime';
+import {
+  getTMDBBackdropPath,
+  getTMDBNextEpisodeToAir,
+  getTMDBOrdinarySeasons,
+  getTMDBPosterPath,
+  getTMDBStatus,
+  getTMDBYear,
+} from '../../shared/tmdbRaw';
 import { scoreEpisodeDisplayName } from '../../utils/matchCore';
 
 const THIRD_PARTY_PLAYERS = [
@@ -544,6 +552,115 @@ const formatChineseNumber = (value) => {
   return String(num);
 };
 
+const getTodayDateText = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const TMDB_GENRE_LABELS = {
+  12: '冒险',
+  14: '奇幻',
+  16: '动画',
+  18: '剧情',
+  27: '恐怖',
+  28: '动作',
+  35: '喜剧',
+  36: '历史',
+  37: '西部',
+  53: '惊悚',
+  80: '犯罪',
+  99: '纪录',
+  878: '科幻',
+  9648: '悬疑',
+  10402: '音乐',
+  10749: '爱情',
+  10751: '家庭',
+  10752: '战争',
+  10759: '动作冒险',
+  10762: '儿童',
+  10763: '新闻',
+  10764: '真人秀',
+  10765: '科幻奇幻',
+  10766: '肥皂剧',
+  10767: '脱口秀',
+  10768: '战争政治',
+  10770: '电视电影',
+};
+
+const hasChineseText = (value) => /[\u3400-\u9fff]/.test(normalizeString(value));
+
+const buildTMDBRenderedSeasonRows = (detail) => {
+  const seasons = getTMDBOrdinarySeasons(detail);
+  if (!seasons.length) return [];
+  const status = getTMDBStatus(detail);
+  if (status === 'Ended') return seasons;
+
+  const next = getTMDBNextEpisodeToAir(detail);
+  const nextSeason = normalizeInt(next && next.seasonNumber);
+  const nextEpisode = normalizeInt(next && next.episodeNumber);
+  const airDate = normalizeString(next && next.airDate);
+  if (nextSeason <= 0 || nextEpisode <= 0) {
+    return seasons;
+  }
+
+  const today = getTodayDateText();
+  const currentEpisode = airDate && airDate <= today ? nextEpisode : nextEpisode - 1;
+  const rendered = [];
+  for (let i = 0; i < seasons.length; i += 1) {
+    const row = seasons[i];
+    if (!row || row.season <= 0 || row.episodes <= 0) continue;
+    if (row.season < nextSeason) {
+      rendered.push(row);
+      continue;
+    }
+    if (row.season === nextSeason) {
+      const episodes = Math.min(row.episodes, Math.max(0, currentEpisode));
+      if (episodes > 0) {
+        rendered.push({
+          season: row.season,
+          episodes,
+        });
+      }
+    }
+    break;
+  }
+  if (rendered.length) return rendered;
+  return seasons;
+};
+
+const normalizeEpisodeDisplaySeasonRows = (rows, { seasonKeys = [], episodeKeys = [] } = {}) => (
+  (Array.isArray(rows) ? rows : [])
+    .map((item) => ({
+      season: seasonKeys.reduce((out, key) => (out > 0 ? out : normalizeInt(item && item[key])), 0),
+      episodes: episodeKeys.reduce((out, key) => (out > 0 ? out : normalizeInt(item && item[key])), 0),
+    }))
+    .filter((item) => item.season > 0 && item.episodes > 0)
+    .sort((left, right) => left.season - right.season)
+);
+
+const buildDoubanRenderedSeasonRows = (meta) => normalizeEpisodeDisplaySeasonRows(
+  meta && meta.doubanSeasons,
+  {
+    seasonKeys: ['season'],
+    episodeKeys: ['episodeCount'],
+  },
+);
+
+const countRenderedEpisodes = (rows) => (
+  (Array.isArray(rows) ? rows : []).reduce(
+    (sum, item) => sum + Math.max(0, normalizeInt(item && item.episodes)),
+    0,
+  )
+);
+
+const extractYearTextFromTMDBDetail = (detail) => {
+  const year = getTMDBYear(detail);
+  return year > 0 ? String(year) : '';
+};
+
 const splitRawPathSegments = (value) =>
   normalizeString(value)
     .replace(/\\/g, '/')
@@ -582,10 +699,10 @@ const buildEpisodeMappingSignature = (mapping) => {
   if (!target) return '';
   const total = normalizeInt(target.totalEpisodes);
   const tmdb = Array.isArray(target.tmdbSeasons)
-    ? target.tmdbSeasons.map((item) => `${normalizeInt(item && item.season)}:${normalizeInt((item && (item.episodeCount ?? item.episodes)) || 0)}`).join('|')
+    ? target.tmdbSeasons.map((item) => `${normalizeInt(item && item.season)}:${normalizeInt(item && item.episodeCount)}`).join('|')
     : '';
   const douban = Array.isArray(target.doubanSeasons)
-    ? target.doubanSeasons.map((item) => `${normalizeInt(item && item.season)}:${normalizeInt((item && (item.episodeCount ?? item.episodes)) || 0)}`).join('|')
+    ? target.doubanSeasons.map((item) => `${normalizeInt(item && item.season)}:${normalizeInt(item && item.episodeCount)}`).join('|')
     : '';
   return `${total}::${tmdb}::${douban}`;
 };
@@ -946,7 +1063,7 @@ export default {
     siteName: { type: String, default: '' },
     spiderApi: { type: String, default: '' },
     siteDetail: { type: String, default: '' },
-    tmdbId: { type: [String, Number], default: '' },
+    tmdbId: { type: Number, default: 0 },
     tmdbType: { type: String, default: '' },
     videoIntro: { type: String, default: '' },
     Poster: { type: String, default: '' },
@@ -1017,19 +1134,14 @@ export default {
       const current = this.currentPanSourceOptions.find((item) => item.key === this.selectedPanSource) || this.currentPanSourceOptions[0] || null;
       return current ? current.label : '暂无数据';
     },
-    showProjectionSwitchButton() {
-      return !this.rawListMode
-        && !this.forceRawListMode
-        && !!this.selectedSiteResultItem
-        && this.isTmdbMode
-        && this.projectionSourceOptions.length > 1;
+    showDoubanPrimarySourceOption() {
+      if (!this.isTmdbMode || this.tmdbMovieMode) return false;
+      if (!this.tmdbBaseSeasonRows.length || !this.doubanBaseSeasonRows.length) return false;
+      return this.tmdbBaseSeasonRows.length !== this.doubanBaseSeasonRows.length;
     },
     projectionSourceOptions() {
       if (!this.selectedSiteResultItem || !this.isTmdbMode) return [];
-      const options = [];
-      if (buildProjectedSiteEpisodeItems(this.playbackRecognitionData, 'TMDB').length) options.push('TMDB');
-      if (buildProjectedSiteEpisodeItems(this.playbackRecognitionData, '豆瓣').length) options.push('豆瓣');
-      return options;
+      return buildProjectedSiteEpisodeItems(this.playbackRecognitionData, 'TMDB').length ? ['TMDB'] : [];
     },
     forceRawListMode() {
       return this.contentKind === 'movie';
@@ -1070,13 +1182,10 @@ export default {
     isProjectedSiteTMDBSource() {
       return !!this.selectedSiteResultItem && this.selectedProjectionSource === 'TMDB' && this.isTmdbMode;
     },
-    isProjectedSiteDoubanSource() {
-      return !!this.selectedSiteResultItem && this.selectedProjectionSource === '豆瓣' && this.isTmdbMode;
-    },
     projectedSiteEpisodeItems() {
       if (!this.selectedSiteResultItem) return [];
-      if (!this.isProjectedSiteTMDBSource && !this.isProjectedSiteDoubanSource) return [];
-      return buildProjectedSiteEpisodeItems(this.playbackRecognitionData, this.selectedProjectionSource);
+      if (!this.isProjectedSiteTMDBSource) return [];
+      return buildProjectedSiteEpisodeItems(this.playbackRecognitionData, 'TMDB');
     },
     tmdbMovieCandidateItems() {
       if (this.selectedSiteResultItem || !this.isTmdbMode || !this.tmdbMovieMode) return [];
@@ -1088,8 +1197,10 @@ export default {
         title: this.displayTitle,
         contentKind: 'movie',
       });
+      const historyItem = buildHistorySitePlaybackItemRuntime(this.playHistoryRowForMenu);
+      const candidateSiteItems = historyItem ? [historyItem].concat(siteItems) : siteItems;
       return buildTmdbMovieCandidateItems({
-        siteItems,
+        siteItems: candidateSiteItems,
         detailStore: this.siteResultDetailStore,
         recognitionStore: this.siteResultRecognitionStore,
         signature: this.activeRecognitionSignature,
@@ -1098,7 +1209,6 @@ export default {
     },
     projectedSeasonRows() {
       if (this.isProjectedSiteTMDBSource) return this.projectedTMDBSeasonRows;
-      if (this.isProjectedSiteDoubanSource) return this.projectedDoubanSeasonRows;
       return [];
     },
     tmdbMovieMode() {
@@ -1123,59 +1233,34 @@ export default {
     playContentPreferenceKey() {
       return normalizeString(this.contentKey);
     },
-    episodeMetaModeStorageKey() {
-      const key = normalizeString(this.playContentPreferenceKey);
-      return key ? `${EP_META_MODE_STORAGE_PREFIX}${key}` : '';
-    },
     directSiteEpisodeCount() {
       if (this.isTmdbMode || this.selectedSiteResultItem || this.contentKind !== 'series') return 0;
       const entry = this.currentPanSourceEntry;
       if (!entry || !normalizeString(entry.url)) return 0;
       return String(entry.url || '').split('#').map(normalizeString).filter(Boolean).length;
     },
+    tmdbBaseSeasonRows() {
+      if (this.tmdbMovieMode) return [];
+      return buildTMDBRenderedSeasonRows(this.detailTMDBData);
+    },
     tmdbSeasonRows() {
       if (!this.isTMDBEpisodeSource || this.tmdbMovieMode) return [];
-      const seasons = Array.isArray(this.detailTMDBData && this.detailTMDBData.seasons)
-        ? this.detailTMDBData.seasons
-        : [];
-      return seasons
-        .map((item) => ({
-          season: normalizeInt(item && item.season),
-          episodes: normalizeInt(item && item.episodes),
-        }))
-        .filter((item) => item.season > 0 && item.episodes > 0)
-        .sort((left, right) => left.season - right.season);
-    },
-    tmdbRenderedSeasonRows() {
-      const latestGlobal = Math.max(0, normalizeInt(this.detailTMDBData && this.detailTMDBData.latestGlobal));
-      if (!this.tmdbSeasonRows.length || latestGlobal <= 0) return [];
-      if (this.tmdbSeasonRows.length === 1) {
-        return [{ season: this.tmdbSeasonRows[0].season, episodes: latestGlobal }];
-      }
-      let remaining = latestGlobal;
-      return this.tmdbSeasonRows
-        .map((item) => {
-          if (remaining <= 0) return null;
-          const renderedEpisodes = Math.min(item.episodes, remaining);
-          remaining -= renderedEpisodes;
-          if (renderedEpisodes <= 0) return null;
-          return {
-            season: item.season,
-            episodes: renderedEpisodes,
-          };
-        })
-        .filter(Boolean);
+      return this.tmdbBaseSeasonRows;
     },
     doubanBaseSeasonRows() {
       if (this.tmdbMovieMode) return [];
-      const seasons = Array.isArray(this.detailDoubanData && this.detailDoubanData.seasons)
-        ? this.detailDoubanData.seasons
-        : [];
-      return seasons
+      const seasons = buildDoubanRenderedSeasonRows(this.detailDoubanData);
+      const tmdbEpisodeTotal = countRenderedEpisodes(this.tmdbBaseSeasonRows);
+      return clipSeasonRowsToTotalEpisodes(
+        seasons.map((item) => ({
+          season: normalizeInt(item && item.season),
+          episodeCount: normalizeInt(item && item.episodes),
+        })),
+        tmdbEpisodeTotal,
+      )
         .map((item) => ({
           season: normalizeInt(item && item.season),
           episodes: normalizeInt(item && item.episodeCount),
-          label: normalizeString(item && (item.displayLabel || item.title)),
         }))
         .filter((item) => item.season > 0 && item.episodes > 0)
         .sort((left, right) => left.season - right.season);
@@ -1197,33 +1282,10 @@ export default {
       });
       return Array.from(rows.values()).sort((left, right) => left.season - right.season);
     },
-    projectedDoubanSeasonRows() {
-      if (!this.isProjectedSiteDoubanSource || !this.projectedSiteEpisodeItems.length) return [];
-      const labelMap = new Map(
-        this.doubanBaseSeasonRows.map((item) => [
-          normalizeInt(item && item.season),
-          normalizeString(item && item.label),
-        ])
-      );
-      const rows = new Map();
-      this.projectedSiteEpisodeItems.forEach((item) => {
-        const season = normalizeInt(item && item.season);
-        const no = normalizeInt(item && item.no);
-        if (season <= 0 || no <= 0) return;
-        const current = rows.get(season) || {
-          season,
-          episodes: 0,
-          label: labelMap.get(season) || '',
-        };
-        current.episodes = Math.max(current.episodes, no);
-        rows.set(season, current);
-      });
-      return Array.from(rows.values()).sort((left, right) => left.season - right.season);
-    },
     episodeSeasonRows() {
       if (this.selectedSiteResultItem) return this.projectedSeasonRows;
       if (!this.isTmdbMode) return [];
-      if (this.isTMDBEpisodeSource) return this.tmdbRenderedSeasonRows;
+      if (this.isTMDBEpisodeSource) return this.tmdbSeasonRows;
       if (this.isDoubanEpisodeSource) return this.doubanSeasonRows;
       return [];
     },
@@ -1236,7 +1298,7 @@ export default {
       return this.episodeSeasonRows.map((item) => ({
         season: item.season,
         episodeCount: item.episodes,
-        label: (this.isDoubanEpisodeSource || this.isProjectedSiteDoubanSource)
+        label: this.isDoubanEpisodeSource
           ? (normalizeString(item.label) || `第${formatChineseNumber(item.season)}季`)
           : `第${formatChineseNumber(item.season)}季`,
       }));
@@ -1314,7 +1376,7 @@ export default {
         return currentSeason ? currentSeason.episodes : 0;
       }
       if (this.isTMDBEpisodeSource) {
-        return Math.max(0, normalizeInt(this.detailTMDBData && this.detailTMDBData.latestGlobal));
+        return this.episodeSeasonRows[0] ? Math.max(0, normalizeInt(this.episodeSeasonRows[0].episodes)) : 0;
       }
       return this.episodeSeasonRows[0].episodes;
     },
@@ -1377,19 +1439,6 @@ export default {
       if (this.siteResultDetailResolutionPending) return false;
       return this.episodeRangeOptions.length > 1;
     },
-    showEpisodeLoadingState() {
-      if (this.showTmdbMovieCandidateList) {
-        if (this.tmdbMovieCandidateItems.length > 0) return false;
-        if (this.playLoading) return true;
-        if (normalizeInt(this.smartPlaybackPendingRunSeq) > 0 || normalizeInt(this.smartPlaybackAttemptRunSeq) > 0) return true;
-        return this.siteSourceSearchState === 'loading';
-      }
-      if (this.selectedSiteResultItem) return this.siteResultDetailResolutionPending;
-      if (!this.isTmdbMode && this.activeSitePlaybackItem) return this.detailLoading;
-      if (this.isTMDBEpisodeSource) return this.detailLoading;
-      if (this.isDoubanEpisodeSource) return this.doubanLoading;
-      return false;
-    },
     playSearchQuery() {
       return normalizeSearchKey(this.displayTitle);
     },
@@ -1435,9 +1484,7 @@ export default {
         this.detailLoading ? 'detail-loading' : 'detail-ready',
         this.siteResultDetailLoading ? 'site-detail-loading' : 'site-detail-ready',
         this.doubanLoading ? 'douban-loading' : 'douban-ready',
-        this.canRunStrictFastSmartPlayback ? 'strict-fast-ready' : 'strict-fast-pending',
         this.canRunFullSmartPlayback ? 'full-ready' : 'full-pending',
-        normalizeString(this.strictFastEpisodeMappingSignature),
         normalizeString(this.smartEpisodeMappingSignature),
         String(this.episodeButtons.length),
         String(this.tmdbMovieCandidateItems.length),
@@ -1466,14 +1513,18 @@ export default {
     },
     siteResultEpisodeStatusText() {
       if (this.showTmdbMovieCandidateList) {
-        if (this.showEpisodeLoadingState) return '';
         if (normalizeString(this.playError)) return normalizeString(this.playError);
         if (this.tmdbMovieCandidateItems.length) return '';
         return '暂无数据';
       }
+      if (this.isTMDBEpisodeSource) {
+        return this.episodeButtons.length ? '' : '暂无数据';
+      }
+      if (this.isDoubanEpisodeSource) {
+        return this.episodeButtons.length ? '' : '暂无数据';
+      }
       if (!this.activeSitePlaybackItem) return '';
       if (this.selectedSiteResultItem) {
-        if (this.siteResultDetailResolutionPending) return '';
         if (this.siteResultDetailError) return this.siteResultDetailError;
       } else if (this.detailLoading) {
         return '';
@@ -1488,10 +1539,50 @@ export default {
       if (!this.isTmdbMode && !this.selectedSiteResultItem && this.contentKind === 'series' && !this.episodeButtons.length) {
         return '暂无数据';
       }
-      if ((this.isProjectedSiteTMDBSource || this.isProjectedSiteDoubanSource) && !this.projectedEpisodeButtons.length) {
+      if (this.isProjectedSiteTMDBSource && !this.projectedEpisodeButtons.length) {
         return '暂无数据';
       }
       return '';
+    },
+    episodeOverlayText() {
+      return this.siteResultEpisodeStatusText || '暂无数据';
+    },
+    episodeContentState() {
+      if (this.showTmdbMovieCandidateList) {
+        if (!this.tmdbMovieCandidateItems.length && this.playLoading) return 'loading';
+        if (
+          !this.tmdbMovieCandidateItems.length
+          && (normalizeInt(this.smartPlaybackPendingRunSeq) > 0 || normalizeInt(this.smartPlaybackAttemptRunSeq) > 0)
+        ) return 'loading';
+        if (this.siteSourceSearchState === 'loading' && !this.tmdbMovieCandidateItems.length) return 'loading';
+        if (this.siteResultEpisodeStatusText) return 'status';
+        return 'movie-candidates';
+      }
+      if (this.selectedSiteResultItem) {
+        if (this.siteResultDetailResolutionPending) return 'loading';
+        if (this.rawListMode && this.showPanSourceRow) return 'raw';
+        if (this.siteResultEpisodeStatusText) return 'status';
+        return 'episodes';
+      }
+      if (!this.isTmdbMode && this.activeSitePlaybackItem) {
+        if (this.detailLoading) return 'loading';
+        if (this.rawListMode && this.showPanSourceRow) return 'raw';
+        if (this.siteResultEpisodeStatusText) return 'status';
+        return 'episodes';
+      }
+      if (this.isTMDBEpisodeSource) {
+        if (this.detailLoading) return 'loading';
+        if (this.siteResultEpisodeStatusText) return 'status';
+        return 'episodes';
+      }
+      if (this.isDoubanEpisodeSource) {
+        if (this.doubanLoading) return 'loading';
+        if (this.siteResultEpisodeStatusText) return 'status';
+        return 'episodes';
+      }
+      if (this.rawListMode && this.showPanSourceRow) return 'raw';
+      if (this.siteResultEpisodeStatusText) return 'status';
+      return 'episodes';
     },
     currentPanSourceEntry() {
       if (!this.siteDetailPanSources.length) return null;
@@ -1650,7 +1741,7 @@ export default {
         .filter(Boolean);
     },
     rawListEmptyText() {
-      return this.siteResultEpisodeStatusText || '暂无数据';
+      return this.episodeOverlayText;
     },
     playerToastText() {
       return normalizeString(this.playerTransientToastText);
@@ -1664,7 +1755,7 @@ export default {
         if (this.playRequestStage === 'play_url') return 'play_url';
         if (
           this.detailLoading
-          || (this.isTmdbMode && !this.tmdbMovieMode && !this.strictFastEpisodeMapping)
+          || (this.isTmdbMode && !this.tmdbMovieMode && !this.fullEpisodeMapping)
           || (this.tmdbMovieMode && !(this.detailTMDBData && typeof this.detailTMDBData === 'object'))
         ) {
           return 'idle';
@@ -1787,18 +1878,8 @@ export default {
     currentPlaybackQualityLabel() {
       return normalizeString(this.playerControlUiState && this.playerControlUiState.currentQualityLabel) || '未知';
     },
-    strictFastEpisodeMapping() {
-      if (!this.isTmdbMode || this.tmdbMovieMode) return null;
-      return buildSmartEpisodeMapping({
-        tmdbDetail: this.detailTMDBData,
-        doubanMeta: null,
-      });
-    },
     fullEpisodeMapping() {
       return this.smartEpisodeMapping;
-    },
-    strictFastEpisodeMappingSignature() {
-      return buildEpisodeMappingSignature(this.strictFastEpisodeMapping);
     },
     playerExtraMenus() {
       const state = this.playerControlUiState && typeof this.playerControlUiState === 'object'
@@ -1856,13 +1937,7 @@ export default {
     },
     activeRecognitionSignature() {
       if (this.isTmdbMode && this.tmdbMovieMode) return TMDB_MOVIE_RECOGNITION_SIGNATURE;
-      return normalizeString(this.smartEpisodeMappingSignature) || normalizeString(this.strictFastEpisodeMappingSignature);
-    },
-    canRunStrictFastSmartPlayback() {
-      if (!this.isTmdbMode || this.tmdbMovieMode) return false;
-      if (this.detailLoading) return false;
-      const mapping = this.strictFastEpisodeMapping;
-      return !!(mapping && normalizeInt(mapping.totalEpisodes) > 0);
+      return normalizeString(this.smartEpisodeMappingSignature);
     },
     canRunFullSmartPlayback() {
       if (!this.isTmdbMode || this.tmdbMovieMode) return false;
@@ -1892,7 +1967,11 @@ export default {
       return normalizeString(this.contentKey) || '未命名内容';
     },
     detailPoster() {
-      return normalizeString(this.Poster);
+      return getTMDBPosterPath(this.detailTMDBData)
+        || normalizeString(this.Poster);
+    },
+    detailBackdrop() {
+      return getTMDBBackdropPath(this.detailTMDBData);
     },
     detailPosterDisplay() {
       return rewriteDisplayPosterUrl(this.detailPoster, this.runtimeSettings || {});
@@ -1900,9 +1979,9 @@ export default {
     detailMetaTags() {
       const tags = this.isTmdbMode
         ? [
-          this.tmdbMediaLabel,
-          this.detailYearText,
           this.detailRemarkText,
+          ...this.detailGenreTags,
+          this.detailYearText,
         ]
         : this.selectedSiteResultItem
           ? [normalizeString(this.selectedSiteResultItem.siteName), this.detailYearText]
@@ -1921,18 +2000,35 @@ export default {
       }
       return this.detailOverview || (this.detailLoading ? '加载中' : '暂无简介');
     },
-    tmdbMediaLabel() {
-      const type = normalizeString(this.tmdbType || this.searchType).toLowerCase();
-      return type === 'movie' ? '电影' : '剧集';
-    },
     detailYearText() {
       return this.detailYear || '';
+    },
+    detailGenreTags() {
+      if (!this.isTmdbMode) return [];
+      const genres = Array.isArray(this.detailTMDBData && this.detailTMDBData.genres)
+        ? this.detailTMDBData.genres
+        : [];
+      const deduped = new Set();
+      return genres
+        .map((item) => {
+          const genreId = normalizeInt(item && item.id);
+          const mapped = normalizeString(TMDB_GENRE_LABELS[genreId]);
+          if (mapped) return mapped;
+          const rawName = normalizeString(item && item.name);
+          return hasChineseText(rawName) ? rawName : '';
+        })
+        .filter((tag) => {
+          const key = normalizeString(tag);
+          if (!key || deduped.has(key)) return false;
+          deduped.add(key);
+          return true;
+        });
     },
     historyRemarkText() {
       return normalizeString(this.Remark);
     },
     detailRemarkText() {
-      return this.detailRemark || '';
+      return normalizeString(this.detailRemark) || this.historyRemarkText;
     },
     detailSiteNameText() {
       return normalizeString(this.siteName) || '';
@@ -2047,9 +2143,7 @@ export default {
   },
   beforeUnmount() {
     this.resetSwitchSkipState();
-    this.resetSmartPlaybackRuntimeState({ stopStream: true });
-    this.detailFetchSeq += 1;
-    this.playRequestSeq += 1;
+    this.cancelActivePlaybackFlow({ stopStream: true, invalidateDetail: true, clearPlayerState: true });
     this.selectedSearchResultId = '';
     flushHistoryProgressBestEffort();
     clearActivePlayHistoryContext();
@@ -2072,6 +2166,28 @@ export default {
     this.unbindEpisodePanelResizer();
   },
   methods: {
+    cancelActivePlaybackFlow({ stopStream = true, invalidateDetail = false, clearPlayerState = false } = {}) {
+      this.resetSmartPlaybackRuntimeState({ stopStream });
+      this.playRequestSeq += 1;
+      if (invalidateDetail) this.detailFetchSeq += 1;
+      this.playLoading = false;
+      this.playError = '';
+      this.playerRuntimeError = '';
+      this.playRequestStage = '';
+      this.proxyRetryInFlight = false;
+      this.activePlayerControlAction = '';
+      this.playerUiTransitionMode = '';
+      this.lastGoProxyCandidate = null;
+      if (clearPlayerState) {
+        this.playerUrl = '';
+        this.playerHeaders = {};
+        this.resetPlayerReadyState();
+      }
+    },
+    onBackClick() {
+      this.cancelActivePlaybackFlow({ stopStream: true, invalidateDetail: true, clearPlayerState: true });
+      this.$emit('back');
+    },
     buildSwitchEpisodeKey() {
       const contentKey = normalizeString(this.playContentPreferenceKey);
       const globalEpisode = Math.max(0, normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.globalEpisode));
@@ -2284,10 +2400,7 @@ export default {
       await this.ensurePlaySearchRuntimeConfig();
       await this.ensurePlayBlockedMatchIndexLoaded();
       if (this.isTmdbMode && !this.tmdbMovieMode) {
-        await Promise.allSettled([
-          this.loadDetailData(),
-          this.ensureDoubanSeasonMetaLoaded(),
-        ]);
+        await this.loadDetailData();
         this.syncSmartEpisodeMapping();
         this.$nextTick(() => this.syncPlaybackDisplayFocus());
         return;
@@ -2298,7 +2411,7 @@ export default {
     },
     syncPrimarySiteSourceOptions() {
       if (this.isTmdbMode) {
-        this.siteSourceOptions = ['TMDB', '豆瓣'];
+        this.siteSourceOptions = this.showDoubanPrimarySourceOption ? ['TMDB', '豆瓣'] : ['TMDB'];
         if (!normalizeString(this.selectedSiteSource) || !this.siteSourceOptions.includes(this.selectedSiteSource)) {
           this.selectedSiteSource = 'TMDB';
         }
@@ -2343,7 +2456,7 @@ export default {
         return;
       }
       if (option === '豆瓣') {
-        await this.ensureDoubanSeasonMetaLoaded();
+        await this.ensureTVMetaLoaded();
       }
       this.$nextTick(() => this.syncPlaybackDisplayFocus());
     },
@@ -2373,7 +2486,7 @@ export default {
     selectSiteSourceResult(item) {
       if (!item || !item.id) return;
       this.selectedSearchResultId = String(item.id);
-      this.selectedProjectionSource = this.readEpisodeMetaModePreference() || 'TMDB';
+      this.selectedProjectionSource = 'TMDB';
       this.selectedPanSource = '';
       this.selectedSiteEpisodeSelectionKey = '';
       this.applyEpisodeViewModePreference();
@@ -2504,19 +2617,6 @@ export default {
         globalEpisode: 0,
       });
     },
-    cycleProjectionSource() {
-      const list = Array.isArray(this.projectionSourceOptions) ? this.projectionSourceOptions : [];
-      if (list.length <= 1) return;
-      const currentIndex = list.findIndex((item) => normalizeString(item) === normalizeString(this.selectedProjectionSource));
-      const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % list.length : 0;
-      const next = normalizeString(list[nextIndex]);
-      if (!next) return;
-      this.selectedProjectionSource = next;
-      this.persistEpisodeMetaModePreference(next);
-      this.selectedViewSeasonNumber = 0;
-      this.selectedViewRangeStart = 0;
-      this.$nextTick(() => this.syncPlaybackDisplayFocus());
-    },
     toggleRawList() {
       if (!this.activeSitePlaybackItem || this.forceRawListMode) return;
       this.rawListMode = !this.rawListMode;
@@ -2542,28 +2642,6 @@ export default {
       if (this.forceRawListMode) return;
       writePlayLocalStorage(EP_VIEW_MODE_STORAGE_KEY, this.rawListMode ? 'raw' : 'episodes');
     },
-    readEpisodeMetaModePreference() {
-      const key = normalizeString(this.episodeMetaModeStorageKey);
-      if (!key || !this.isTmdbMode || this.tmdbMovieMode) return '';
-      const mode = normalizeString(readPlayLocalStorage(key)).toLowerCase();
-      if (mode === 'douban') return '豆瓣';
-      if (mode === 'tmdb') return 'TMDB';
-      return '';
-    },
-    persistEpisodeMetaModePreference(source) {
-      const key = normalizeString(this.episodeMetaModeStorageKey);
-      if (!key || !this.isTmdbMode || this.tmdbMovieMode) return;
-      const next = normalizeString(source);
-      if (next === '豆瓣') {
-        writePlayLocalStorage(key, 'douban');
-        return;
-      }
-      if (next === 'TMDB') {
-        writePlayLocalStorage(key, 'tmdb');
-        return;
-      }
-      writePlayLocalStorage(key, '');
-    },
     onRawListItemClick(item) {
       if (!item) return;
       if (this.rawDirModeEnabled && item.kind === 'dir' && item.name) {
@@ -2585,6 +2663,7 @@ export default {
     onEpisodeItemClick(item) {
       if (!this.isEpisodeItemInteractive(item)) return;
       if (!this.selectedSiteResultItem && this.isTmdbMode) {
+        this.resetSmartPlaybackRuntimeState({ stopStream: true });
         this.beginExplicitPlaybackTransition('detail');
         void this.playPrimaryEpisodeItem(item);
         return;
@@ -2660,6 +2739,7 @@ export default {
       this.playerStatsRawFileName = pickRawFileNameForStats(segment && segment.displayName, segment && segment.rawName);
     },
     buildPlayHistoryWarmContext() {
+      if (!this.isTmdbMode) return {};
       return {
         contentKey: this.playContentPreferenceKey,
       };
@@ -2809,36 +2889,8 @@ export default {
             mapping: this.fullEpisodeMapping,
             mappingSignature: this.smartEpisodeMappingSignature,
             episodeSource: this.selectedSiteSource,
-            allowDegradedMapping: true,
-            requireDoubanReadyForMultiSeasonFallback: true,
           }
           : null;
-      }
-      if (stage === 'strict-fast') {
-        return this.canRunStrictFastSmartPlayback
-          ? {
-            stage: 'strict-fast',
-            mapping: this.strictFastEpisodeMapping,
-            mappingSignature: this.strictFastEpisodeMappingSignature,
-            episodeSource: 'TMDB',
-            allowDegradedMapping: false,
-            requireDoubanReadyForMultiSeasonFallback: true,
-          }
-          : null;
-      }
-      if (
-        this.canRunStrictFastSmartPlayback
-        && !normalizeString(this.smartPlaybackResolvedStage)
-        && this.initialAutoPlaybackStageDone !== 'strict-fast'
-      ) {
-        return {
-          stage: 'strict-fast',
-          mapping: this.strictFastEpisodeMapping,
-          mappingSignature: this.strictFastEpisodeMappingSignature,
-          episodeSource: 'TMDB',
-          allowDegradedMapping: false,
-          requireDoubanReadyForMultiSeasonFallback: true,
-        };
       }
       if (this.canRunFullSmartPlayback && !normalizeString(this.playerUrl) && this.smartPlaybackResolvedStage !== 'full') {
         return {
@@ -2846,8 +2898,6 @@ export default {
           mapping: this.fullEpisodeMapping,
           mappingSignature: this.smartEpisodeMappingSignature,
           episodeSource: this.selectedSiteSource,
-          allowDegradedMapping: true,
-          requireDoubanReadyForMultiSeasonFallback: true,
         };
       }
       return null;
@@ -2883,15 +2933,8 @@ export default {
           const firstItem = this.episodeButtons[0] || null;
           const picked = targetItem || firstItem || null;
           if (!picked) return;
-          let ok = await this.playPrimaryEpisodeItem(picked, stageConfig);
+          const ok = await this.playPrimaryEpisodeItem(picked, stageConfig);
           this.initialAutoPlaybackStageDone = stageConfig.stage;
-          if (!ok && stageConfig.stage === 'strict-fast') {
-            const fullStageConfig = this.getSmartPlaybackStageConfig('full');
-            if (fullStageConfig && !normalizeString(this.playerUrl)) {
-              ok = await this.playPrimaryEpisodeItem(picked, fullStageConfig);
-              this.initialAutoPlaybackStageDone = fullStageConfig.stage;
-            }
-          }
           if (ok) this.initialAutoPlaybackDone = true;
           return;
         }
@@ -2920,7 +2963,7 @@ export default {
         : null;
       return buildPlayHistoryPayload({
         contentKey: this.playContentPreferenceKey,
-        reportEnabled: canReportTMDBHistory ? (this.tmdbMovieMode || nextGlobalEpisode > 0) : true,
+        reportEnabled: canReportTMDBHistory ? (this.tmdbMovieMode || nextGlobalEpisode > 0) : false,
         siteKey: normalizeString(item && item.siteKey) || normalizeString(this.siteKey),
         siteName: normalizeString(item && item.siteName) || normalizeString(this.siteName),
         spiderApi: normalizeString(item && item.spiderApi) || normalizeString(this.spiderApi),
@@ -3158,8 +3201,6 @@ export default {
       mapping = null,
       mappingSignature = '',
       episodeSource = '',
-      allowDegradedMapping = true,
-      requireDoubanReadyForMultiSeasonFallback = true,
       includeSelectedContext = true,
       includeBrowseContext = true,
     } = {}) {
@@ -3183,7 +3224,7 @@ export default {
             matchOptions: nextMatchOptions || matchOptions,
             mappingSignature: signature,
             episodeSource: normalizeString(episodeSource) || this.selectedSiteSource,
-            allowResolutionModes: this.buildAllowedResolutionModes(allowDegradedMapping),
+            allowResolutionModes: this.buildAllowedResolutionModes(),
           }),
         buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
         isCandidateAllowed: unifiedAllowed,
@@ -3191,8 +3232,6 @@ export default {
           this.cacheRecognitionForSiteResult(siteItem, detail, {
             mapping,
             mappingSignature: signature,
-            allowDegradedMapping,
-            requireDoubanReadyForMultiSeasonFallback,
           });
         },
       });
@@ -3204,8 +3243,6 @@ export default {
       mapping = null,
       mappingSignature = '',
       episodeSource = '',
-      allowDegradedMapping = true,
-      requireDoubanReadyForMultiSeasonFallback = true,
       skipHistoryList = false,
     } = {}) {
       const stageKey = normalizeString(stage) || 'default';
@@ -3232,9 +3269,7 @@ export default {
         runtimeSettings: this.runtimeSettings,
         smartEpisodeMapping: mapping || this.smartEpisodeMapping,
         episodeSource: normalizeString(episodeSource) || this.selectedSiteSource,
-        allowDegradedMapping,
-        requireDoubanReadyForMultiSeasonFallback,
-        allowResolutionModes: this.buildAllowedResolutionModes(allowDegradedMapping),
+        allowResolutionModes: this.buildAllowedResolutionModes(),
         isCandidateAllowed: this.buildUnifiedSmartCandidateAllowed(isCandidateAllowed),
         buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
         getCachedSiteResultDetail: (siteItem) => this.getCachedSiteResultDetail(siteItem),
@@ -3252,16 +3287,12 @@ export default {
           this.cacheRecognitionForSiteResult(siteItem, detail, {
             mapping,
             mappingSignature: signature,
-            allowDegradedMapping,
-            requireDoubanReadyForMultiSeasonFallback,
           });
         },
         ensureRecognitionForSiteItem: (siteItem, detail) => {
           this.cacheRecognitionForSiteResult(siteItem, detail, {
             mapping,
             mappingSignature: signature,
-            allowDegradedMapping,
-            requireDoubanReadyForMultiSeasonFallback,
           });
         },
         collectCandidates: (siteItem, nextGlobal, nextLoose, nextMatchOptions) =>
@@ -3269,7 +3300,7 @@ export default {
             matchOptions: nextMatchOptions || matchOptions,
             mappingSignature: signature,
             episodeSource: normalizeString(episodeSource) || this.selectedSiteSource,
-            allowResolutionModes: this.buildAllowedResolutionModes(allowDegradedMapping),
+            allowResolutionModes: this.buildAllowedResolutionModes(),
           }),
         ensureSiteResultDetailCached: (siteItem, options) =>
           this.ensureSiteResultDetailCached(siteItem, options),
@@ -3322,6 +3353,8 @@ export default {
       const projectionOptions = this.projectionSourceOptions;
       if (projectionOptions.length && !projectionOptions.includes(this.selectedProjectionSource)) {
         this.selectedProjectionSource = projectionOptions[0];
+      } else if (!projectionOptions.length && this.selectedProjectionSource !== 'TMDB') {
+        this.selectedProjectionSource = 'TMDB';
       }
       if (normalizeString(this.selectedPanSource)) {
         patchLastBrowsePlaybackContext({
@@ -3351,8 +3384,6 @@ export default {
     cacheRecognitionForSiteResult(item, detail, {
       mapping = null,
       mappingSignature = '',
-      allowDegradedMapping = true,
-      requireDoubanReadyForMultiSeasonFallback = true,
     } = {}) {
       const targetMapping = mapping && typeof mapping === 'object' ? mapping : this.smartEpisodeMapping;
       const signature = normalizeString(mappingSignature)
@@ -3364,8 +3395,6 @@ export default {
         signature,
         runtimeSettings: this.runtimeSettings,
         smartEpisodeMapping: targetMapping,
-        allowDegradedMapping,
-        requireDoubanReadyForMultiSeasonFallback,
       });
       this.siteResultRecognitionStore = result && result.store && typeof result.store === 'object'
         ? result.store
@@ -3549,8 +3578,6 @@ export default {
         mapping: stage && stage.mapping,
         mappingSignature: stage && stage.mappingSignature,
         episodeSource: stage && stage.episodeSource,
-        allowDegradedMapping: !(stage && stage.allowDegradedMapping === false),
-        requireDoubanReadyForMultiSeasonFallback: !(stage && stage.requireDoubanReadyForMultiSeasonFallback === false),
       });
       if (cachedTarget) {
         await this.playCachedResolvedTarget({
@@ -3571,8 +3598,6 @@ export default {
         mapping: stage && stage.mapping,
         mappingSignature: stage && stage.mappingSignature,
         episodeSource: stage && stage.episodeSource,
-        allowDegradedMapping: !(stage && stage.allowDegradedMapping === false),
-        requireDoubanReadyForMultiSeasonFallback: !(stage && stage.requireDoubanReadyForMultiSeasonFallback === false),
       });
       return normalizeString(this.playerUrl).length > 0;
     },
@@ -3585,15 +3610,13 @@ export default {
         ...(extra && typeof extra === 'object' ? extra : {}),
       };
     },
-    buildAllowedResolutionModes(allowDegradedMapping = true) {
-      return allowDegradedMapping
-        ? ['strict-tmdb', 'strict-douban', 'degraded-single-baseline']
-        : ['strict-tmdb'];
+    buildAllowedResolutionModes() {
+      return ['strict-tmdb', 'strict-douban'];
     },
     getWantEpisodeInSeasonByGlobal(globalEpisode) {
       const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
       if (targetGlobal <= 0) return 0;
-      const mapping = this.fullEpisodeMapping || this.strictFastEpisodeMapping;
+      const mapping = this.fullEpisodeMapping;
       const tmdbValue = Array.isArray(mapping && mapping.items)
         ? mapping.items.find((item) => normalizeInt(item && item.global) === targetGlobal)?.tmdb
         : null;
@@ -3609,8 +3632,6 @@ export default {
       mapping = null,
       mappingSignature = '',
       episodeSource = '',
-      allowDegradedMapping = true,
-      requireDoubanReadyForMultiSeasonFallback = true,
       skipHistoryList = false,
     } = {}) {
       const normalizedMatchOptions = this.buildSmartMatchOptions(matchOptions);
@@ -3631,8 +3652,6 @@ export default {
         mapping: targetMapping,
         mappingSignature: targetSignature,
         episodeSource: targetEpisodeSource,
-        allowDegradedMapping,
-        requireDoubanReadyForMultiSeasonFallback,
         skipHistoryList,
       });
       if (historyBootstrapped) return;
@@ -3671,8 +3690,6 @@ export default {
           blockedSiteKeys: this.playBlockedSiteKeys,
           matchOptions: normalizedMatchOptions,
           constraintStages,
-          allowDegradedMapping,
-          requireDoubanReadyForMultiSeasonFallback,
           globalEpisode: targetGlobal,
           wantEpisodeInSeason: targetLoose,
           isRunStopped: () => runSeq !== this.smartPlaybackRunSeq || this.smartPlaybackConfirmedRunSeq === runSeq,
@@ -3687,7 +3704,7 @@ export default {
                 matchOptions: payload && payload.matchOptions ? payload.matchOptions : normalizedMatchOptions,
                 mappingSignature: targetSignature,
                 episodeSource: targetEpisodeSource,
-                allowResolutionModes: this.buildAllowedResolutionModes(allowDegradedMapping),
+                allowResolutionModes: this.buildAllowedResolutionModes(),
               },
             ),
           getCachedSiteResultDetail: (siteItem) => this.getCachedSiteResultDetail(siteItem),
@@ -3699,8 +3716,6 @@ export default {
                 this.cacheRecognitionForSiteResult(siteItem, payload, {
                   mapping: targetMapping,
                   mappingSignature: targetSignature,
-                  allowDegradedMapping,
-                  requireDoubanReadyForMultiSeasonFallback,
                 });
                 if (options && typeof options.onUpdate === 'function') options.onUpdate(payload);
               },
@@ -4052,6 +4067,7 @@ export default {
     },
     onPlayerPlaying() {
       this.playLoading = false;
+      this.playError = '';
       this.playerRuntimeError = '';
       this.playerPlaybackStarted = true;
       this.activePlayerControlAction = '';
@@ -4059,6 +4075,7 @@ export default {
     },
     async onPlayerFirstFrame() {
       this.playLoading = false;
+      this.playError = '';
       this.playerRuntimeError = '';
       this.playerBuffering = false;
       this.playerFirstFrameReady = true;
@@ -4107,25 +4124,13 @@ export default {
         this.cacheRecognitionForSiteResult(item, detail, {
           mapping: null,
           mappingSignature: TMDB_MOVIE_RECOGNITION_SIGNATURE,
-          allowDegradedMapping: true,
-          requireDoubanReadyForMultiSeasonFallback: true,
         });
         return;
-      }
-      if (this.strictFastEpisodeMapping && this.strictFastEpisodeMappingSignature) {
-        this.cacheRecognitionForSiteResult(item, detail, {
-          mapping: this.strictFastEpisodeMapping,
-          mappingSignature: this.strictFastEpisodeMappingSignature,
-          allowDegradedMapping: false,
-          requireDoubanReadyForMultiSeasonFallback: true,
-        });
       }
       if (this.fullEpisodeMapping && this.smartEpisodeMappingSignature) {
         this.cacheRecognitionForSiteResult(item, detail, {
           mapping: this.fullEpisodeMapping,
           mappingSignature: this.smartEpisodeMappingSignature,
-          allowDegradedMapping: true,
-          requireDoubanReadyForMultiSeasonFallback: true,
         });
       }
     },
@@ -4135,7 +4140,12 @@ export default {
         return;
       }
       this.smartEpisodeMapping = buildSmartEpisodeMapping({
-        tmdbDetail: this.detailTMDBData,
+        tmdbDetail: {
+          seasons: this.tmdbBaseSeasonRows.map((item) => ({
+            season: item.season,
+            episodes: item.episodes,
+          })),
+        },
         doubanMeta: this.detailDoubanData,
       });
       this.cacheRecognitionForCurrentSiteResult();
@@ -4215,8 +4225,8 @@ export default {
       try {
         if (this.isTmdbMode) {
           const tmdbType = normalizeString(this.tmdbType || this.searchType).toLowerCase();
-          const tmdbId = normalizeString(this.tmdbId);
-          if (!tmdbId || (tmdbType !== 'movie' && tmdbType !== 'tv')) {
+          const tmdbId = Math.max(0, normalizeInt(this.tmdbId));
+          if (tmdbId <= 0 || (tmdbType !== 'movie' && tmdbType !== 'tv')) {
             this.detailLoading = false;
             return;
           }
@@ -4225,14 +4235,23 @@ export default {
             id: tmdbId,
           });
           if (seq !== this.detailFetchSeq) return;
-        this.detailOverview = normalizeString(detail && detail.overview);
-        this.detailYear = normalizeString(detail && detail.year ? String(detail.year) : '');
-        this.detailRemark = normalizeString(detail && detail.badge);
-        this.detailTMDBData = detail && typeof detail === 'object' ? detail : null;
-        this.syncSmartEpisodeMapping();
-        this.$nextTick(() => this.applyEpisodeViewModePreference());
-        this.detailLoading = false;
-        return;
+          this.detailOverview = normalizeString(detail && detail.overview);
+          this.detailYear = extractYearTextFromTMDBDetail(detail);
+          this.detailRemark = '';
+          this.detailTMDBData = detail && typeof detail === 'object' ? detail : null;
+          if (tmdbType === 'tv') {
+            await this.ensureTVMetaLoaded();
+            if (seq !== this.detailFetchSeq) return;
+          } else {
+            this.detailDoubanData = null;
+            this.detailDoubanMetaKey = '';
+            this.doubanLoading = false;
+          }
+          this.syncSmartEpisodeMapping();
+          this.syncPrimarySiteSourceOptions();
+          this.$nextTick(() => this.applyEpisodeViewModePreference());
+          this.detailLoading = false;
+          return;
         }
 
         const settings = await this.ensurePlayRuntimeSettings();
@@ -4260,13 +4279,14 @@ export default {
         this.detailLoading = false;
       }
     },
-    async ensureDoubanSeasonMetaLoaded() {
+    async ensureTVMetaLoaded() {
       const currentKey = String(normalizeInt(this.tmdbId));
       if (!this.isTmdbMode || this.tmdbMovieMode) {
         this.detailDoubanData = null;
         this.detailDoubanMetaKey = '';
         this.doubanLoading = false;
         this.syncSmartEpisodeMapping();
+        this.syncPrimarySiteSourceOptions();
         return null;
       }
       if (
@@ -4274,37 +4294,34 @@ export default {
         && this.detailDoubanData
         && typeof this.detailDoubanData === 'object'
       ) {
-        const seasons = Array.isArray(this.detailDoubanData.seasons) ? this.detailDoubanData.seasons : [];
+        const seasons = buildDoubanRenderedSeasonRows(this.detailDoubanData);
         if (seasons.length || this.doubanLoading === false) {
           return this.detailDoubanData;
         }
       }
-      const keyword = normalizeString(this.playSearchQuery);
       const tmdbId = normalizeInt(this.tmdbId);
-      if (!keyword || tmdbId <= 0) {
+      if (tmdbId <= 0) {
         this.detailDoubanData = null;
         this.detailDoubanMetaKey = '';
         this.doubanLoading = false;
         this.syncSmartEpisodeMapping();
+        this.syncPrimarySiteSourceOptions();
         return null;
       }
       this.doubanLoading = true;
       try {
-        const settings = await this.ensurePlayRuntimeSettings();
-        const payload = await fetchDoubanSeasonMetaCached({
-          keyword,
-          tmdbId,
-          settings,
-        });
-        this.detailDoubanData = payload && typeof payload === 'object' ? payload : { seasons: [] };
+        const payload = await fetchTVMetaCached({ tmdbId });
+        this.detailDoubanData = normalizeTVMetaPayload(payload);
         this.detailDoubanMetaKey = currentKey;
         this.syncSmartEpisodeMapping();
+        this.syncPrimarySiteSourceOptions();
         return this.detailDoubanData;
       } catch (_error) {
-        this.detailDoubanData = { seasons: [] };
+        this.detailDoubanData = normalizeTVMetaPayload({});
         this.detailDoubanMetaKey = currentKey;
         this.syncSmartEpisodeMapping();
-        return this.detailDoubanData;
+        this.syncPrimarySiteSourceOptions();
+        return null;
       } finally {
         this.doubanLoading = false;
       }
@@ -4497,6 +4514,7 @@ export default {
   },
   watch: {
     switchOnlyToken() {
+      this.cancelActivePlaybackFlow({ stopStream: true, invalidateDetail: true, clearPlayerState: true });
       this.initialAutoPlaybackDone = false;
       this.initialAutoPlaybackStageDone = '';
       this.initialAutoPlaybackInFlight = false;
@@ -4944,9 +4962,10 @@ export default {
 .play-season-bar,
 .play-range-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   margin-bottom: 0;
+  width: 100%;
 }
 
 .play-season-bar--with-range {
@@ -4961,22 +4980,18 @@ export default {
 .play-season-tabs,
 .play-range-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible;
   padding: 2px 0;
-  scrollbar-width: none;
-}
-
-.play-season-tabs::-webkit-scrollbar,
-.play-range-tabs::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  width: 100%;
 }
 
 .play-season-btn,
 .play-range-btn {
   flex: 0 0 auto;
+  max-width: 100%;
+  min-width: fit-content;
   height: 28px;
   padding: 0 12px;
   border-radius: 999px;

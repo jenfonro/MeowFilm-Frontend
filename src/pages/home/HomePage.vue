@@ -179,6 +179,13 @@ import { normalizeImageUrl, rewriteDoubanImageUrl as rewriteSharedDoubanImageUrl
 import { buildHomeCacheKey, ensureHomeCacheEntry, getHomeCacheEntry, resolveCachedHomeSections, setHomeCacheEntry } from '../../shared/homeRuntime';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { deletePlayHistoryItem, ensurePlayHistoryItems, playHistoryListState } from '../../shared/playHistoryRuntime';
+import { fetchTMDBDetailCached } from '../../shared/tmdbRuntime';
+import { buildTMDBDetailTextBadge } from '../../shared/tmdbRaw';
+
+const normalizeInt = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.trunc(num) : 0;
+};
 
 const props = defineProps({
   bootstrap: { type: Object, default: () => ({}) },
@@ -206,10 +213,12 @@ const historyContextMenu = ref({
   busy: false,
   item: null,
 });
+const historyTmdbBadgeMap = ref({});
 const rowElements = Object.create(null);
 const rowRefSetters = Object.create(null);
 const rowControls = ref({});
 let rowResizeObserver = null;
+let historyBadgeRefreshSeq = 0;
 const doubanSections = [
   { key: 'movie', title: '热门电影', kind: 'movie', category: '热门', type: '全部' },
   { key: 'tv', title: '热门剧集', kind: 'tv', category: 'tv', type: 'tv' },
@@ -223,9 +232,13 @@ const normalizeHistoryCard = (item) => {
   const title = item && item.contentKey ? String(item.contentKey) : '未命名内容';
   const poster = item && item.Poster ? String(item.Poster) : '';
   const isTmdb = isTmdbHistoryItem(item);
-  const rawRemark = item && item.Remark ? String(item.Remark) : '';
   const tmdbType = item && item.tmdbType ? String(item.tmdbType).toLowerCase() : '';
-  const tmdbId = item && item.tmdbId != null ? String(item.tmdbId) : '';
+  const tmdbId = Math.max(0, normalizeInt(item && item.tmdbId));
+  const historyTmdbKey = isTmdb ? `${tmdbType}:${tmdbId}` : '';
+  const rawRemark = item && item.Remark ? String(item.Remark) : '';
+  const refreshedRemark = historyTmdbKey && historyTmdbBadgeMap.value[historyTmdbKey]
+    ? String(historyTmdbBadgeMap.value[historyTmdbKey])
+    : '';
   const itemKey = item && (item.contentKey || `${item.siteKey || 'tmdb'}:${item.siteDetail || item.tmdbId || title}`)
     ? String(item.contentKey || `${item.siteKey || 'tmdb'}:${item.siteDetail || item.tmdbId || title}`)
     : title;
@@ -235,7 +248,7 @@ const normalizeHistoryCard = (item) => {
     poster,
     detailUrl: '',
     scoreBadge: '',
-    textBadge: rawRemark,
+    textBadge: refreshedRemark || rawRemark,
     siteLabel: !isTmdb && item && item.siteName ? String(item.siteName) : '',
     rawSiteKey: item && item.siteKey ? String(item.siteKey) : '',
     rawSpiderApi: item && item.spiderApi ? String(item.spiderApi) : '',
@@ -243,6 +256,7 @@ const normalizeHistoryCard = (item) => {
     rawContentKey: item && item.contentKey ? String(item.contentKey) : '',
     rawTmdbId: tmdbId,
     rawTmdbType: tmdbType,
+    rawRemark,
   };
 };
 
@@ -397,16 +411,16 @@ const openHomeCard = (section, item, event = null) => {
   const target = event && event.target && typeof event.target.closest === 'function' ? event.target : null;
   if (target && target.closest('.media-card__linkBadge')) return;
   if (currentSection.key === 'history') {
-    const tmdbId = currentItem.rawTmdbId ? String(currentItem.rawTmdbId) : '';
+    const tmdbId = Math.max(0, normalizeInt(currentItem.rawTmdbId));
     const tmdbType = currentItem.rawTmdbType ? String(currentItem.rawTmdbType).toLowerCase() : '';
-    const isTmdb = !!tmdbId && (tmdbType === 'movie' || tmdbType === 'tv');
+    const isTmdb = tmdbId > 0 && (tmdbType === 'movie' || tmdbType === 'tv');
     emit('open-item', {
       sourceKind: isTmdb ? 'tmdb' : 'site',
       isTmdbMode: isTmdb,
       contentKey: currentItem.rawContentKey ? String(currentItem.rawContentKey) : '',
       title: currentItem.title ? String(currentItem.title) : '',
       poster: currentItem.poster ? String(currentItem.poster) : '',
-      remark: currentItem.textBadge ? String(currentItem.textBadge) : '',
+      remark: currentItem.rawRemark ? String(currentItem.rawRemark) : '',
       siteKey: currentItem.rawSiteKey ? String(currentItem.rawSiteKey) : '',
       siteName: currentItem.siteLabel ? String(currentItem.siteLabel) : '',
       spiderApi: currentItem.rawSpiderApi ? String(currentItem.rawSpiderApi) : '',
@@ -534,7 +548,7 @@ const normalizeHistoryItems = (payload) => {
       siteName: item && item.siteName ? String(item.siteName) : '',
       spiderApi: item && item.spiderApi ? String(item.spiderApi) : '',
       siteDetail: item && item.siteDetail ? String(item.siteDetail) : '',
-      tmdbId: item && item.tmdbId != null ? String(item.tmdbId) : '',
+      tmdbId: Math.max(0, normalizeInt(item && item.tmdbId)),
       tmdbType: item && item.tmdbType ? String(item.tmdbType).toLowerCase() : '',
       Poster: item && item.Poster ? String(item.Poster) : '',
       Remark: item && item.Remark ? String(item.Remark) : '',
@@ -545,8 +559,8 @@ const normalizeHistoryItems = (payload) => {
 const isTmdbHistoryItem = (item) => {
   if (!item || typeof item !== 'object') return false;
   const tmdbType = typeof item.tmdbType === 'string' ? item.tmdbType.trim().toLowerCase() : '';
-  const tmdbId = item.tmdbId != null ? String(item.tmdbId).trim() : '';
-  return !!tmdbId && (tmdbType === 'movie' || tmdbType === 'tv');
+  const tmdbId = Math.max(0, normalizeInt(item.tmdbId));
+  return tmdbId > 0 && (tmdbType === 'movie' || tmdbType === 'tv');
 };
 
 const readHomeSettings = () => {
@@ -791,6 +805,30 @@ const loadSiteHomeSectionsRaw = async () => {
 
 const loadHistoryItems = async () => {
   await ensurePlayHistoryItems({ limit: 12 });
+  const refreshSeq = historyBadgeRefreshSeq + 1;
+  historyBadgeRefreshSeq = refreshSeq;
+  const list = (Array.isArray(playHistoryListState.items) ? playHistoryListState.items : []).slice(0, 12);
+  const tmdbItems = list.filter((item) => isTmdbHistoryItem(item));
+  if (!tmdbItems.length) {
+    historyTmdbBadgeMap.value = {};
+    return;
+  }
+  const nextMap = {};
+  await Promise.all(tmdbItems.map(async (item) => {
+    const tmdbType = item && item.tmdbType ? String(item.tmdbType).toLowerCase() : '';
+    const tmdbId = Math.max(0, normalizeInt(item && item.tmdbId));
+    const rawRemark = item && item.Remark ? String(item.Remark) : '';
+    if (!tmdbType || tmdbId <= 0) return;
+    if (tmdbType !== 'tv') return;
+    if (!rawRemark.includes('更新')) return;
+    try {
+      const detail = await fetchTMDBDetailCached({ type: tmdbType, id: tmdbId });
+      const badge = buildTMDBDetailTextBadge(detail, tmdbType);
+      if (badge) nextMap[`${tmdbType}:${tmdbId}`] = badge;
+    } catch (_error) {}
+  }));
+  if (refreshSeq !== historyBadgeRefreshSeq) return;
+  historyTmdbBadgeMap.value = nextMap;
 };
 
 const loadDoubanSectionRaw = async (section) => {

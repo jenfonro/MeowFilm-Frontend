@@ -273,8 +273,6 @@ export const cacheRecognitionForSiteResult = ({
   signature,
   runtimeSettings,
   smartEpisodeMapping,
-  allowDegradedMapping = true,
-  requireDoubanReadyForMultiSeasonFallback = true,
 } = {}) => {
   const target = item && typeof item === 'object' ? item : null;
   const rawDetail = detail && typeof detail === 'object' ? detail : null;
@@ -296,8 +294,6 @@ export const cacheRecognitionForSiteResult = ({
       siteResultItem: target,
       runtimeSettings,
       smartEpisodeMapping,
-      allowDegradedMapping,
-      requireDoubanReadyForMultiSeasonFallback,
     });
   });
   return {
@@ -652,8 +648,6 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
   runtimeSettings,
   smartEpisodeMapping,
   episodeSource = 'TMDB',
-  allowDegradedMapping = true,
-  requireDoubanReadyForMultiSeasonFallback = true,
   allowResolutionModes = null,
   isCandidateAllowed,
   buildSelectionKey,
@@ -703,8 +697,6 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
     siteResultItem: siteItem,
     runtimeSettings,
     smartEpisodeMapping,
-    allowDegradedMapping,
-    requireDoubanReadyForMultiSeasonFallback,
   });
   const sourceMode = normalizeString(episodeSource) === '豆瓣' ? 'douban' : 'tmdb';
   const tiers = [
@@ -811,8 +803,6 @@ export const resolveHistoryBootstrapPlaybackTarget = async ({
   runtimeSettings,
   smartEpisodeMapping,
   episodeSource = 'TMDB',
-  allowDegradedMapping = true,
-  requireDoubanReadyForMultiSeasonFallback = true,
   allowResolutionModes = null,
   isCandidateAllowed,
   buildSelectionKey,
@@ -839,8 +829,6 @@ export const resolveHistoryBootstrapPlaybackTarget = async ({
       runtimeSettings,
       smartEpisodeMapping,
       episodeSource,
-      allowDegradedMapping,
-      requireDoubanReadyForMultiSeasonFallback,
       allowResolutionModes,
       isCandidateAllowed,
       buildSelectionKey,
