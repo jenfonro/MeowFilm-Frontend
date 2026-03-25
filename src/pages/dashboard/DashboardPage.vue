@@ -6173,6 +6173,40 @@ function pickImportFile() {
   backupImportFileRef.value.click();
 }
 
+async function refreshDashboardStateAfterBackupImport() {
+  await loadSitePanel();
+  if (activeNavKey.value === 'interface') {
+    await loadInterfacePanel();
+    return;
+  }
+  if (activeNavKey.value === 'pan') {
+    loadedPanSettingKeys.clear();
+    await loadPanPanel();
+    return;
+  }
+  if (activeNavKey.value === 'video') {
+    await loadVideoPanel();
+    return;
+  }
+  if (activeNavKey.value === 'magic') {
+    await loadMagicPanel();
+    return;
+  }
+  if (activeNavKey.value === 'smart') {
+    smartLoaded.value = false;
+    await loadSmartPanel(true);
+    return;
+  }
+  if (activeNavKey.value === 'thirdparty') {
+    thirdPartyLoaded.value = false;
+    await loadThirdpartyPanel();
+    return;
+  }
+  if (activeNavKey.value === 'metadata') {
+    await loadMetadataPanel();
+  }
+}
+
 async function importBackup(event) {
   const input = event && event.target ? event.target : null;
   const file = input && input.files && input.files[0] ? input.files[0] : null;
@@ -6183,8 +6217,9 @@ async function importBackup(event) {
       const text = await file.text();
       const parsed = JSON.parse(text || '{}');
       await restoreDashboardBackup(parsed);
+      await refreshDashboardStateAfterBackupImport();
     },
-    '导入成功（建议刷新页面）',
+    '导入成功',
     '导入失败',
     '正在导入...'
   );

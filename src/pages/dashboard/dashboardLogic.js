@@ -1384,12 +1384,319 @@ export async function deleteDashboardUser(payload) {
   return postForm('/dashboard/user/delete', payload);
 }
 
+const DASHBOARD_BACKUP_FORMAT = 'meowfilm-dashboard-settings';
+const DASHBOARD_BACKUP_VERSION = 1;
+const KNOWN_PAN_PROVIDER_KEYS = new Set([
+  'baidu',
+  'quark',
+  'quark_tv',
+  '189',
+  '139',
+  'uc',
+  'uc_tv',
+  'pan123',
+  '115',
+  'bili',
+  'wuming',
+  'yunchao',
+  'pan123ziyuan'
+]);
+
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeString(value, fallback = '') {
+  return typeof value === 'string' ? value.trim() : fallback;
+}
+
+function normalizeBoolean(value, fallback = false) {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function normalizeInteger(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, Math.trunc(numeric)) : fallback;
+}
+
+function normalizeStringArray(value) {
+  return asArray(value).map((item) => normalizeString(item, '')).filter(Boolean);
+}
+
+function normalizeCatpawrunnerServers(value) {
+  return asArray(value)
+    .map((item) => {
+      const row = asObject(item);
+      return {
+        name: normalizeString(row.name, ''),
+        apiBase: normalizeHttpBase(row.apiBase)
+      };
+    })
+    .filter((item) => item.name && item.apiBase);
+}
+
+function normalizeCatpawrunnerPans(value) {
+  return asArray(value)
+    .map((item) => {
+      const row = asObject(item);
+      return {
+        key: normalizeString(row.key, ''),
+        name: normalizeString(row.name, ''),
+        enable: normalizeBoolean(row.enable, false)
+      };
+    })
+    .filter((item) => item.key);
+}
+
+function normalizePanLoginSettings(value) {
+  const root = asObject(value);
+  const out = {};
+  Object.keys(root).forEach((provider) => {
+    const key = normalizeString(provider, '');
+    if (!KNOWN_PAN_PROVIDER_KEYS.has(key)) return;
+    const source = asObject(root[provider]);
+    const next = {};
+    [
+      'cookie',
+      'authorization',
+      'username',
+      'password',
+      'refresh_token',
+      'device_id',
+      'access_token',
+      'access_token_exp_at'
+    ].forEach((field) => {
+      if (typeof source[field] === 'string') next[field] = source[field];
+    });
+    if (Object.keys(next).length) out[key] = next;
+  });
+  return out;
+}
+
+function normalizeGoProxyPanMap(value) {
+  const pans = asObject(value);
+  return {
+    baidu: normalizeBoolean(pans.baidu, true),
+    quark: normalizeBoolean(pans.quark, true)
+  };
+}
+
+function normalizeGoProxyServers(value) {
+  return asArray(value)
+    .map((item) => {
+      const row = asObject(item);
+      return {
+        name: normalizeString(row.name, ''),
+        displayName: normalizeString(row.displayName, ''),
+        base: normalizeHttpBase(row.base),
+        pans: normalizeGoProxyPanMap(row.pans)
+      };
+    })
+    .filter((item) => item.name && item.base);
+}
+
+function normalizeRelayServers(value) {
+  return asArray(value)
+    .map((item) => {
+      const row = asObject(item);
+      return {
+        name: normalizeString(row.name, ''),
+        displayName: normalizeString(row.displayName, ''),
+        base: normalizeHttpBase(row.base),
+        secret: normalizeString(row.secret, ''),
+        pans: normalizeGoProxyPanMap(row.pans)
+      };
+    })
+    .filter((item) => item.name && item.base);
+}
+
+function normalizeVideoSourceSites(value) {
+  return asArray(value)
+    .map((item) => {
+      const row = asObject(item);
+      const key = normalizeString(row.key || row.Key, '');
+      const api = normalizeString(row.api || row.API, '');
+      const name = normalizeString(row.name || row.Name, '');
+      const rawType = row.type != null ? row.type : row.Type;
+      const next = { key, name, api };
+      if (rawType != null && Number.isFinite(Number(rawType))) next.type = Math.trunc(Number(rawType));
+      return next;
+    })
+    .filter((item) => item.key && item.api);
+}
+
+function normalizeVideoSourceStates(value) {
+  const root = asObject(value);
+  const out = {};
+  Object.keys(root).forEach((rawKey) => {
+    const key = normalizeString(rawKey, '');
+    if (!key) return;
+    const row = asObject(root[rawKey]);
+    out[key] = {
+      enabled: normalizeBoolean(row.enabled, false),
+      home: normalizeBoolean(row.home, false),
+      search: normalizeBoolean(row.search, false),
+      orderIndex: normalizeInteger(row.orderIndex, 0)
+    };
+  });
+  return out;
+}
+
+function normalizeThirdPartySections(value) {
+  return asArray(value)
+    .map((item) => {
+      const row = asObject(item);
+      const name = normalizeString(row.name, '');
+      if (!name) return null;
+      return {
+        id: normalizeString(row.id, ''),
+        name,
+        module: normalizeString(row.module, ''),
+        mediaType: normalizeString(row.mediaType, ''),
+        siteKey: normalizeString(row.siteKey, ''),
+        categoryId: normalizeString(row.categoryId, ''),
+        cardStyle: normalizeString(row.cardStyle, '')
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeSmartPanAliasMappings(value) {
+  const seen = new Set();
+  return asArray(value)
+    .map((item) => {
+      const row = asObject(item);
+      return {
+        pan: normalizeString(row.pan, ''),
+        aliases: normalizeString(row.aliases, '')
+      };
+    })
+    .filter((item) => {
+      if (!item.pan) return false;
+      const key = item.pan.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+export function normalizeDashboardBackupSchema(rawBackup, options = {}) {
+  const root = asObject(rawBackup);
+  const appConfig = asObject(root.appConfig);
+  const siteSettings = asObject(options.siteSettings);
+  const legacyRelayServers = asArray(options.relayServers);
+  const thirdPartyRoot = Object.keys(asObject(root.thirdParty)).length ? asObject(root.thirdParty) : asObject(root.thirdparty);
+  const siteRoot = Object.keys(asObject(root.site)).length ? asObject(root.site) : appConfig;
+  const relayRoot = Object.keys(asObject(root.relay)).length ? asObject(root.relay) : appConfig;
+
+  return {
+    format: DASHBOARD_BACKUP_FORMAT,
+    version: normalizeInteger(root.version, DASHBOARD_BACKUP_VERSION) || DASHBOARD_BACKUP_VERSION,
+    exportedAt: normalizeInteger(root.exportedAt, Math.trunc(Date.now() / 1000)),
+    site: {
+      siteName: normalizeString(siteRoot.siteName || siteRoot.SiteName, ''),
+      searchDisplayMode: normalizeString(siteRoot.searchDisplayMode || siteRoot.SearchDisplayMode, 'sites') || 'sites',
+      netdiskProxyEnabled: normalizeBoolean(siteRoot.netdiskProxyEnabled ?? siteRoot.NetdiskProxyEnabled, false),
+      netdiskProxyUrl: normalizeString(siteRoot.netdiskProxyUrl || siteRoot.netdiskProxyURL || siteRoot.NetdiskProxyURL, '')
+    },
+    metadata: {
+      doubanDataProxy: normalizeString(root.metadata?.doubanDataProxy || appConfig.doubanDataProxy || appConfig.DoubanDataProxy, 'server-proxy') || 'server-proxy',
+      doubanDataCustom: normalizeString(root.metadata?.doubanDataCustom || appConfig.doubanDataCustom || appConfig.DoubanDataCustom, ''),
+      doubanImgProxy: normalizeString(root.metadata?.doubanImgProxy || appConfig.doubanImgProxy || appConfig.DoubanImgProxy, 'server-proxy') || 'server-proxy',
+      doubanImgCustom: normalizeString(root.metadata?.doubanImgCustom || appConfig.doubanImgCustom || appConfig.DoubanImgCustom, ''),
+      doubanSearchCookie: normalizeString(root.metadata?.doubanSearchCookie || appConfig.doubanSearchCookie || appConfig.DoubanSearchCookie, ''),
+      tmdbApiToken: normalizeString(root.metadata?.tmdbApiToken || appConfig.tmdbApiToken || appConfig.TMDBAPIToken, ''),
+      tmdbDataProxyBase: normalizeHttpBase(root.metadata?.tmdbDataProxyBase || appConfig.tmdbDataProxyBase || appConfig.TMDBAPIBase || ''),
+      tmdbImageProxyBase: normalizeHttpBase(root.metadata?.tmdbImageProxyBase || appConfig.tmdbImageProxyBase || appConfig.TMDBImgBase || ''),
+      language: normalizeString(root.metadata?.language || appConfig.language || appConfig.TMDBLanguage, 'zh-CN') || 'zh-CN',
+      region: normalizeString(root.metadata?.region || appConfig.region || appConfig.TMDBRegion, 'CN') || 'CN',
+      includeAdult: normalizeBoolean(root.metadata?.includeAdult ?? appConfig.includeAdult ?? appConfig.TMDBIncludeAdult, false)
+    },
+    magic: {
+      episodeRules: normalizeStringArray(root.magic?.episodeRules),
+      episodeCleanRegexRules: normalizeStringArray(root.magic?.episodeCleanRegexRules),
+      movieRules: normalizeStringArray(root.magic?.movieRules),
+      aggregateRegexRules: normalizeStringArray(root.magic?.aggregateRegexRules)
+    },
+    smart: {
+      smartSourceExtractPriority: normalizeString(
+        root.smart?.smartSourceExtractPriority || appConfig.smartSourceExtractPriority || appConfig.SmartSourceExtractPriority,
+        '无'
+      ) || '无',
+      siteCleanKeywords: normalizeString(
+        root.smart?.siteCleanKeywords || appConfig.siteCleanKeywords || appConfig.smartSiteCleanKeywords || appConfig.SmartSiteCleanKeywords,
+        ''
+      ),
+      smartSourcePriorityTokens: normalizeStringArray(root.smart?.smartSourcePriorityTokens),
+      smartPanMatchTokens: normalizeStringArray(root.smart?.smartPanMatchTokens),
+      smartPanAliasMappings: normalizeSmartPanAliasMappings(root.smart?.smartPanAliasMappings)
+    },
+    thirdParty: {
+      embyHomeSections: normalizeThirdPartySections(thirdPartyRoot.embyHomeSections)
+    },
+    pan: {
+      loginSettings: normalizePanLoginSettings(root.pan?.loginSettings)
+    },
+    catpawrunner: {
+      active: normalizeString(root.catpawrunner?.active || siteSettings.CatpawrunnerActive || siteSettings.catpawrunnerActive || appConfig.CatpawrunnerActive, ''),
+      servers: normalizeCatpawrunnerServers(root.catpawrunner?.servers),
+      pans: normalizeCatpawrunnerPans(root.catpawrunner?.pans)
+    },
+    goProxy: {
+      enabled: normalizeBoolean(root.goProxy?.enabled ?? siteSettings.goProxyEnabled ?? appConfig.GoProxyEnabled, false),
+      autoSelect: normalizeBoolean(root.goProxy?.autoSelect ?? siteSettings.goProxyAutoSelect ?? appConfig.GoProxyAutoSelect, false),
+      servers: normalizeGoProxyServers(root.goProxy?.servers)
+    },
+    relay: {
+      enabled: normalizeBoolean(relayRoot.enabled ?? siteSettings.relayEnabled ?? appConfig.RelayEnabled, false),
+      auth: normalizeString(relayRoot.auth || siteSettings.auth || appConfig.auth || appConfig.RelayAuthToken, ''),
+      goProxyThresholdGB: normalizeInteger(
+        relayRoot.goProxyThresholdGB ?? relayRoot.relayGoProxyThresholdGB ?? siteSettings.relayGoProxyThresholdGB ?? appConfig.RelayGoProxyThresholdGB,
+        0
+      ),
+      servers: normalizeRelayServers(root.relay?.servers || legacyRelayServers)
+    },
+    videoSource: {
+      searchCoverSite: normalizeString(
+        root.videoSource?.searchCoverSite || appConfig.videoSourceSearchCoverSite || appConfig.VideoSourceSearchCoverSite,
+        ''
+      ),
+      sites: normalizeVideoSourceSites(root.videoSource?.sites),
+      states: normalizeVideoSourceStates(root.videoSource?.states),
+      order: normalizeStringArray(root.videoSource?.order)
+    }
+  };
+}
+
+export function buildDashboardRestorePayload(rawBackup) {
+  const normalized = normalizeDashboardBackupSchema(rawBackup);
+  return {
+    version: normalized.version,
+    exportedAt: normalized.exportedAt,
+    site: normalized.site,
+    metadata: normalized.metadata,
+    magic: normalized.magic,
+    smart: normalized.smart,
+    thirdParty: normalized.thirdParty,
+    pan: normalized.pan,
+    catpawrunner: normalized.catpawrunner,
+    goProxy: normalized.goProxy,
+    relay: normalized.relay,
+    videoSource: normalized.videoSource
+  };
+}
+
 export async function exportDashboardBackup() {
-  return getSuccessJson('/dashboard/backup');
+  const backupData = await getSuccessJson('/dashboard/backup');
+  return normalizeDashboardBackupSchema(backupData);
 }
 
 export async function restoreDashboardBackup(payload) {
-  return postJson('/dashboard/restore', payload);
+  return postJson('/dashboard/restore', buildDashboardRestorePayload(payload));
 }
 
 export async function validateSearchDisplayMode(mode) {
