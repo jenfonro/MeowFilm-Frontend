@@ -120,9 +120,17 @@ const sameBaseHistoryTarget = (row, context) => {
   return normalizeString(item.contentKey).toLowerCase() === targetContentKey;
 };
 
-const buildHistoryRowFromContext = (context, extra = {}) => {
+const buildHistoryRowFromContext = (context, extra = {}, currentRow = null) => {
   const target = context && typeof context === 'object' ? context : {};
   const patch = extra && typeof extra === 'object' ? extra : {};
+  let resolvedPreOrder = false;
+  if (typeof patch.preOrder === 'boolean') {
+    resolvedPreOrder = patch.preOrder;
+  } else if (currentRow && typeof currentRow === 'object' && typeof currentRow.preOrder === 'boolean') {
+    resolvedPreOrder = !!currentRow.preOrder;
+  } else if (typeof target.preOrder === 'boolean') {
+    resolvedPreOrder = !!target.preOrder;
+  }
   return {
     contentKey: normalizeString(target.contentKey),
     siteKey: normalizeString(target.siteKey),
@@ -140,6 +148,7 @@ const buildHistoryRowFromContext = (context, extra = {}) => {
     siteEpisodeIndex: Math.max(0, normalizeInt(target.siteEpisodeIndex)),
     siteEpisodeFile: normalizeString(target.siteEpisodeFile),
     playbackItemId: normalizeString(target.playbackItemId),
+    preOrder: resolvedPreOrder,
     playbackPositionTicks: Math.max(0, normalizeInt64(patch.playbackPositionTicks)),
     playbackRuntimeTicks: Math.max(0, normalizeInt64(patch.playbackRuntimeTicks)),
     updatedAt: new Date().toISOString(),
@@ -149,9 +158,10 @@ const buildHistoryRowFromContext = (context, extra = {}) => {
 const mergeHistoryRowLocally = (context, extra = {}) => {
   const target = context && typeof context === 'object' ? context : null;
   if (!target) return;
-  const nextRow = buildHistoryRowFromContext(target, extra);
   const list = Array.isArray(playHistoryListState.items) ? playHistoryListState.items.slice() : [];
   const index = list.findIndex((item) => sameBaseHistoryTarget(item, target));
+  const currentRow = index >= 0 ? list[index] : null;
+  const nextRow = buildHistoryRowFromContext(target, extra, currentRow);
   if (index >= 0) {
     list.splice(index, 1);
   }
@@ -294,6 +304,7 @@ export const playHistorySessionState = reactive({
     playFlag: '',
     siteEpisodeIndex: 0,
     siteEpisodeFile: '',
+    preOrder: false,
     playbackItemId: '',
     selectionKey: '',
   },
@@ -396,6 +407,7 @@ export const preparePlayHistoryContext = async (payload = {}) => {
     playFlag: normalizeString(raw.playFlag),
     siteEpisodeIndex: Math.max(0, normalizeInt(raw.siteEpisodeIndex)),
     siteEpisodeFile: normalizeString(raw.siteEpisodeFile),
+    preOrder: !!raw.preOrder,
     playbackItemId: normalizeString(raw.playbackItemId),
     selectionKey: normalizeString(raw.selectionKey),
   };
@@ -452,6 +464,7 @@ export const clearActivePlayHistoryContext = () => {
     playFlag: '',
     siteEpisodeIndex: 0,
     siteEpisodeFile: '',
+    preOrder: false,
     playbackItemId: '',
     selectionKey: '',
   };
@@ -499,6 +512,7 @@ const commitHistoryBaseIfNeeded = async (reason = '') => {
         playFlag: context.playFlag,
         siteEpisodeIndex: context.siteEpisodeIndex,
         siteEpisodeFile: context.siteEpisodeFile,
+        preOrder: !!context.preOrder,
         playbackItemId: context.playbackItemId,
       }, { dedupe: false });
       mergeHistoryRowLocally(context);
@@ -515,6 +529,10 @@ const commitHistoryBaseIfNeeded = async (reason = '') => {
     if (historyCommitState.key === key) historyCommitState.inFlight = null;
   }
   void reason;
+};
+
+export const commitPlayHistoryContextNow = async (reason = '') => {
+  await commitHistoryBaseIfNeeded(reason);
 };
 
 export const onPlayerHistoryPlaybackStart = async (_reason = '') => {
@@ -596,6 +614,7 @@ export const syncHistoryProgressIfPossible = async ({ force = false } = {}) => {
         playFlag: context.playFlag,
         siteEpisodeIndex: context.siteEpisodeIndex,
         siteEpisodeFile: context.siteEpisodeFile,
+        preOrder: !!context.preOrder,
         playbackItemId: context.playbackItemId,
         playbackPositionTicks: positionTicks,
         playbackRuntimeTicks: runtimeTicks,
@@ -640,6 +659,7 @@ export const buildPlayHistoryPayload = ({
   siteEpisodeIndex = 0,
   siteEpisodeFile = '',
   selectionKey = '',
+  preOrder = false,
 } = {}) => {
   const payload = {
     contentKey: normalizeString(contentKey),
@@ -659,6 +679,7 @@ export const buildPlayHistoryPayload = ({
     siteEpisodeIndex: Math.max(0, normalizeInt(siteEpisodeIndex)),
     siteEpisodeFile: normalizeString(siteEpisodeFile),
     selectionKey: normalizeString(selectionKey),
+    preOrder: !!preOrder,
     playbackItemId: '',
   };
   payload.playbackItemId = buildEpisodePlaybackItemId({
@@ -669,4 +690,35 @@ export const buildPlayHistoryPayload = ({
   });
   payload.identity = buildHistoryIdentity(payload);
   return payload;
+};
+
+export const setPlayHistoryPreOrder = async (context = {}, nextValue = false) => {
+  const target = context && typeof context === 'object' ? context : null;
+  if (!target) throw new Error('缺少历史上下文');
+  const contentKey = normalizeString(target.contentKey);
+  const tmdbType = normalizeString(target.tmdbType).toLowerCase();
+  const tmdbId = Math.max(0, normalizeInt(target.tmdbId));
+  if (!contentKey || tmdbType !== 'tv' || tmdbId <= 0) {
+    throw new Error('缺少 TMDB 剧集上下文');
+  }
+  const active = playHistorySessionState.activeContext && typeof playHistorySessionState.activeContext === 'object'
+    ? playHistorySessionState.activeContext
+    : null;
+  const sameActive =
+    active
+    && normalizeString(active.contentKey) === contentKey
+    && normalizeString(active.tmdbType).toLowerCase() === tmdbType
+    && Math.max(0, normalizeInt(active.tmdbId)) === tmdbId;
+  const nextContext = {
+    ...(sameActive ? active : target),
+    contentKey,
+    tmdbId,
+    tmdbType,
+    Poster: normalizeString(target.Poster),
+    Remark: normalizeString(target.Remark),
+    preOrder: !!nextValue,
+  };
+  nextContext.identity = buildHistoryIdentity(nextContext);
+  playHistorySessionState.activeContext = nextContext;
+  await commitHistoryBaseIfNeeded('pre_order_toggle');
 };

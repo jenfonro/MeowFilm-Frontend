@@ -200,6 +200,18 @@
                       </div>
                     </div>
                   </div>
+                  <div v-if="showPreOrderButton" class="ui-select-row__actions">
+                    <button
+                      type="button"
+                      class="ui-control-btn"
+                      :class="{ 'is-active': preOrderActive }"
+                      :disabled="preOrderToggleBusy"
+                      :title="preOrderActive ? '关闭点映' : '开启点映'"
+                      @click="togglePreOrder"
+                    >
+                      点映
+                    </button>
+                  </div>
                 </div>
                 <div v-if="showPanSourceRow" id="playPanSourceRow" class="ui-select-row play-picker-row">
                   <div class="ui-select-row__main">
@@ -444,7 +456,9 @@ import {
   confirmPlayerHistoryPlaybackReady,
   onPlayerHistoryPlaybackStart,
   onPlayerHistoryTimeUpdate,
+  playHistorySessionState,
   preparePlayHistoryContext,
+  setPlayHistoryPreOrder,
   syncHistoryProgressIfPossible,
   warmPlayHistoryForContext,
 } from '../../shared/playHistoryRuntime';
@@ -456,7 +470,14 @@ import {
   performSearchSessionSearch,
 } from '../../shared/searchSession';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
-import { addSmartMatchBlockItem, buildSearchGroupKey, clearBlockedMatchCaches, fetchBlockedMatchIndex } from '../../shared/searchRuntime';
+import {
+  addSmartMatchBlockItem,
+  buildSearchGroupKey,
+  clearBlockedMatchCaches,
+  fetchBlockedMatchIndex,
+  mergeSearchSnapshotsBySiteIdentity,
+  resolveCanonicalSearchVariants,
+} from '../../shared/searchRuntime';
 import { runSmartPlaybackController } from '../../shared/smartPlaybackController';
 import {
   buildSmartEpisodeMapping,
@@ -596,9 +617,10 @@ const TMDB_GENRE_LABELS = {
 
 const hasChineseText = (value) => /[\u3400-\u9fff]/.test(normalizeString(value));
 
-const buildTMDBRenderedSeasonRows = (detail) => {
+const buildTMDBRenderedSeasonRows = (detail, { includeUnaired = false } = {}) => {
   const seasons = getTMDBOrdinarySeasons(detail);
   if (!seasons.length) return [];
+  if (includeUnaired) return seasons;
   const status = getTMDBStatus(detail);
   if (status === 'Ended') return seasons;
 
@@ -1020,6 +1042,8 @@ export default {
     bootstrap: { type: Object, default: () => ({}) },
     isTmdbMode: { type: Boolean, default: false },
     contentKey: { type: String, default: '' },
+    searchQueryOriginal: { type: String, default: '' },
+    searchQueryCanonical: { type: String, default: '' },
     videoYear: { type: String, default: '' },
     searchType: { type: String, default: '' },
     siteKey: { type: String, default: '' },
@@ -1142,6 +1166,24 @@ export default {
     isDoubanEpisodeSource() {
       return !this.selectedSiteResultItem && this.selectedSiteSource === '豆瓣' && this.isTmdbMode;
     },
+    showPreOrderButton() {
+      if (!this.isTmdbMode || this.tmdbMovieMode || this.selectedSiteResultItem) return false;
+      return this.selectedSiteSource === 'TMDB' || this.selectedSiteSource === '豆瓣';
+    },
+    preOrderActive() {
+      const active = playHistorySessionState.activeContext && typeof playHistorySessionState.activeContext === 'object'
+        ? playHistorySessionState.activeContext
+        : null;
+      if (
+        active
+        && normalizeString(active.contentKey) === normalizeString(this.playContentPreferenceKey)
+        && normalizeString(active.tmdbType).toLowerCase() === normalizeString(this.tmdbType || this.searchType).toLowerCase()
+        && normalizeInt(active.tmdbId) === normalizeInt(this.tmdbId)
+      ) {
+        return !!active.preOrder;
+      }
+      return !!(this.playHistoryRowForMenu && this.playHistoryRowForMenu.preOrder);
+    },
     isProjectedSiteTMDBSource() {
       return !!this.selectedSiteResultItem && this.selectedProjectionSource === 'TMDB' && this.isTmdbMode;
     },
@@ -1204,7 +1246,7 @@ export default {
     },
     tmdbBaseSeasonRows() {
       if (this.tmdbMovieMode) return [];
-      return buildTMDBRenderedSeasonRows(this.detailTMDBData);
+      return buildTMDBRenderedSeasonRows(this.detailTMDBData, { includeUnaired: this.preOrderActive });
     },
     tmdbSeasonRows() {
       if (!this.isTMDBEpisodeSource || this.tmdbMovieMode) return [];
@@ -1213,6 +1255,15 @@ export default {
     doubanBaseSeasonRows() {
       if (this.tmdbMovieMode) return [];
       const seasons = buildDoubanRenderedSeasonRows(this.detailDoubanData);
+      if (this.preOrderActive) {
+        return seasons
+          .map((item) => ({
+            season: normalizeInt(item && item.season),
+            episodes: normalizeInt(item && item.episodes),
+          }))
+          .filter((item) => item.season > 0 && item.episodes > 0)
+          .sort((left, right) => left.season - right.season);
+      }
       const tmdbEpisodeTotal = countRenderedEpisodes(this.tmdbBaseSeasonRows);
       return clipSeasonRowsToTotalEpisodes(
         seasons.map((item) => ({
@@ -1405,21 +1456,56 @@ export default {
     playSearchQuery() {
       return normalizeSearchKey(this.displayTitle);
     },
+    playSearchQueryOriginal() {
+      if (!this.isTmdbMode) return '';
+      return normalizeSearchKey(this.searchQueryOriginal || this.displayTitle);
+    },
+    playSearchQueryCanonical() {
+      if (!this.isTmdbMode) return '';
+      const propCanonical = normalizeSearchKey(this.searchQueryCanonical);
+      if (propCanonical) return propCanonical;
+      const variants = resolveCanonicalSearchVariants(this.searchQueryOriginal || this.displayTitle, {
+        contentKind: this.playSearchContentKind,
+      });
+      return normalizeSearchKey(variants.canonical || this.displayTitle);
+    },
     playSearchContentKind() {
       return this.isTmdbMode && this.tmdbMovieMode ? 'movie' : 'tv';
     },
     playSearchScope() {
       return `${PLAY_SEARCH_SCOPE}:${this.playSearchContentKind}`;
     },
+    playSearchPrimaryScope() {
+      if (this.isTmdbMode && this.playSearchQueryOriginal) return 'default';
+      return `${this.playSearchScope}:primary`;
+    },
+    playSearchCanonicalScope() {
+      return `${this.playSearchScope}:canonical`;
+    },
     effectivePlaySearchScope() {
       return this.playSearchScope;
     },
+    playSearchPrimaryStatus() {
+      const query = this.playSearchQueryOriginal;
+      if (!query) return 'idle';
+      return normalizeString(this.playSearchLiveStatus)
+        || getSearchSessionAnyQueryStatus(query, this.playSearchPrimaryScope);
+    },
+    playSearchCanonicalStatus() {
+      const query = this.playSearchQueryCanonical;
+      if (!query || query === this.playSearchQueryOriginal) return 'completed';
+      return normalizeString(this.playSearchCanonicalLiveStatus)
+        || getSearchSessionAnyQueryStatus(query, this.playSearchCanonicalScope);
+    },
     siteSourceSearchState() {
-      return normalizeString(this.playSearchLiveStatus) || getSearchSessionAnyQueryStatus(this.playSearchQuery, this.effectivePlaySearchScope);
+      if (this.playSearchPrimaryStatus === 'loading' || this.playSearchCanonicalStatus === 'loading') return 'loading';
+      if (this.playSearchPrimaryStatus !== 'completed') return this.playSearchPrimaryStatus;
+      if (this.playSearchCanonicalStatus !== 'completed') return this.playSearchCanonicalStatus;
+      return 'completed';
     },
     showSiteSourceSearchOption() {
-      if (!this.playSearchQuery) return false;
-      return this.siteSourceSearchState !== 'completed';
+      if (!this.playSearchQueryOriginal && !this.playSearchQueryCanonical) return false;
+      return this.playSearchPrimaryStatus !== 'completed' || this.playSearchCanonicalStatus !== 'completed';
     },
     siteSourceSearchBusy() {
       return this.siteSourceSearchManualLoading || this.siteSourceSearchState === 'loading';
@@ -1430,8 +1516,22 @@ export default {
     siteSourceSearchLabel() {
       return this.siteSourceSearchBusy ? '加载中...' : '加载更多...';
     },
+    playSearchPrimarySnapshot() {
+      const query = this.playSearchQueryOriginal;
+      if (!query) return null;
+      return this.playSearchLiveSnapshot || getSearchSessionAnyQuerySnapshot(query, this.playSearchPrimaryScope);
+    },
+    playSearchCanonicalSnapshot() {
+      const query = this.playSearchQueryCanonical;
+      if (!query || query === this.playSearchQueryOriginal) return null;
+      return this.playSearchCanonicalLiveSnapshot || getSearchSessionAnyQuerySnapshot(query, this.playSearchCanonicalScope);
+    },
+    playMergedSearchSnapshot() {
+      return mergeSearchSnapshotsBySiteIdentity(this.playSearchPrimarySnapshot, this.playSearchCanonicalSnapshot);
+    },
     playSearchSnapshot() {
-      return this.playSearchLiveSnapshot || getSearchSessionAnyQuerySnapshot(this.playSearchQuery, this.effectivePlaySearchScope);
+      return this.playMergedSearchSnapshot || this.playSearchPrimarySnapshot || this.playSearchLiveSnapshot
+        || getSearchSessionAnyQuerySnapshot(this.playSearchQuery, this.effectivePlaySearchScope);
     },
     playSearchRuntimeConfig() {
       return this.playSearchRuntimeConfigData;
@@ -1458,10 +1558,11 @@ export default {
     },
     siteSourceResultItems() {
       const items = buildSiteSourceResultItemsFromSnapshotRuntime({
-        snapshot: this.playSearchSnapshot,
+        snapshot: this.playMergedSearchSnapshot || this.playSearchSnapshot,
         runtimeConfig: this.playSearchRuntimeConfig,
         blockedSiteKeys: this.playBlockedSiteKeys,
         title: this.displayTitle,
+        contentKind: this.playSearchContentKind,
       });
       if (!this.isTmdbMode) return items;
       const historyItem = buildHistorySitePlaybackItemRuntime(this.playHistoryRowForMenu);
@@ -2007,6 +2108,9 @@ export default {
       playSearchLiveSnapshot: null,
       playSearchLiveStatus: 'idle',
       playSearchUnsubscribe: null,
+      playSearchCanonicalLiveSnapshot: null,
+      playSearchCanonicalLiveStatus: 'idle',
+      playSearchCanonicalUnsubscribe: null,
       siteSourceOptions: [],
       selectedSiteSource: '',
       selectedPanSource: '',
@@ -2071,6 +2175,7 @@ export default {
       lastRawDirIdentity: '',
       selectedViewSeasonNumber: 0,
       selectedViewRangeStart: 0,
+      preOrderToggleBusy: false,
       selectedSiteEpisodeSelectionKey: '',
       detailFetchSeq: 0,
       selectedSearchResultId: '',
@@ -2303,27 +2408,46 @@ export default {
     },
     bindPlaySearchQuerySubscription() {
       this.unbindPlaySearchQuerySubscription();
-      const query = normalizeSearchKey(this.playSearchQuery);
-      const scope = normalizeString(this.effectivePlaySearchScope) || this.playSearchScope;
+      const query = normalizeSearchKey(this.playSearchQueryOriginal);
+      const scope = normalizeString(this.playSearchPrimaryScope) || this.playSearchScope;
       if (!query) {
         this.playSearchLiveSnapshot = null;
         this.playSearchLiveStatus = 'idle';
+      } else {
+        this.playSearchLiveSnapshot = getSearchSessionAnyQuerySnapshot(query, scope);
+        this.playSearchLiveStatus = getSearchSessionAnyQueryStatus(query, scope);
+        this.playSearchUnsubscribe = subscribeSearchSessionQuery(query, (snapshot, status) => {
+          if (normalizeSearchKey(this.playSearchQueryOriginal) !== query) return;
+          if ((normalizeString(this.playSearchPrimaryScope) || this.playSearchScope) !== scope) return;
+          this.playSearchLiveSnapshot = snapshot;
+          this.playSearchLiveStatus = normalizeString(status) || 'idle';
+        }, scope);
+      }
+      const canonicalQuery = normalizeSearchKey(this.playSearchQueryCanonical);
+      const canonicalScope = normalizeString(this.playSearchCanonicalScope);
+      if (!canonicalQuery || canonicalQuery === query) {
+        this.playSearchCanonicalLiveSnapshot = null;
+        this.playSearchCanonicalLiveStatus = canonicalQuery ? 'completed' : 'idle';
         return;
       }
-      this.playSearchLiveSnapshot = getSearchSessionAnyQuerySnapshot(query, scope);
-      this.playSearchLiveStatus = getSearchSessionAnyQueryStatus(query, scope);
-      this.playSearchUnsubscribe = subscribeSearchSessionQuery(query, (snapshot, status) => {
-        if (normalizeSearchKey(this.playSearchQuery) !== query) return;
-        if ((normalizeString(this.effectivePlaySearchScope) || this.playSearchScope) !== scope) return;
-        this.playSearchLiveSnapshot = snapshot;
-        this.playSearchLiveStatus = normalizeString(status) || 'idle';
-      }, scope);
+      this.playSearchCanonicalLiveSnapshot = getSearchSessionAnyQuerySnapshot(canonicalQuery, canonicalScope);
+      this.playSearchCanonicalLiveStatus = getSearchSessionAnyQueryStatus(canonicalQuery, canonicalScope);
+      this.playSearchCanonicalUnsubscribe = subscribeSearchSessionQuery(canonicalQuery, (snapshot, status) => {
+        if (normalizeSearchKey(this.playSearchQueryCanonical) !== canonicalQuery) return;
+        if (normalizeString(this.playSearchCanonicalScope) !== canonicalScope) return;
+        this.playSearchCanonicalLiveSnapshot = snapshot;
+        this.playSearchCanonicalLiveStatus = normalizeString(status) || 'idle';
+      }, canonicalScope);
     },
     unbindPlaySearchQuerySubscription() {
       if (typeof this.playSearchUnsubscribe === 'function') {
         this.playSearchUnsubscribe();
       }
       this.playSearchUnsubscribe = null;
+      if (typeof this.playSearchCanonicalUnsubscribe === 'function') {
+        this.playSearchCanonicalUnsubscribe();
+      }
+      this.playSearchCanonicalUnsubscribe = null;
     },
     async ensurePlaySearchRuntimeConfig() {
       if (this.playSearchRuntimeConfigData) return this.playSearchRuntimeConfigData;
@@ -2332,7 +2456,7 @@ export default {
       return this.playSearchRuntimeConfigData;
     },
     async ensurePlayBlockedMatchIndexLoaded() {
-      const query = normalizeString(this.playSearchQuery || this.displayTitle);
+      const query = normalizeString(this.playSearchQueryOriginal || this.playSearchQuery || this.displayTitle);
       if (!query) {
         this.playBlockedMatchIndex = {};
         return this.playBlockedMatchIndex;
@@ -2347,7 +2471,7 @@ export default {
     },
     async handleSmartMatchBlockUpdated(event) {
       const detail = event && event.detail && typeof event.detail === 'object' ? event.detail : null;
-      const keyword = normalizeString(this.playSearchQuery || this.displayTitle);
+      const keyword = normalizeString(this.playSearchQueryOriginal || this.playSearchQuery || this.displayTitle);
       const nextKeyword = normalizeString(detail && detail.keyword);
       if (nextKeyword && keyword && nextKeyword !== keyword) return;
       clearBlockedMatchCaches();
@@ -2424,18 +2548,35 @@ export default {
       this.$nextTick(() => this.syncPlaybackDisplayFocus());
     },
     async triggerSiteSourceSearchMore() {
-      if (!this.playSearchQuery || !this.siteSourceSearchInteractive) return;
+      if ((!this.playSearchQueryOriginal && !this.playSearchQueryCanonical) || !this.siteSourceSearchInteractive) return;
       await this.ensurePlayBlockedSiteKeysLoaded();
       this.siteSourceSearchManualLoading = true;
       try {
-        await performSearchSessionSearch(this.playSearchQuery, this.bootstrap, {
-          saveHistoryEnabled: false,
-          blockedSiteKeys: this.playBlockedSiteKeys,
-          affectUi: false,
-          scope: this.playSearchScope,
-          searchDisplayModeOverride: 'sites',
-          contentKind: this.playSearchContentKind,
-        });
+        if (this.playSearchQueryOriginal && this.playSearchPrimaryStatus !== 'completed') {
+          await performSearchSessionSearch(this.playSearchQueryOriginal, this.bootstrap, {
+            saveHistoryEnabled: false,
+            blockedSiteKeys: this.playBlockedSiteKeys,
+            affectUi: false,
+            scope: this.playSearchPrimaryScope,
+            searchDisplayModeOverride: 'sites',
+            contentKind: this.playSearchContentKind,
+          });
+          return;
+        }
+        if (
+          this.playSearchQueryCanonical
+          && this.playSearchQueryCanonical !== this.playSearchQueryOriginal
+          && this.playSearchCanonicalStatus !== 'completed'
+        ) {
+          await performSearchSessionSearch(this.playSearchQueryCanonical, this.bootstrap, {
+            saveHistoryEnabled: false,
+            blockedSiteKeys: this.playBlockedSiteKeys,
+            affectUi: false,
+            scope: this.playSearchCanonicalScope,
+            searchDisplayModeOverride: 'sites',
+            contentKind: this.playSearchContentKind,
+          });
+        }
       } finally {
         this.siteSourceSearchManualLoading = false;
       }
@@ -2726,9 +2867,56 @@ export default {
     },
     buildPlayHistoryWarmContext() {
       if (!this.isTmdbMode) return {};
-      return {
+      const baseContext = {
         contentKey: this.playContentPreferenceKey,
+        Poster: this.detailPoster,
+        Remark: this.detailRemarkText,
+        tmdbId: this.tmdbId,
+        tmdbType: normalizeString(this.tmdbType || this.searchType).toLowerCase(),
+        tmdbSeason: this.tmdbMovieMode ? 0 : this.currentEpisodeSeasonNumber,
       };
+      const existingRow = findPlayHistoryRowForContext(baseContext) || null;
+      const playback = this.currentPlaybackContext && typeof this.currentPlaybackContext === 'object'
+        ? this.currentPlaybackContext
+        : null;
+      return {
+        contentKey: normalizeString(existingRow && existingRow.contentKey) || baseContext.contentKey,
+        reportEnabled: true,
+        siteKey: normalizeString(existingRow && existingRow.siteKey) || normalizeString(playback && playback.siteKey),
+        siteName: normalizeString(existingRow && existingRow.siteName) || normalizeString(playback && playback.siteName),
+        spiderApi: normalizeString(existingRow && existingRow.spiderApi) || normalizeString(playback && playback.spiderApi),
+        siteDetail: normalizeString(existingRow && existingRow.siteDetail) || normalizeString(playback && playback.siteDetail),
+        Poster: normalizeString(existingRow && existingRow.Poster) || baseContext.Poster,
+        Remark: normalizeString(existingRow && existingRow.Remark) || baseContext.Remark,
+        tmdbId: normalizeInt(existingRow && existingRow.tmdbId) || baseContext.tmdbId,
+        tmdbType: normalizeString(existingRow && existingRow.tmdbType) || baseContext.tmdbType,
+        tmdbSeason: normalizeInt(existingRow && existingRow.tmdbSeason)
+          || normalizeInt(playback && playback.tmdbSeason)
+          || normalizeInt(baseContext.tmdbSeason),
+        tmdbEpisode: normalizeInt(existingRow && existingRow.tmdbEpisode) || normalizeInt(playback && playback.tmdbEpisode),
+        globalEpisode: normalizeInt(existingRow && existingRow.globalEpisode) || normalizeInt(playback && playback.globalEpisode),
+        playFlag: normalizeString(existingRow && existingRow.playFlag) || normalizeString(playback && playback.panFlag),
+        siteEpisodeIndex: normalizeInt(existingRow && existingRow.siteEpisodeIndex) || (normalizeInt(playback && playback.itemIndex) >= 0 ? normalizeInt(playback && playback.itemIndex) + 1 : 0),
+        siteEpisodeFile: normalizeString(existingRow && existingRow.siteEpisodeFile) || normalizeString(playback && playback.rawFileName),
+        playbackItemId: normalizeString(existingRow && existingRow.playbackItemId),
+        selectionKey: normalizeString(existingRow && existingRow.selectionKey) || normalizeString(playback && playback.selectionKey),
+        preOrder: typeof (existingRow && existingRow.preOrder) === 'boolean'
+          ? !!existingRow.preOrder
+          : false,
+      };
+    },
+    async togglePreOrder() {
+      if (this.preOrderToggleBusy || !this.showPreOrderButton) return;
+      const context = this.buildPlayHistoryWarmContext();
+      if (!normalizeString(context.contentKey) || normalizeInt(context.tmdbId) <= 0 || normalizeString(context.tmdbType) !== 'tv') return;
+      this.preOrderToggleBusy = true;
+      try {
+        await setPlayHistoryPreOrder(context, !this.preOrderActive);
+      } catch (error) {
+        this.playError = error && error.message ? String(error.message) : '点映状态更新失败';
+      } finally {
+        this.preOrderToggleBusy = false;
+      }
     },
     syncPlaybackContextFromHistoryRow(row) {
       const item = row && typeof row === 'object' ? row : null;
@@ -2967,6 +3155,7 @@ export default {
         siteEpisodeIndex: Math.max(1, normalizeInt(segment && segment.index) + 1),
         siteEpisodeFile: pickRawFileNameForStats(segment && segment.displayName, segment && segment.rawName),
         selectionKey,
+        preOrder: this.preOrderActive,
       });
     },
     async applyPlayHistoryResume(reason = '') {
@@ -3836,7 +4025,7 @@ export default {
       this.showPlayerActionToast(this.getNoMatchPlayerActionText(action));
     },
     async markCurrentPlaybackSourceWrong() {
-      const keyword = normalizeString(this.playSearchQuery || this.displayTitle);
+      const keyword = normalizeString(this.playSearchQueryOriginal || this.playSearchQuery || this.displayTitle);
       const payload = this.lastResolvedPlaybackPayload && typeof this.lastResolvedPlaybackPayload === 'object'
         ? this.lastResolvedPlaybackPayload
         : null;
@@ -4509,13 +4698,19 @@ export default {
       this.smartPlaybackResolvedStage = '';
       this.loadPlayRuntimeAndDetail();
     },
-    playSearchQuery: {
+    playSearchQueryOriginal: {
       immediate: true,
       handler() {
         this.bindPlaySearchQuerySubscription();
       },
     },
-    effectivePlaySearchScope() {
+    playSearchQueryCanonical() {
+      this.bindPlaySearchQuerySubscription();
+    },
+    playSearchPrimaryScope() {
+      this.bindPlaySearchQuerySubscription();
+    },
+    playSearchCanonicalScope() {
       this.bindPlaySearchQuerySubscription();
     },
     initialAutoPlaybackReadyKey: {
@@ -5442,7 +5637,6 @@ export default {
 .play-thirdparty-expand__ico--open {
   transform: rotate(180deg);
 }
-
 
 .dark .play-thirdparty-btn,
 .dark .play-thirdparty-expand {

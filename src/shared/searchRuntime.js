@@ -106,6 +106,38 @@ const stripYearbangMarkers = (value) =>
 const stripSeriesVariantMarkers = (value) =>
   stripYearbangMarkers(stripSeasonMarkers(value));
 
+export const stripTrailingSeriesDigits = (value, { contentKind = 'tv' } = {}) => {
+  const kind = normalizeString(contentKind).toLowerCase();
+  const base = sanitizeDisplayTitle(value);
+  if (!base || kind === 'movie') return base;
+  return String(base)
+    .replace(/\s*[0-9０-９]{1,2}\s*$/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+export const stripSearchAliasMarkers = (value, { contentKind = 'tv' } = {}) => {
+  const kind = normalizeString(contentKind).toLowerCase();
+  const base = sanitizeDisplayTitle(value);
+  if (!base) return '';
+  if (kind === 'movie') return base;
+  return stripTrailingSeriesDigits(stripSeriesVariantMarkers(base), { contentKind: kind || 'tv' }) || base;
+};
+
+export const resolveCanonicalSearchVariants = (value, { contentKind = 'tv' } = {}) => {
+  const raw = sanitizeDisplayTitle(value);
+  const kind = normalizeString(contentKind).toLowerCase() || 'tv';
+  const seasonStripped = kind === 'movie' ? raw : (stripSeriesVariantMarkers(raw) || raw);
+  const digitsStripped = kind === 'movie' ? seasonStripped : (stripTrailingSeriesDigits(seasonStripped, { contentKind: kind }) || seasonStripped);
+  const canonical = kind === 'movie' ? raw : (digitsStripped || seasonStripped || raw);
+  return {
+    raw,
+    seasonStripped,
+    digitsStripped,
+    canonical,
+  };
+};
+
 const parseChineseSeasonNo = (rawValue) => {
   const raw = normalizeString(rawValue);
   if (!raw) return 0;
@@ -167,8 +199,9 @@ export const resolveDisplayedSiteGroupKey = (item, tmdbByGroup, displayMode) => 
   if (displayMode !== 'tmdb' && displayMode !== 'both') return baseGroupKey;
   const title = normalizeString(item && item.title);
   if (!title) return baseGroupKey;
-  const strippedTitle = stripSeriesVariantMarkers(preCleanForRules(title) || title);
-  if (!strippedTitle || strippedTitle === (preCleanForRules(title) || title)) return baseGroupKey;
+  const cleanedTitle = preCleanForRules(title) || title;
+  const strippedTitle = stripSearchAliasMarkers(cleanedTitle, { contentKind: 'tv' });
+  if (!strippedTitle || strippedTitle === cleanedTitle) return baseGroupKey;
   const strippedGroupKey = normalizeForGroupKey(strippedTitle);
   if (!strippedGroupKey) return baseGroupKey;
   const tmdbMatch = tmdbByGroup.get(strippedGroupKey) || null;
@@ -187,8 +220,38 @@ const buildCanonicalSearchTitle = (title, compiledRules, { queryTrailingDigits =
       queryTrailingDigits,
     }) || preCleaned
   );
-  const canonical = stripSeriesVariantMarkers(cleaned) || cleaned || base;
+  const canonical = stripSearchAliasMarkers(cleaned, { contentKind }) || cleaned || base;
   return normalizeDisplayTitle(canonical) || canonical || base;
+};
+
+export const scoreTMDBSearchHitByQuery = (itemTitle, rawQuery, canonicalQuery, { contentKind = 'tv' } = {}) => {
+  const title = sanitizeDisplayTitle(itemTitle);
+  const raw = sanitizeDisplayTitle(rawQuery);
+  const canonical = sanitizeDisplayTitle(canonicalQuery);
+  if (!title || !raw) return 0;
+  const scoreRaw = computeMatchScoreFactory(raw)(title);
+  if (scoreRaw > 0) return scoreRaw;
+  const kind = normalizeString(contentKind).toLowerCase();
+  if (kind === 'movie') return 0;
+  if (!canonical || canonical === raw) return 0;
+  const canonicalTitle = stripSearchAliasMarkers(title, { contentKind: kind || 'tv' }) || title;
+  const scoreCanonical = computeMatchScoreFactory(canonical)(canonicalTitle);
+  if (scoreCanonical <= 0) return 0;
+  if (scoreCanonical >= 1000) return 1000;
+  return Math.min(699, scoreCanonical);
+};
+
+export const pickPreferredTMDBResult = (items, rawQuery, canonicalQuery, { contentKind = 'tv' } = {}) => {
+  const list = Array.isArray(items) ? items : [];
+  let best = null;
+  list.forEach((item, index) => {
+    const title = sanitizeDisplayTitle(getTMDBSearchTitle(item));
+    const score = scoreTMDBSearchHitByQuery(title, rawQuery, canonicalQuery, { contentKind });
+    if (!best || score > best.score || (score === best.score && index < best.index)) {
+      best = { item, score, index };
+    }
+  });
+  return best ? best.item : null;
 };
 
 const normalizePatternInput = (value) => {
@@ -524,9 +587,10 @@ const formatAggregateTVRemark = ({ tmdbMatch, groupTitle, sources } = {}) => {
   return tmdbBaseRemark || '';
 };
 
-const mapTmdbItems = (data, settings, computeMatchScore) => {
+const mapTmdbItems = (data, settings, computeMatchScore, { rawQuery = '', contentKind = 'tv' } = {}) => {
   const list = getTMDBSearchResults(data);
   const seen = new Set();
+  const canonicalQuery = resolveCanonicalSearchVariants(rawQuery, { contentKind }).canonical;
   return list
     .map((item, index) => {
       const title = sanitizeDisplayTitle(getTMDBSearchTitle(item));
@@ -554,7 +618,10 @@ const mapTmdbItems = (data, settings, computeMatchScore) => {
         year: year > 0 ? year : 0,
         textBadge,
         siteLabel: tmdbType === 'movie' ? '电影' : '剧集',
-        score: computeMatchScore(title),
+        score: Math.max(
+          computeMatchScore(title),
+          scoreTMDBSearchHitByQuery(title, rawQuery, canonicalQuery, { contentKind: tmdbType === 'movie' ? 'movie' : contentKind })
+        ),
         seq: index,
         groupKey,
         tmdbId,
@@ -850,7 +917,10 @@ export async function streamSearch(query, config, { onUpdate, blockedSiteKeys = 
               method: 'GET',
               credentials: 'same-origin',
             });
-            output.tmdbItems = mapTmdbItems(tmdbPayload, config.settings, computeMatchScore);
+            output.tmdbItems = mapTmdbItems(tmdbPayload, config.settings, computeMatchScore, {
+              rawQuery: safeQuery,
+              contentKind,
+            });
             output.pinTmdbFirst = output.tmdbItems.some((item) => item.score >= 1000);
             progressDone += 1;
             publish();
@@ -946,6 +1016,44 @@ export async function streamSearch(query, config, { onUpdate, blockedSiteKeys = 
   if (typeof onUpdate === 'function') onUpdate(finalState);
   return finalState;
 }
+
+export const mergeSearchSnapshotsBySiteIdentity = (...snapshots) => {
+  const list = snapshots.filter((item) => item && typeof item === 'object');
+  const base = list[0] || null;
+  if (!base) return null;
+  const seenTmdb = new Set();
+  const tmdbItems = [];
+  const seenSite = new Set();
+  const siteItems = [];
+  list.forEach((snapshot) => {
+    (Array.isArray(snapshot.tmdbItems) ? snapshot.tmdbItems : []).forEach((item) => {
+      const key = `${normalizeString(item && item.tmdbType)}::${normalizeTMDBID(item && item.tmdbId)}`;
+      if (!key || seenTmdb.has(key)) return;
+      seenTmdb.add(key);
+      tmdbItems.push(item);
+    });
+    (Array.isArray(snapshot.siteItems) ? snapshot.siteItems : []).forEach((item) => {
+      const key = [
+        normalizeString(item && item.siteKey),
+        normalizeString(item && item.spiderApi),
+        normalizeString(item && item.siteDetail),
+      ].join('::');
+      if (!key || seenSite.has(key)) return;
+      seenSite.add(key);
+      siteItems.push(item);
+    });
+  });
+  return {
+    ...base,
+    tmdbItems,
+    siteItems,
+    displayedItems: [],
+    pinTmdbFirst: list.some((item) => !!(item && item.pinTmdbFirst)),
+    siteTotal: siteItems.length,
+    progressDone: list.reduce((sum, item) => sum + (Number.isFinite(Number(item && item.progressDone)) ? Number(item.progressDone) : 0), 0),
+    progressTotal: list.reduce((sum, item) => sum + (Number.isFinite(Number(item && item.progressTotal)) ? Number(item.progressTotal) : 0), 0),
+  };
+};
 
 export function buildDisplayedResults(searchState, config, { rawListMode = false } = {}) {
   const tmdbItems = Array.isArray(searchState && searchState.tmdbItems) ? searchState.tmdbItems : [];

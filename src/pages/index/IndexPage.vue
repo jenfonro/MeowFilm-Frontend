@@ -400,6 +400,8 @@ const searchRequest = ref({
 const playParams = ref({
   isTmdbMode: false,
   contentKey: '',
+  searchQueryOriginal: '',
+  searchQueryCanonical: '',
   videoYear: '',
   searchType: '',
   siteKey: '',
@@ -731,6 +733,8 @@ const handleCategoryOpenItem = (payload = {}) => {
       ...playParams.value,
       isTmdbMode,
       contentKey: typeof payload.contentKey === 'string' ? payload.contentKey : '',
+      searchQueryOriginal: typeof payload.searchQueryOriginal === 'string' ? payload.searchQueryOriginal : '',
+      searchQueryCanonical: typeof payload.searchQueryCanonical === 'string' ? payload.searchQueryCanonical : '',
       videoYear: '',
       searchType: isTmdbMode ? tmdbType : '',
       siteKey: typeof payload.siteKey === 'string' ? payload.siteKey : '',
