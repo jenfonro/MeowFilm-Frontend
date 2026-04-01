@@ -1468,7 +1468,6 @@
                 <div class="tv-panel">
                   <div class="tv-row adm-sticky adm-top-0 adm-z-2 adm-mb-2">
                     <span class="adm-text-sm adm-font-medium adm-text-gray-600" :style="catPanNameCellStyle">片源名称</span>
-                    <span class="adm-text-sm adm-font-medium adm-text-gray-600" :style="catPanHeaderFixedCellStyle">启用</span>
                     <span class="adm-text-sm adm-font-medium adm-text-gray-600" :style="catPanHeaderFixedCellStyle">排序</span>
                   </div>
                   <ul class="pan-list adm-space-y-2 adm-text-sm adm-text-gray-700">
@@ -1478,17 +1477,6 @@
                       class="tv-row"
                     >
                       <span :style="catPanNameCellStyle">{{ rule.label }}</span>
-                      <span :style="catPanFixedCellStyle">
-                        <label class="enable-switch" title="启用">
-                          <input
-                            :checked="rule.enabled"
-                            type="checkbox"
-                            :disabled="smartSaving"
-                            @change="toggleSmartSourceRuleEnabled(rule.key, $event.target.checked)"
-                          />
-                          <span class="enable-slider"></span>
-                        </label>
-                      </span>
                       <span :style="catPanFixedCellStyle">
                         <span class="sort-btn-group">
                           <button
@@ -2607,7 +2595,6 @@ const smartLoading = ref(false);
 const smartSaving = ref(false);
 const smartPanDefaultsConfirming = ref(false);
 const smartSiteCleanDefaultsConfirming = ref(false);
-const smartSourceExtractPriority = ref('无');
 const smartSourceRuleRows = ref(buildDefaultSmartSourceRuleRows());
 const smartSourcePriorityTokensInput = ref('');
 const smartPanMatchTokensInput = ref('');
@@ -2719,7 +2706,6 @@ const magicShadowSmartSettings = ref({
   smartSourcePriorityTokens: [],
   smartPanMatchTokens: [],
   smartPanAliasMappings: [],
-  smartSourceExtractPriority: '无',
   smartSourceRuleRows: []
 });
 
@@ -3166,17 +3152,11 @@ function normalizeReplaceTemplate(replaceRaw) {
   return raw ? raw.replace(/\\(\d+)/g, '$$$1') : '';
 }
 
-function normalizeSmartSourceExtractPriorityMode(raw) {
-  const value = typeof raw === 'string' ? raw.trim() : String(raw || '').trim();
-  if (value === '无' || value === '网盘' || value === '关键字') return value;
-  return '无';
-}
-
 function buildDefaultSmartSourceRuleRows() {
   return [
-    { key: 'quality', label: '画质', enabled: true, order: 1 },
-    { key: 'keyword', label: '关键字', enabled: true, order: 2 },
-    { key: 'pan', label: '网盘', enabled: true, order: 3 }
+    { key: 'quality', label: '画质', order: 1 },
+    { key: 'pan', label: '网盘', order: 2 },
+    { key: 'keyword', label: '关键字', order: 3 }
   ];
 }
 
@@ -3184,62 +3164,35 @@ function cloneSmartSourceRuleRows(rows) {
   return (Array.isArray(rows) ? rows : []).map((row, index) => ({
     key: row && typeof row.key === 'string' ? row.key : `row-${index}`,
     label: row && typeof row.label === 'string' ? row.label : '',
-    enabled: row ? row.enabled !== false : true,
     order: index + 1
   }));
 }
 
-function normalizeSmartSourceRuleRowsFromMode(mode) {
-  const rows = buildDefaultSmartSourceRuleRows();
-  const normalizedMode = normalizeSmartSourceExtractPriorityMode(mode);
-  if (normalizedMode === '关键字') {
-    const [quality, keyword, pan] = rows;
-    return cloneSmartSourceRuleRows([keyword, quality, pan]);
-  }
-  if (normalizedMode === '网盘') {
-    const [quality, keyword, pan] = rows;
-    return cloneSmartSourceRuleRows([pan, quality, keyword]);
-  }
-  return cloneSmartSourceRuleRows(rows);
-}
-
-function normalizeSmartSourceRuleRowsFromPayload(rows, fallbackMode = '无') {
+function normalizeSmartSourceRuleRowsFromPayload(rows) {
   const source = Array.isArray(rows) ? rows : [];
+  const seen = new Set();
   const mapped = source
     .map((row) => ({
       key: row && typeof row.key === 'string' ? row.key.trim().toLowerCase() : '',
-      enabled: row ? row.enabled !== false : true,
       order: Number.isFinite(Number(row && row.order)) ? Math.trunc(Number(row.order)) : 0
     }))
     .filter((row) => row.key === 'quality' || row.key === 'keyword' || row.key === 'pan')
     .sort((a, b) => a.order - b.order);
-  if (!mapped.length) {
-    return normalizeSmartSourceRuleRowsFromMode(fallbackMode);
-  }
+  const ordered = [];
+  mapped.forEach((row) => {
+    if (seen.has(row.key)) return;
+    seen.add(row.key);
+    ordered.push(row);
+  });
+  ['quality', 'pan', 'keyword'].forEach((key) => {
+    if (!seen.has(key)) ordered.push({ key, order: ordered.length + 1 });
+  });
   return cloneSmartSourceRuleRows(
-    mapped.map((row) => ({
+    ordered.map((row) => ({
       key: row.key,
       label: row.key === 'quality' ? '画质' : row.key === 'keyword' ? '关键字' : '网盘',
-      enabled: row.enabled,
       order: row.order
     }))
-  );
-}
-
-function serializeSmartSourceRuleRowsToMode(rows) {
-  const list = cloneSmartSourceRuleRows(rows);
-  const firstEnabled = list.find((row) => row && row.enabled !== false);
-  if (!firstEnabled) return '无';
-  if (firstEnabled.key === 'pan') return '网盘';
-  if (firstEnabled.key === 'keyword') return '关键字';
-  return '无';
-}
-
-function toggleSmartSourceRuleEnabled(key, checked) {
-  const targetKey = typeof key === 'string' ? key.trim() : '';
-  if (!targetKey) return;
-  smartSourceRuleRows.value = cloneSmartSourceRuleRows(
-    smartSourceRuleRows.value.map((row) => (row.key === targetKey ? { ...row, enabled: !!checked } : row))
   );
 }
 
@@ -3292,9 +3245,7 @@ function applySmartSettings(data) {
   const sourcePriorityTokens = normalizeCommaTokenLine(root.smartSourcePriorityTokens || '');
   const panMatchTokens = normalizeCommaTokenLine(root.smartPanMatchTokens || '');
   const aliasMappings = normalizeSmartPanAliasMappings(Array.isArray(root.smartPanAliasMappings) ? root.smartPanAliasMappings : []);
-  const sourceExtractPriority = normalizeSmartSourceExtractPriorityMode(root.smartSourceExtractPriority);
-  smartSourceExtractPriority.value = sourceExtractPriority;
-  smartSourceRuleRows.value = normalizeSmartSourceRuleRowsFromPayload(root.smartSourceRuleRows, sourceExtractPriority);
+  smartSourceRuleRows.value = normalizeSmartSourceRuleRowsFromPayload(root.smartSourceRuleRows);
   smartSourcePriorityTokensInput.value = sourcePriorityTokens.join(',');
   smartPanMatchTokensInput.value = panMatchTokens.join(',');
   smartSiteCleanKeywordsInput.value = normalizeCommaTokenLine(root.siteCleanKeywords || '').join(',');
@@ -3303,18 +3254,16 @@ function applySmartSettings(data) {
     smartSourcePriorityTokens: sourcePriorityTokens,
     smartPanMatchTokens: panMatchTokens,
     smartPanAliasMappings: aliasMappings.map((item) => ({ ...item })),
-    smartSourceExtractPriority: sourceExtractPriority,
     smartSourceRuleRows: cloneSmartSourceRuleRows(smartSourceRuleRows.value)
   };
 }
 
 function buildSmartSavePayload() {
   return {
-    // Transitional behavior: the new 3-row UI is display/local-state only.
-    // Until the backend protocol is upgraded, always persist the legacy mode as “无”
-    // so the current smart matching order is not accidentally changed by this UI.
-    smartSourceExtractPriority: '无',
-    smartSourceRuleRows: cloneSmartSourceRuleRows(smartSourceRuleRows.value),
+    smartSourceRuleRows: cloneSmartSourceRuleRows(smartSourceRuleRows.value).map((row) => ({
+      key: row.key,
+      order: row.order
+    })),
     siteCleanKeywords: smartSiteCleanKeywordTokens.value.join(','),
     smartSourcePriorityTokens: normalizeCommaTokenLine(smartSourcePriorityTokensInput.value),
     smartPanMatchTokens: normalizeCommaTokenLine(smartPanMatchTokensInput.value),
@@ -4878,8 +4827,7 @@ function applyMagicSettings(data) {
   magicShadowSmartSettings.value = {
     smartSourcePriorityTokens: Array.isArray(root.smartSourcePriorityTokens) ? root.smartSourcePriorityTokens.slice() : [],
     smartPanMatchTokens: Array.isArray(root.smartPanMatchTokens) ? root.smartPanMatchTokens.slice() : [],
-    smartPanAliasMappings: Array.isArray(root.smartPanAliasMappings) ? root.smartPanAliasMappings.map((it) => ({ ...it })) : [],
-    smartSourceExtractPriority: typeof root.smartSourceExtractPriority === 'string' ? root.smartSourceExtractPriority : '无'
+    smartPanAliasMappings: Array.isArray(root.smartPanAliasMappings) ? root.smartPanAliasMappings.map((it) => ({ ...it })) : []
   };
 }
 
@@ -4904,8 +4852,7 @@ function buildMagicSavePayload() {
     aggregateRegexRules: magicAggregateRegexRules.value.map((it) => String(it || '').trim()).filter(Boolean),
     smartSourcePriorityTokens: magicShadowSmartSettings.value.smartSourcePriorityTokens,
     smartPanMatchTokens: magicShadowSmartSettings.value.smartPanMatchTokens,
-    smartPanAliasMappings: magicShadowSmartSettings.value.smartPanAliasMappings,
-    smartSourceExtractPriority: magicShadowSmartSettings.value.smartSourceExtractPriority
+    smartPanAliasMappings: magicShadowSmartSettings.value.smartPanAliasMappings
   };
 }
 
@@ -5008,7 +4955,6 @@ async function saveSmartPanel(successMessage = '保存成功') {
 
 function restoreSmartPanDefaults() {
   smartPanDefaultsConfirming.value = false;
-  smartSourceExtractPriority.value = '无';
   smartSourceRuleRows.value = buildDefaultSmartSourceRuleRows();
   smartSourcePriorityTokensInput.value = DEFAULT_SMART_SOURCE_PRIORITY_TOKENS.join(',');
   smartPanMatchTokensInput.value = DEFAULT_SMART_PAN_MATCH_TOKENS.join(',');

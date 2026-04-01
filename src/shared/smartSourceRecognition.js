@@ -638,7 +638,7 @@ export const buildPlaybackRecognitionData = ({
       }
     : null;
   if (!entry || !entry.url) {
-    return { source, items: [], tier1: [], tier2: [], tier3: [] };
+    return { source, items: [] };
   }
 
   const compiledRules = compileMagicEpisodeRules(runtimeSettings && runtimeSettings.magicEpisodeRules);
@@ -673,9 +673,6 @@ export const buildPlaybackRecognitionData = ({
   const doubanMultiSeason = !!(smartEpisodeMapping && Array.isArray(smartEpisodeMapping.doubanSeasons) && smartEpisodeMapping.doubanSeasons.length > 1);
   const panMatch = resolvePanMatch(entry.label, panTokens, panMappings);
   const items = [];
-  const tier1 = [];
-  const tier2 = [];
-  const tier3 = [];
   const sourceEpisodeNos = [];
 
   segments.forEach((segment) => {
@@ -749,9 +746,6 @@ export const buildPlaybackRecognitionData = ({
         resolutionMode,
       };
       items.push(candidate);
-      if (quality === '4K' && panMatch.index >= 0) tier1.push(candidate);
-      else if (quality === '4K') tier2.push(candidate);
-      else tier3.push(candidate);
     });
 
     const movieMatched = movieRules.length
@@ -780,12 +774,9 @@ export const buildPlaybackRecognitionData = ({
       mapping: null,
     };
     items.push(movieCandidate);
-    if (quality === '4K' && panMatch.index >= 0) tier1.push(movieCandidate);
-    else if (quality === '4K') tier2.push(movieCandidate);
-    else tier3.push(movieCandidate);
   });
 
-  return { source, items, tier1, tier2, tier3 };
+  return { source, items };
 };
 
 export const detectPlaybackSiteContentKind = ({ panSources, runtimeSettings } = {}) => {

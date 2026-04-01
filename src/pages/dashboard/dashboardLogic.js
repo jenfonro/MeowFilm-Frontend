@@ -1583,38 +1583,38 @@ function normalizeSmartPanAliasMappings(value) {
     });
 }
 
-function normalizeSmartSourceRuleRows(value, fallbackMode = '无') {
+function normalizeSmartSourceRuleRows(value) {
   const defaults = [
-    { key: 'quality', enabled: true, order: 1 },
-    { key: 'keyword', enabled: true, order: 2 },
-    { key: 'pan', enabled: true, order: 3 }
+    { key: 'quality', order: 1 },
+    { key: 'pan', order: 2 },
+    { key: 'keyword', order: 3 }
   ];
-  const orderedDefaults = (() => {
-    if (fallbackMode === '关键字') return [defaults[1], defaults[0], defaults[2]];
-    if (fallbackMode === '网盘') return [defaults[2], defaults[0], defaults[1]];
-    return defaults;
-  })();
   const seen = new Set();
   const rows = asArray(value)
     .map((item) => {
       const row = asObject(item);
       return {
         key: normalizeString(row.key, '').toLowerCase(),
-        enabled: normalizeBoolean(row.enabled, true)
+        order: normalizeInteger(row.order, 0)
       };
     })
     .filter((item) => item.key === 'quality' || item.key === 'keyword' || item.key === 'pan')
+    .sort((left, right) => {
+      const leftOrder = left.order > 0 ? left.order : 999999;
+      const rightOrder = right.order > 0 ? right.order : 999999;
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      return 0;
+    })
     .filter((item) => {
       if (seen.has(item.key)) return false;
       seen.add(item.key);
       return true;
     });
-  orderedDefaults.forEach((item) => {
-    if (!seen.has(item.key)) rows.push({ key: item.key, enabled: item.enabled });
+  defaults.forEach((item) => {
+    if (!seen.has(item.key)) rows.push({ key: item.key, order: item.order });
   });
   return rows.map((row, index) => ({
     key: row.key,
-    enabled: normalizeBoolean(row.enabled, true),
     order: index + 1
   }));
 }
@@ -1658,16 +1658,8 @@ export function normalizeDashboardBackupSchema(rawBackup, options = {}) {
       aggregateRegexRules: normalizeStringArray(root.magic?.aggregateRegexRules)
     },
     smart: {
-      smartSourceExtractPriority: normalizeString(
-        root.smart?.smartSourceExtractPriority || appConfig.smartSourceExtractPriority || appConfig.SmartSourceExtractPriority,
-        '无'
-      ) || '无',
       smartSourceRuleRows: normalizeSmartSourceRuleRows(
-        root.smart?.smartSourceRuleRows,
-        normalizeString(
-          root.smart?.smartSourceExtractPriority || appConfig.smartSourceExtractPriority || appConfig.SmartSourceExtractPriority,
-          '无'
-        ) || '无'
+        root.smart?.smartSourceRuleRows
       ),
       siteCleanKeywords: normalizeString(
         root.smart?.siteCleanKeywords || appConfig.siteCleanKeywords || appConfig.smartSiteCleanKeywords || appConfig.SmartSiteCleanKeywords,

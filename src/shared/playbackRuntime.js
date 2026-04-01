@@ -301,77 +301,269 @@ export const resolveCandidatePanFamilyForPlayback = (candidate, runtimeSettings)
 export const resolveCandidateQualityModeKeyForPlayback = (candidate) => {
   const target = candidate && typeof candidate === 'object' ? candidate : {};
   const quality = normalizeString(target.quality).toUpperCase();
+  const displayName = normalizeString(target.displayName);
+  const hay = [
+    displayName,
+    normalizeString(target.rawName),
+    normalizeString(target.fileName),
+  ].join(' ');
+  const displayMeta = (() => {
+    const out = { quality: '', fps60: false };
+    let rest = displayName.trim();
+    while (rest.startsWith('@')) {
+      const match = rest.match(/^@([^@/\\]+)/);
+      if (!match || !match[1]) break;
+      const token = normalizeString(match[1]).toUpperCase();
+      if (token === '8K') out.quality = '8K';
+      else if (token === '4K' || token === '2160P') out.quality = '4K';
+      else if (token === '1080P') out.quality = '1080P';
+      else if (token === '720P') out.quality = '720P';
+      else if (token === '60FPS' || token === '120FPS' || token === '60帧' || token === '120帧') out.fps60 = true;
+      rest = rest.slice(match[0].length).trim();
+    }
+    return out;
+  })();
+  const effectiveQuality = quality || displayMeta.quality;
+  if (effectiveQuality === '4K') {
+    if (/\bhdr\b/i.test(hay)) return '4k_hdr';
+    if (displayMeta.fps60 || /(?:60fps|60帧|120fps|120帧|2160p60|4k60|\b60p\b|\b120p\b)/i.test(hay)) return '4k_fps';
+    return '4k';
+  }
+  if (effectiveQuality === '1080P') return '1080p';
+  if (effectiveQuality === '720P') return '720p';
+  return '';
+};
+
+const SMART_PLAYBACK_RULE_KEYS = ['quality', 'pan', 'keyword'];
+
+export const resolveOrderedSmartSourceRuleKeys = (runtimeSettings) => {
+  const rows = Array.isArray(runtimeSettings && runtimeSettings.smartSourceRuleRows)
+    ? runtimeSettings.smartSourceRuleRows
+    : [];
+  const seen = new Set();
+  const normalized = rows
+    .map((row, index) => {
+      const key = normalizeString(row && row.key).toLowerCase();
+      if (!SMART_PLAYBACK_RULE_KEYS.includes(key)) return null;
+      return {
+        key,
+        order: normalizeInt(row && row.order) || (index + 1),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.order - right.order)
+    .filter((row) => {
+      if (seen.has(row.key)) return false;
+      seen.add(row.key);
+      return true;
+    })
+    .map((row) => row.key);
+  SMART_PLAYBACK_RULE_KEYS.forEach((key) => {
+    if (!seen.has(key)) normalized.push(key);
+  });
+  return normalized;
+};
+
+const buildCurrentContextPanFamily = (currentContext, runtimeSettings) => (
+  resolvePanFamilyLabelForUi(
+    `${normalizeString(currentContext && currentContext.panFlag)} ${normalizeString(currentContext && currentContext.panKey)}`,
+    runtimeSettings,
+  )
+);
+
+const buildCurrentContextQualityKey = (currentContext) => (
+  normalizeQualityModeKeyForUi(
+    normalizeString(currentContext && currentContext.sourceQuality) || normalizeString(currentContext && currentContext.quality),
+  )
+);
+
+export const buildSmartPlaybackActionConstraint = ({
+  actionKey,
+  selectedValue = '',
+  currentContext,
+} = {}) => {
+  const mode = normalizeString(actionKey).toLowerCase();
+  const playback = currentContext && typeof currentContext === 'object' ? currentContext : {};
+  if (mode === 'pan') {
+    const panFamily = normalizeString(selectedValue);
+    if (!panFamily) return null;
+    return {
+      mode: 'pan',
+      fixedPanFamily: panFamily,
+      fixedQualityKey: '',
+      excludeCurrentSource: false,
+      secondaryPreference: 'quality',
+      currentPanFamily: buildCurrentContextPanFamily(playback, {}),
+      currentQualityKey: buildCurrentContextQualityKey(playback),
+    };
+  }
+  if (mode === 'quality') {
+    const qualityKey = normalizeQualityModeKeyForUi(selectedValue);
+    if (!qualityKey) return null;
+    return {
+      mode: 'quality',
+      fixedPanFamily: '',
+      fixedQualityKey: qualityKey,
+      excludeCurrentSource: false,
+      secondaryPreference: 'pan',
+      currentPanFamily: buildCurrentContextPanFamily(playback, {}),
+      currentQualityKey: buildCurrentContextQualityKey(playback),
+    };
+  }
+  if (mode === 'switch') {
+    return {
+      mode: 'switch',
+      fixedPanFamily: '',
+      fixedQualityKey: '',
+      excludeCurrentSource: true,
+      secondaryPreference: '',
+      currentPanFamily: buildCurrentContextPanFamily(playback, {}),
+      currentQualityKey: buildCurrentContextQualityKey(playback),
+    };
+  }
+  return {
+    mode: 'default',
+    fixedPanFamily: '',
+    fixedQualityKey: '',
+    excludeCurrentSource: false,
+    secondaryPreference: '',
+    currentPanFamily: buildCurrentContextPanFamily(playback, {}),
+    currentQualityKey: buildCurrentContextQualityKey(playback),
+  };
+};
+
+const hasLooseQualityMarker = (hay) => /(?:2160p|1080|720|8k|4k)/i.test(hay);
+
+export const scoreCandidateQualityForPlayback = (candidate) => {
+  const target = candidate && typeof candidate === 'object' ? candidate : {};
+  const qualityKey = resolveCandidateQualityModeKeyForPlayback(target);
   const hay = [
     normalizeString(target.displayName),
     normalizeString(target.rawName),
     normalizeString(target.fileName),
+    normalizeString(target.quality),
   ].join(' ');
-  if (quality === '4K') {
-    if (/\bhdr\b/i.test(hay)) return '4k_hdr';
-    if (/(?:60fps|60帧|2160p60|4k60|\b60p\b)/i.test(hay)) return '4k_fps';
-    return '4k';
-  }
-  if (quality === '1080P') return '1080p';
-  if (quality === '720P') return '720p';
-  return '';
+  let base = 0;
+  if (/\b8k\b/i.test(hay)) base = 50;
+  else if (qualityKey === '4k_hdr' || qualityKey === '4k_fps' || qualityKey === '4k' || /(?:2160p|2160|4k|uhd)/i.test(hay)) base = 40;
+  else if (qualityKey === '1080p') base = 20;
+  else if (qualityKey === '720p') base = 10;
+  else if (hasLooseQualityMarker(hay) || /(?:bdrip|bluray|remux|web[- ]?dl|webrip|hdr|dv|dolby|原盘|蓝光|高码|超清|高清|臻彩|杜比|ddp|dd\\+|e-?ac-?3|eac3)/i.test(hay)) base = 30;
+  if (!base) return 0;
+  const hasHdr = /\bhdr\b|hdr10|dolby\s*vision|\bdv\b|臻彩|杜比视界/i.test(hay);
+  const hasDdp = /\bddp\b|ddp\d(?:\.\d)?|dd\+|e-?ac-?3|eac3/i.test(hay);
+  let bonus = 0;
+  if (hasHdr && hasDdp) bonus = 6;
+  else if (hasHdr) bonus = 4;
+  else if (hasDdp) bonus = 2;
+  let score = base + bonus;
+  if (base === 40 && score >= 50) score = 49;
+  if (base === 30 && score >= 40) score = 39;
+  if (base === 20 && score >= 30) score = 29;
+  if (base === 10 && score >= 20) score = 19;
+  return score;
 };
 
-export const buildSmartPlaybackConstraintStages = ({
-  actionKey,
-  selectedValue = '',
-  currentContext,
-  runtimeSettings,
-} = {}) => {
-  const action = normalizeString(actionKey);
-  const playback = currentContext && typeof currentContext === 'object' ? currentContext : {};
-  const currentPanFamily = resolvePanFamilyLabelForUi(
-    `${normalizeString(playback.panFlag)} ${normalizeString(playback.panKey)}`,
-    runtimeSettings,
-  );
-  const currentQualityKey = normalizeQualityModeKeyForUi(
-    normalizeString(playback.sourceQuality) || normalizeString(playback.quality),
-  );
-  const targetPanFamily = normalizeString(selectedValue);
-  const targetQualityKey = normalizeString(selectedValue);
-  const stages = [];
-  const pushStage = ({ key, afterFinalize = false, panFamily = '', qualityKey = '' } = {}) => {
-    const pan = normalizeString(panFamily);
-    const quality = normalizeString(qualityKey);
-    const dedupeKey = `${afterFinalize ? 'after' : 'before'}::${pan || '*'}::${quality || '*'}`;
-    if (stages.some((item) => item && item.__dedupeKey === dedupeKey)) return;
-    stages.push({
-      key: normalizeString(key) || `stage_${stages.length + 1}`,
-      afterFinalize: !!afterFinalize,
-      __dedupeKey: dedupeKey,
-      isCandidateAllowed: (wrapper) => {
-        const picked = wrapper && wrapper.candidate && typeof wrapper.candidate === 'object'
-          ? wrapper.candidate
-          : null;
-        if (!picked) return false;
-        const candidatePanFamily = resolveCandidatePanFamilyForPlayback(picked, runtimeSettings);
-        const candidateQualityKey = resolveCandidateQualityModeKeyForPlayback(picked);
-        if (pan && candidatePanFamily !== pan) return false;
-        if (quality && candidateQualityKey !== quality) return false;
-        return true;
-      },
-    });
-  };
+const normalizePanMatchEntries = (runtimeSettings) => {
+  const aliasMappings = normalizePanAliasMappingsForUi(runtimeSettings && runtimeSettings.smartPanAliasMappings);
+  if (aliasMappings.length) return aliasMappings;
+  const tokens = Array.isArray(runtimeSettings && runtimeSettings.smartPanMatchTokens)
+    ? runtimeSettings.smartPanMatchTokens.map(normalizeString).filter(Boolean)
+    : [];
+  return tokens.map((token) => ({ pan: token, aliases: [] }));
+};
 
-  if (action === 'pan') {
-    if (!targetPanFamily) return [];
-    pushStage({ key: 'pan_keep_quality', panFamily: targetPanFamily, qualityKey: currentQualityKey });
-    pushStage({ key: 'pan_any_quality', panFamily: targetPanFamily });
-  } else if (action === 'quality') {
-    if (!targetQualityKey) return [];
-    pushStage({ key: 'quality_keep_pan', panFamily: currentPanFamily, qualityKey: targetQualityKey });
-    pushStage({ key: 'quality_any_pan', qualityKey: targetQualityKey });
-  } else if (action === 'switch') {
-    pushStage({ key: 'switch_keep_pan_quality', panFamily: currentPanFamily, qualityKey: currentQualityKey });
-    pushStage({ key: 'switch_keep_quality', qualityKey: currentQualityKey });
-    pushStage({ key: 'switch_any_after_finalize', afterFinalize: true });
+export const scoreCandidatePanForPlayback = (candidate, runtimeSettings) => {
+  const family = resolveCandidatePanFamilyForPlayback(candidate, runtimeSettings);
+  if (!family) return 0;
+  const entries = normalizePanMatchEntries(runtimeSettings);
+  const index = entries.findIndex((entry) => normalizeString(entry && entry.pan) === family);
+  if (index < 0) return 0;
+  return (entries.length - index) * 10;
+};
+
+export const scoreCandidateKeywordForPlayback = (candidate, runtimeSettings) => {
+  const tokens = Array.isArray(runtimeSettings && runtimeSettings.smartSourcePriorityTokens)
+    ? runtimeSettings.smartSourcePriorityTokens.map(normalizeString).filter(Boolean)
+    : [];
+  if (!tokens.length) return 0;
+  const target = candidate && typeof candidate === 'object' ? candidate : {};
+  const hay = [
+    normalizeString(target.displayName),
+    normalizeString(target.rawName),
+    normalizeString(target.fileName),
+  ].join(' ').toLowerCase();
+  let best = -1;
+  tokens.forEach((token, index) => {
+    const normalized = token.toLowerCase();
+    if (!normalized) return;
+    if (!hay.includes(normalized)) return;
+    if (best === -1 || index < best) best = index;
+  });
+  if (best < 0) return 0;
+  return (tokens.length - best) * 10;
+};
+
+const compareNumbersDesc = (left, right) => {
+  if (left === right) return 0;
+  return left > right ? -1 : 1;
+};
+
+export const isPlaybackCandidateAllowedByAction = (wrapper, actionConstraint, runtimeSettings) => {
+  const target = wrapper && typeof wrapper === 'object' ? wrapper : null;
+  const constraint = actionConstraint && typeof actionConstraint === 'object' ? actionConstraint : null;
+  if (!target || !constraint) return true;
+  const candidate = target && target.candidate && typeof target.candidate === 'object' ? target.candidate : null;
+  if (!candidate) return false;
+  if (constraint.mode === 'quality') {
+    return resolveCandidateQualityModeKeyForPlayback(candidate) === normalizeQualityModeKeyForUi(constraint.fixedQualityKey);
   }
+  if (constraint.mode === 'pan') {
+    return resolveCandidatePanFamilyForPlayback(candidate, runtimeSettings) === normalizeString(constraint.fixedPanFamily);
+  }
+  return true;
+};
 
-  return stages.map(({ __dedupeKey, ...item }) => item);
+export const comparePlaybackCandidatesByDefaultRules = (left, right, runtimeSettings) => {
+  const l = left && left.candidate ? left.candidate : null;
+  const r = right && right.candidate ? right.candidate : null;
+  if (!l || !r) return 0;
+  const ordered = resolveOrderedSmartSourceRuleKeys(runtimeSettings);
+  for (let i = 0; i < ordered.length; i += 1) {
+    const rule = ordered[i];
+    const next = rule === 'quality'
+      ? compareNumbersDesc(scoreCandidateQualityForPlayback(l), scoreCandidateQualityForPlayback(r))
+      : rule === 'pan'
+        ? compareNumbersDesc(scoreCandidatePanForPlayback(l, runtimeSettings), scoreCandidatePanForPlayback(r, runtimeSettings))
+        : compareNumbersDesc(scoreCandidateKeywordForPlayback(l, runtimeSettings), scoreCandidateKeywordForPlayback(r, runtimeSettings));
+    if (next !== 0) return next;
+  }
+  const leftLoose = !!(left && left.looseMatch);
+  const rightLoose = !!(right && right.looseMatch);
+  if (leftLoose !== rightLoose) return leftLoose ? 1 : -1;
+  return 0;
+};
+
+export const comparePlaybackCandidatesForAction = (left, right, actionConstraint, currentContext, runtimeSettings) => {
+  const l = left && left.candidate ? left.candidate : null;
+  const r = right && right.candidate ? right.candidate : null;
+  const constraint = actionConstraint && typeof actionConstraint === 'object' ? actionConstraint : null;
+  if (!l || !r || !constraint) return 0;
+  const currentPanFamily = buildCurrentContextPanFamily(currentContext, runtimeSettings);
+  const currentQualityKey = buildCurrentContextQualityKey(currentContext);
+  if (constraint.mode === 'quality') {
+    const leftPanCurrent = resolveCandidatePanFamilyForPlayback(l, runtimeSettings) === currentPanFamily;
+    const rightPanCurrent = resolveCandidatePanFamilyForPlayback(r, runtimeSettings) === currentPanFamily;
+    if (leftPanCurrent !== rightPanCurrent) return leftPanCurrent ? -1 : 1;
+    return compareNumbersDesc(scoreCandidatePanForPlayback(l, runtimeSettings), scoreCandidatePanForPlayback(r, runtimeSettings));
+  }
+  if (constraint.mode === 'pan') {
+    const leftQualityCurrent = resolveCandidateQualityModeKeyForPlayback(l) === currentQualityKey;
+    const rightQualityCurrent = resolveCandidateQualityModeKeyForPlayback(r) === currentQualityKey;
+    if (leftQualityCurrent !== rightQualityCurrent) return leftQualityCurrent ? -1 : 1;
+    return compareNumbersDesc(scoreCandidateQualityForPlayback(l), scoreCandidateQualityForPlayback(r));
+  }
+  return comparePlaybackCandidatesByDefaultRules(left, right, runtimeSettings);
 };
 
 export const normalizePlayPayload = (data) => {

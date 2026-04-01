@@ -420,7 +420,10 @@ import { extractRawNamesFromEpisodeUrl, fetchCatResolvedDetailCached, requestCat
 import {
   playbackSessionState,
   buildPlayerControlUiState,
-  buildSmartPlaybackConstraintStages,
+  buildSmartPlaybackActionConstraint,
+  comparePlaybackCandidatesForAction,
+  comparePlaybackCandidatesByDefaultRules,
+  isPlaybackCandidateAllowedByAction,
   patchLastBrowsePlaybackContext,
   patchCurrentPlaybackContext,
   clearCurrentPlaybackContext,
@@ -430,6 +433,7 @@ import {
   doesQualityMatchResolution,
   inferQualityFromResolution,
   normalizeGoProxyServers,
+  resolveCandidateQualityModeKeyForPlayback,
 } from '../../shared/playbackRuntime';
 import {
   findPlayHistoryRowForContext,
@@ -808,17 +812,6 @@ const buildProjectedSiteEpisodeItems = (recognitionData, sourceKind) => {
   const data = recognitionData && typeof recognitionData === 'object' ? recognitionData : null;
   const sourceKey = normalizeString(data && data.source && data.source.key);
   const mode = normalizeString(sourceKind) === '豆瓣' ? 'douban' : 'tmdb';
-  const tierRankMap = new Map();
-  const assignTier = (list, rank) => {
-    (Array.isArray(list) ? list : []).forEach((item) => {
-      const key = normalizeString(item && item.key);
-      if (!key || tierRankMap.has(key)) return;
-      tierRankMap.set(key, rank);
-    });
-  };
-  assignTier(data && data.tier1, 1);
-  assignTier(data && data.tier2, 2);
-  assignTier(data && data.tier3, 3);
   return (Array.isArray(data && data.items) ? data.items : [])
     .map((item) => {
       const mapping = item && item.mapping && typeof item.mapping === 'object'
@@ -836,7 +829,6 @@ const buildProjectedSiteEpisodeItems = (recognitionData, sourceKind) => {
         selectionKey: buildSiteEpisodeSelectionKey(sourceKey, item && item.itemIndex),
         global: normalizeInt(item && item.mapping && item.mapping.global),
         itemIndex: normalizeInt(item && item.itemIndex),
-        tierRank: tierRankMap.get(normalizeString(item && item.key)) || 3,
         candidate: item,
       };
     })
@@ -851,9 +843,6 @@ const buildProjectedSiteEpisodeItems = (recognitionData, sourceKind) => {
       const leftNo = normalizeInt(left && left.no);
       const rightNo = normalizeInt(right && right.no);
       if (leftNo !== rightNo) return leftNo - rightNo;
-      const leftTier = normalizeInt(left && left.tierRank) || 99;
-      const rightTier = normalizeInt(right && right.tierRank) || 99;
-      if (leftTier !== rightTier) return leftTier - rightTier;
       return normalizeInt(left && left.itemIndex) - normalizeInt(right && right.itemIndex);
     });
 };
@@ -868,21 +857,7 @@ const MOVIE_QUALITY_PRIORITY = {
 };
 
 const resolveMovieCandidateQualityKey = (item) => {
-  const target = item && typeof item === 'object' ? item : null;
-  const quality = normalizeString(target && target.quality).toUpperCase();
-  const hay = [
-    normalizeString(target && target.displayName),
-    normalizeString(target && target.rawName),
-    normalizeString(target && target.fileName),
-  ].join(' ');
-  if (quality === '4K') {
-    if (/\bhdr\b/i.test(hay)) return '4k_hdr';
-    if (/(?:60fps|60帧|2160p60|4k60|\b60p\b)/i.test(hay)) return '4k_fps';
-    return '4k';
-  }
-  if (quality === '1080P') return '1080p';
-  if (quality === '720P') return '720p';
-  return 'unknown';
+  return resolveCandidateQualityModeKeyForPlayback(item) || 'unknown';
 };
 
 const formatMovieCandidateQualityLabel = (qualityKey) => {
@@ -931,14 +906,6 @@ const buildTmdbMovieCandidateItems = ({
       if (!pan || !panKey) return;
       const recognitionData = bySignature[panKey] && typeof bySignature[panKey] === 'object' ? bySignature[panKey] : null;
       if (!recognitionData) return;
-      const tierRankMap = new Map();
-      [1, 2, 3].forEach((rank) => {
-        const rows = Array.isArray(recognitionData[`tier${rank}`]) ? recognitionData[`tier${rank}`] : [];
-        rows.forEach((candidate) => {
-          const candidateKey = normalizeString(candidate && candidate.key);
-          if (candidateKey && !tierRankMap.has(candidateKey)) tierRankMap.set(candidateKey, rank);
-        });
-      });
       const items = Array.isArray(recognitionData.items) ? recognitionData.items : [];
       items.forEach((candidate, candidateIndex) => {
         if (normalizeString(candidate && candidate.matchKind) !== 'movie' || !(candidate && candidate.movieMatched)) return;
@@ -961,7 +928,6 @@ const buildTmdbMovieCandidateItems = ({
           qualityLabel,
           displayText: '',
           suffix: '',
-          tierRank: tierRankMap.get(normalizeString(candidate && candidate.key)) || 3,
           candidate,
           siteItem: item,
           panEntry: pan,
@@ -986,9 +952,6 @@ const buildTmdbMovieCandidateItems = ({
     })
     .forEach((rows) => {
       const sorted = rows.slice().sort((left, right) => {
-        const leftTier = normalizeInt(left && left.tierRank) || 99;
-        const rightTier = normalizeInt(right && right.tierRank) || 99;
-        if (leftTier !== rightTier) return leftTier - rightTier;
         const leftQuality = MOVIE_QUALITY_PRIORITY[normalizeString(left && left.qualityKey).toLowerCase()] || 99;
         const rightQuality = MOVIE_QUALITY_PRIORITY[normalizeString(right && right.qualityKey).toLowerCase()] || 99;
         if (leftQuality !== rightQuality) return leftQuality - rightQuality;
@@ -1949,7 +1912,7 @@ export default {
       const item = this.selectedSiteResultItem;
       const entry = this.currentPanSourceEntry;
       if (!item || !entry || !entry.key) {
-        return { source: null, items: [], tier1: [], tier2: [], tier3: [] };
+        return { source: null, items: [] };
       }
       const itemKey = normalizeString(item.id);
       const signature = this.activeRecognitionSignature;
@@ -1961,7 +1924,7 @@ export default {
         : null;
       return bySignature && bySignature[entry.key]
         ? bySignature[entry.key]
-        : { source: null, items: [], tier1: [], tier2: [], tier3: [] };
+        : { source: null, items: [] };
     },
     displayTitle() {
       return normalizeString(this.contentKey) || '未命名内容';
@@ -2732,6 +2695,29 @@ export default {
         }
       };
     },
+    buildSmartPlaybackActionAllowed(actionConstraint = null, extraAllowed = null) {
+      const unifiedAllowed = this.buildUnifiedSmartCandidateAllowed(extraAllowed);
+      return (wrapper) => {
+        if (!unifiedAllowed(wrapper)) return false;
+        return isPlaybackCandidateAllowedByAction(wrapper, actionConstraint, this.runtimeSettings);
+      };
+    },
+    buildSmartPlaybackCompareCandidates(actionConstraint = null) {
+      return (left, right) => {
+        const constraint = actionConstraint && typeof actionConstraint === 'object' ? actionConstraint : null;
+        const primary = constraint && normalizeString(constraint.mode) !== 'default' && normalizeString(constraint.mode) !== 'switch'
+          ? comparePlaybackCandidatesForAction(left, right, constraint, this.currentPlaybackContext, this.runtimeSettings)
+          : comparePlaybackCandidatesByDefaultRules(left, right, this.runtimeSettings);
+        if (primary !== 0) return primary;
+        const leftLoose = !!(left && left.looseMatch);
+        const rightLoose = !!(right && right.looseMatch);
+        if (leftLoose !== rightLoose) return leftLoose ? 1 : -1;
+        const leftOrder = normalizeInt(left && left.itemIndex);
+        const rightOrder = normalizeInt(right && right.itemIndex);
+        if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+        return normalizeString(left && left.panKey).localeCompare(normalizeString(right && right.panKey), 'zh');
+      };
+    },
     syncPlayerStatsForResolvedSegment({ siteResultItem, pan, segment, candidate }) {
       this.playerStatsSiteName = buildPlaybackSiteLabel(siteResultItem);
       this.playerStatsPanName = normalizeString(pan && pan.label);
@@ -3197,14 +3183,16 @@ export default {
     },
     resolveCachedPlaybackTarget(globalEpisode, wantEpisodeInSeason = 0, {
       matchOptions = null,
+      actionConstraint = null,
       isCandidateAllowed = null,
       mapping = null,
       mappingSignature = '',
       episodeSource = '',
       includeSelectedContext = true,
       includeBrowseContext = true,
+      includeStoreScan = true,
     } = {}) {
-      const unifiedAllowed = this.buildUnifiedSmartCandidateAllowed(isCandidateAllowed);
+      const unifiedAllowed = this.buildSmartPlaybackActionAllowed(actionConstraint, isCandidateAllowed);
       const signature = normalizeString(mappingSignature)
         || (this.isTmdbMode && this.tmdbMovieMode ? TMDB_MOVIE_RECOGNITION_SIGNATURE : normalizeString(this.smartEpisodeMappingSignature));
       return resolveCachedPlaybackTargetRuntime({
@@ -3228,6 +3216,8 @@ export default {
           }),
         buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
         isCandidateAllowed: unifiedAllowed,
+        compareCandidates: this.buildSmartPlaybackCompareCandidates(actionConstraint),
+        includeStoreScan,
         ensureRecognitionForSiteItem: (siteItem, detail) => {
           this.cacheRecognitionForSiteResult(siteItem, detail, {
             mapping,
@@ -3238,6 +3228,7 @@ export default {
     },
     async tryHistorySmartBootstrap(globalEpisode, wantEpisodeInSeason = 0, {
       matchOptions = null,
+      actionConstraint = null,
       isCandidateAllowed = null,
       stage = '',
       mapping = null,
@@ -3270,7 +3261,8 @@ export default {
         smartEpisodeMapping: mapping || this.smartEpisodeMapping,
         episodeSource: normalizeString(episodeSource) || this.selectedSiteSource,
         allowResolutionModes: this.buildAllowedResolutionModes(),
-        isCandidateAllowed: this.buildUnifiedSmartCandidateAllowed(isCandidateAllowed),
+        isCandidateAllowed: this.buildSmartPlaybackActionAllowed(actionConstraint, isCandidateAllowed),
+        compareCandidates: this.buildSmartPlaybackCompareCandidates(actionConstraint),
         buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
         getCachedSiteResultDetail: (siteItem) => this.getCachedSiteResultDetail(siteItem),
         cacheHistoryDetail: (siteItem, payload) => {
@@ -3626,7 +3618,7 @@ export default {
       globalEpisode,
       wantEpisodeInSeason = 0,
       matchOptions = null,
-      constraintStages = null,
+      actionConstraint = null,
       isCandidateAllowed = null,
       stage = '',
       mapping = null,
@@ -3647,6 +3639,7 @@ export default {
       const targetEpisodeSource = normalizeString(episodeSource) || this.selectedSiteSource;
       const historyBootstrapped = await this.tryHistorySmartBootstrap(targetGlobal, targetLoose, {
         matchOptions: normalizedMatchOptions,
+        actionConstraint,
         isCandidateAllowed: unifiedAllowed,
         stage: currentStage,
         mapping: targetMapping,
@@ -3689,7 +3682,9 @@ export default {
           searchDisplayModeOverride: 'sites',
           blockedSiteKeys: this.playBlockedSiteKeys,
           matchOptions: normalizedMatchOptions,
-          constraintStages,
+          actionConstraint,
+          runtimeSettings: this.runtimeSettings,
+          currentContext: this.currentPlaybackContext,
           globalEpisode: targetGlobal,
           wantEpisodeInSeason: targetLoose,
           isRunStopped: () => runSeq !== this.smartPlaybackRunSeq || this.smartPlaybackConfirmedRunSeq === runSeq,
@@ -3768,13 +3763,12 @@ export default {
         this.activePlayerControlAction = 'switch';
         this.recordCurrentPlaybackIntoSwitchSkipBucket();
       }
-      const stages = buildSmartPlaybackConstraintStages({
+      const actionConstraint = buildSmartPlaybackActionConstraint({
         actionKey: action,
         selectedValue: value,
         currentContext: this.currentPlaybackContext,
-        runtimeSettings: this.runtimeSettings,
       });
-      if (!Array.isArray(stages) || !stages.length) {
+      if (!actionConstraint) {
         if (suppressStatusUi) this.finishPlayerSwitchTransition();
         return;
       }
@@ -3786,23 +3780,16 @@ export default {
         if (!identity) return true;
         return !this.getSwitchSkippedIdsForEpisode(switchEpisodeKey).includes(identity);
       };
-      const preFinalizeStages = stages.filter((stage) => !stage.afterFinalize);
       const cachedTarget = this.resolveCachedPlaybackTarget(
         globalEpisode,
         this.getWantEpisodeInSeasonByGlobal(globalEpisode),
         {
+          actionConstraint,
           isCandidateAllowed: (wrapper) =>
-            sharedCandidateAllowed(wrapper)
-            && preFinalizeStages.some((stage) => {
-              if (!stage || typeof stage.isCandidateAllowed !== 'function') return false;
-              try {
-                return !!stage.isCandidateAllowed(wrapper, {});
-              } catch (_error) {
-                return false;
-              }
-            }),
+            sharedCandidateAllowed(wrapper),
           includeSelectedContext: action !== 'switch',
           includeBrowseContext: action !== 'switch',
+          includeStoreScan: action === 'switch',
         },
       );
       if (cachedTarget) {
@@ -3829,7 +3816,7 @@ export default {
           trigger: action,
           value,
         }),
-        constraintStages: stages,
+        actionConstraint,
         isCandidateAllowed: sharedCandidateAllowed,
         skipHistoryList,
       });

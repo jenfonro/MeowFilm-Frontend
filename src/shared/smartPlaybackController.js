@@ -4,6 +4,11 @@ import {
   performSearchSessionSearch,
   subscribeSearchSessionQuery,
 } from './searchSession';
+import {
+  comparePlaybackCandidatesForAction,
+  comparePlaybackCandidatesByDefaultRules,
+  isPlaybackCandidateAllowedByAction,
+} from './playbackRuntime';
 
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 const normalizeInt = (value) => {
@@ -11,6 +16,11 @@ const normalizeInt = (value) => {
   return Number.isFinite(num) ? Math.trunc(num) : 0;
 };
 const normalizeMatchKind = (options) => (normalizeString(options && options.kind).toLowerCase() === 'movie' ? 'movie' : 'episode');
+
+const compareNumbersAsc = (left, right) => {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+};
 
 export const runSmartPlaybackController = async ({
   runSeq,
@@ -21,7 +31,9 @@ export const runSmartPlaybackController = async ({
   blockedSiteKeys = [],
   singleSiteThread = false,
   matchOptions = null,
-  constraintStages = null,
+  actionConstraint = null,
+  runtimeSettings = null,
+  currentContext = null,
   globalEpisode = 0,
   wantEpisodeInSeason = 0,
   isRunStopped,
@@ -50,7 +62,6 @@ export const runSmartPlaybackController = async ({
   const allowResolutionModes = ['strict-tmdb', 'strict-douban'];
   if (!runSeq || !query || (matchKind === 'episode' && targetGlobal <= 0)) return;
 
-  const candidateBuckets = { 1: [], 2: [], 3: [] };
   const candidateRegistry = new Map();
   const failedCandidateKeys = new Set();
   const startedSiteKeys = new Set();
@@ -60,7 +71,7 @@ export const runSmartPlaybackController = async ({
   let searchCompleted = false;
   let finalized = false;
   let playAttemptRunning = false;
-  let queuedAllowRelaxed = false;
+  let queuedRetry = false;
   let currentPendingCandidateKey = '';
   const pendingDetailAbortControllers = new Set();
   let unsubscribe = () => {};
@@ -93,41 +104,9 @@ export const runSmartPlaybackController = async ({
       return true;
     }
   };
-  const normalizedConstraintStages = (() => {
-    const list = Array.isArray(constraintStages) ? constraintStages : [];
-    const stages = list
-      .map((stage, index) => {
-        const target = stage && typeof stage === 'object' ? stage : null;
-        return {
-          key: normalizeString(target && target.key) || `stage_${index + 1}`,
-          afterFinalize: !!(target && target.afterFinalize),
-          isCandidateAllowed: typeof (target && target.isCandidateAllowed) === 'function'
-            ? target.isCandidateAllowed
-            : null,
-        };
-      })
-      .filter((stage) => stage && stage.isCandidateAllowed);
-    if (stages.length) return stages;
-    return [{
-      key: 'default',
-      afterFinalize: false,
-      isCandidateAllowed: (candidate) => safeCandidateAllowed(candidate),
-    }];
-  })();
-  const isStageCandidateAllowed = (stage, candidate) => {
-    const target = stage && typeof stage === 'object' ? stage : null;
-    if (!target || typeof target.isCandidateAllowed !== 'function') return safeCandidateAllowed(candidate);
-    try {
-      return !!target.isCandidateAllowed(candidate, matchOptions || {});
-    } catch (_error) {
-      return safeCandidateAllowed(candidate);
-    }
-  };
-
   const clearPending = () => {
     if (typeof clearPendingAttempt === 'function') clearPendingAttempt();
   };
-
   const abortPendingDetails = () => {
     if (!pendingDetailAbortControllers.size) return;
     Array.from(pendingDetailAbortControllers).forEach((controller) => {
@@ -138,124 +117,126 @@ export const runSmartPlaybackController = async ({
     pendingDetailAbortControllers.clear();
   };
 
-  const sortBuckets = () => {
-    candidateBuckets[1] = [];
-    candidateBuckets[2] = [];
-    candidateBuckets[3] = [];
-    candidateRegistry.forEach((candidate) => {
-      const tier = Math.max(1, Math.min(3, normalizeInt(candidate && candidate.tierRank) || 3));
-      candidateBuckets[tier].push(candidate);
-    });
-    const orderMap = new Map(
-      safeBuildSiteItems(safeGetSearchState(query, searchScope).snapshot)
-        .map((entry, index) => [normalizeString(entry && entry.id), index])
-    );
-    [1, 2, 3].forEach((tier) => {
-      candidateBuckets[tier].sort((left, right) => {
-        const leftOrder = orderMap.has(normalizeString(left && left.siteItem && left.siteItem.id))
-          ? orderMap.get(normalizeString(left.siteItem.id))
-          : 999999;
-        const rightOrder = orderMap.has(normalizeString(right && right.siteItem && right.siteItem.id))
-          ? orderMap.get(normalizeString(right.siteItem.id))
-          : 999999;
-        if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-        if (normalizeString(left && left.panKey) !== normalizeString(right && right.panKey)) {
-          return String(left && left.panKey || '').localeCompare(String(right && right.panKey || ''), 'zh');
-        }
-        return normalizeInt(left && left.itemIndex) - normalizeInt(right && right.itemIndex);
-      });
-    });
+  const buildOrderMap = () => new Map(
+    safeBuildSiteItems(safeGetSearchState(query, searchScope).snapshot)
+      .map((entry, index) => [normalizeString(entry && entry.id), index]),
+  );
+
+  const compareStable = (left, right, orderMap) => {
+    const leftOrder = orderMap.has(normalizeString(left && left.siteItem && left.siteItem.id))
+      ? orderMap.get(normalizeString(left.siteItem.id))
+      : 999999;
+    const rightOrder = orderMap.has(normalizeString(right && right.siteItem && right.siteItem.id))
+      ? orderMap.get(normalizeString(right.siteItem.id))
+      : 999999;
+    const siteOrderCmp = compareNumbersAsc(leftOrder, rightOrder);
+    if (siteOrderCmp !== 0) return siteOrderCmp;
+    const panCmp = normalizeString(left && left.panKey).localeCompare(normalizeString(right && right.panKey), 'zh');
+    if (panCmp !== 0) return panCmp;
+    const itemIndexCmp = compareNumbersAsc(normalizeInt(left && left.itemIndex), normalizeInt(right && right.itemIndex));
+    if (itemIndexCmp !== 0) return itemIndexCmp;
+    return normalizeString(left && left.siteItem && left.siteItem.siteDetail)
+      .localeCompare(normalizeString(right && right.siteItem && right.siteItem.siteDetail), 'zh');
   };
 
-  const tryResolvePlayback = async (allowRelaxed = false) => {
-    if (safeStopped()) return false;
-    const tiers = allowRelaxed ? [1, 2, 3] : [1];
-    const stages = normalizedConstraintStages.filter((stage) => allowRelaxed || !stage.afterFinalize);
-    for (let stageIndex = 0; stageIndex < stages.length; stageIndex += 1) {
-      const stage = stages[stageIndex];
-      for (let i = 0; i < tiers.length; i += 1) {
-        const tier = tiers[i];
-        const pickedList = Array.isArray(candidateBuckets[tier]) ? candidateBuckets[tier] : [];
-        for (let j = 0; j < pickedList.length; j += 1) {
-          const picked = pickedList[j];
-          if (!isStageCandidateAllowed(stage, picked)) continue;
-          const candidateKey = `${normalizeString(picked && picked.siteItem && picked.siteItem.id)}::${normalizeString(picked && picked.panKey)}::${normalizeInt(picked && picked.itemIndex)}`;
-          if (!candidateKey || failedCandidateKeys.has(candidateKey)) continue;
-          const detail = (typeof getCachedSiteResultDetail === 'function' ? getCachedSiteResultDetail(picked.siteItem) : null)
-            || await (typeof ensureSiteResultDetailCached === 'function'
-              ? ensureSiteResultDetailCached(picked.siteItem).catch(() => null)
-              : null);
-          if (!detail) {
-            failedCandidateKeys.add(candidateKey);
-            continue;
-          }
-          const panSources = typeof buildPanSourcesFromDetail === 'function' ? buildPanSourcesFromDetail(detail) : [];
-          const panEntry = Array.isArray(panSources)
-            ? panSources.find((entry) => normalizeString(entry && entry.key) === normalizeString(picked && picked.panKey)) || null
-            : null;
-          const segment = typeof buildPanSegment === 'function'
-            ? buildPanSegment(panEntry, picked && picked.itemIndex)
-            : null;
-          if (!panEntry || !segment || !normalizeString(segment && segment.episodeUrl)) {
-            failedCandidateKeys.add(candidateKey);
-            continue;
-          }
-          if (typeof setAttemptRunSeq === 'function') setAttemptRunSeq(runSeq);
-          const ok = await (typeof playResolvedSiteSegment === 'function'
-            ? playResolvedSiteSegment({
-              siteItem: picked.siteItem,
-              panEntry,
-              segment,
-              candidate: picked && picked.candidate ? picked.candidate : null,
-              selectionKey: typeof buildSelectionKey === 'function'
-                ? buildSelectionKey(panEntry && panEntry.key, segment && segment.index)
-                : '',
-              globalEpisode: targetGlobal,
-            })
-            : false);
-          if (!ok) {
-            failedCandidateKeys.add(candidateKey);
-            currentPendingCandidateKey = '';
-            if (typeof setAttemptRunSeq === 'function') setAttemptRunSeq(0);
-            continue;
-          }
-          currentPendingCandidateKey = candidateKey;
-          if (typeof setPendingRunSeq === 'function') setPendingRunSeq(runSeq);
-          if (typeof setResume === 'function') {
-            setResume(async () => {
-              if (safeStopped()) return;
-              if (currentPendingCandidateKey) failedCandidateKeys.add(currentPendingCandidateKey);
-              currentPendingCandidateKey = '';
-              clearPending();
-              await requestResolvePlayback(searchCompleted && activeThreads <= 0);
-            });
-          }
-          return true;
-        }
+  const compareCandidates = (left, right, orderMap) => {
+    const targetConstraint = actionConstraint && typeof actionConstraint === 'object' ? actionConstraint : null;
+    const primary = targetConstraint && normalizeString(targetConstraint.mode) !== 'default' && normalizeString(targetConstraint.mode) !== 'switch'
+      ? comparePlaybackCandidatesForAction(left, right, targetConstraint, currentContext, runtimeSettings)
+      : comparePlaybackCandidatesByDefaultRules(left, right, runtimeSettings);
+    if (primary !== 0) return primary;
+    return compareStable(left, right, orderMap);
+  };
+
+  const pickBestCandidate = () => {
+    const orderMap = buildOrderMap();
+    let best = null;
+    candidateRegistry.forEach((candidate, candidateKey) => {
+      if (!candidateKey || failedCandidateKeys.has(candidateKey)) return;
+      if (!safeCandidateAllowed(candidate)) return;
+      if (!isPlaybackCandidateAllowedByAction(candidate, actionConstraint, runtimeSettings)) return;
+      if (!best || compareCandidates(candidate, best, orderMap) < 0) {
+        best = candidate;
       }
+    });
+    return best;
+  };
+
+  const tryResolvePlayback = async () => {
+    if (safeStopped()) return false;
+    while (!safeStopped()) {
+      const picked = pickBestCandidate();
+      if (!picked) return false;
+      const candidateKey = `${normalizeString(picked && picked.siteItem && picked.siteItem.id)}::${normalizeString(picked && picked.panKey)}::${normalizeInt(picked && picked.itemIndex)}`;
+      if (!candidateKey) return false;
+      const detail = (typeof getCachedSiteResultDetail === 'function' ? getCachedSiteResultDetail(picked.siteItem) : null)
+        || await (typeof ensureSiteResultDetailCached === 'function'
+          ? ensureSiteResultDetailCached(picked.siteItem).catch(() => null)
+          : null);
+      if (!detail) {
+        failedCandidateKeys.add(candidateKey);
+        continue;
+      }
+      const panSources = typeof buildPanSourcesFromDetail === 'function' ? buildPanSourcesFromDetail(detail) : [];
+      const panEntry = Array.isArray(panSources)
+        ? panSources.find((entry) => normalizeString(entry && entry.key) === normalizeString(picked && picked.panKey)) || null
+        : null;
+      const segment = typeof buildPanSegment === 'function'
+        ? buildPanSegment(panEntry, picked && picked.itemIndex)
+        : null;
+      if (!panEntry || !segment || !normalizeString(segment && segment.episodeUrl)) {
+        failedCandidateKeys.add(candidateKey);
+        continue;
+      }
+      if (typeof setAttemptRunSeq === 'function') setAttemptRunSeq(runSeq);
+      const ok = await (typeof playResolvedSiteSegment === 'function'
+        ? playResolvedSiteSegment({
+          siteItem: picked.siteItem,
+          panEntry,
+          segment,
+          candidate: picked && picked.candidate ? picked.candidate : null,
+          selectionKey: typeof buildSelectionKey === 'function'
+            ? buildSelectionKey(panEntry && panEntry.key, segment && segment.index)
+            : '',
+          globalEpisode: targetGlobal,
+        })
+        : false);
+      if (!ok) {
+        failedCandidateKeys.add(candidateKey);
+        currentPendingCandidateKey = '';
+        if (typeof setAttemptRunSeq === 'function') setAttemptRunSeq(0);
+        continue;
+      }
+      currentPendingCandidateKey = candidateKey;
+      if (typeof setPendingRunSeq === 'function') setPendingRunSeq(runSeq);
+      if (typeof setResume === 'function') {
+        setResume(async () => {
+          if (safeStopped()) return;
+          if (currentPendingCandidateKey) failedCandidateKeys.add(currentPendingCandidateKey);
+          currentPendingCandidateKey = '';
+          clearPending();
+          await requestResolvePlayback();
+        });
+      }
+      return true;
     }
     return false;
   };
 
-  const requestResolvePlayback = async (allowRelaxed = false) => {
+  const requestResolvePlayback = async () => {
     if (safeStopped()) return false;
-    if (currentPendingCandidateKey) {
-      queuedAllowRelaxed = queuedAllowRelaxed || !!allowRelaxed;
-      return false;
-    }
-    if (playAttemptRunning) {
-      queuedAllowRelaxed = queuedAllowRelaxed || !!allowRelaxed;
+    if (currentPendingCandidateKey || playAttemptRunning) {
+      queuedRetry = true;
       return false;
     }
     playAttemptRunning = true;
     try {
-      return await tryResolvePlayback(allowRelaxed);
+      return await tryResolvePlayback();
     } finally {
       playAttemptRunning = false;
-      if (!safeStopped() && queuedAllowRelaxed) {
-        const nextAllowRelaxed = queuedAllowRelaxed;
-        queuedAllowRelaxed = false;
-        void requestResolvePlayback(nextAllowRelaxed);
+      if (!safeStopped() && queuedRetry) {
+        queuedRetry = false;
+        void requestResolvePlayback();
       }
     }
   };
@@ -264,7 +245,7 @@ export const runSmartPlaybackController = async ({
     if (finalized || safeStopped()) return;
     if (!searchCompleted || activeThreads > 0) return;
     finalized = true;
-    if (await requestResolvePlayback(true)) return;
+    if (await requestResolvePlayback()) return;
     if (safeStopped()) return;
     if (typeof onLoadingStateChange === 'function') onLoadingStateChange(false);
     if (typeof onErrorTextChange === 'function') onErrorTextChange('暂无可匹配片源');
@@ -281,13 +262,11 @@ export const runSmartPlaybackController = async ({
       : [];
     if (!Array.isArray(candidates) || !candidates.length) return false;
     candidates.forEach((candidate) => {
-      if (!safeCandidateAllowed(candidate)) return;
       const dedupeKey = `${normalizeString(candidate && candidate.siteItem && candidate.siteItem.id)}::${normalizeString(candidate && candidate.panKey)}::${normalizeInt(candidate && candidate.itemIndex)}`;
       if (!dedupeKey) return;
       candidateRegistry.set(dedupeKey, candidate);
     });
-    sortBuckets();
-    return requestResolvePlayback(false);
+    return requestResolvePlayback();
   };
 
   const runNextQueuedSiteThread = () => {
@@ -382,9 +361,7 @@ export const runSmartPlaybackController = async ({
   }
 
   const initialSearchState = safeGetSearchState(query, searchScope);
-  if (initialSearchState.snapshot) {
-    scheduleThreadsFromSnapshot(initialSearchState.snapshot);
-  }
+  if (initialSearchState.snapshot) scheduleThreadsFromSnapshot(initialSearchState.snapshot);
   if (initialSearchState.status === 'completed' || initialSearchState.status === 'error') {
     searchCompleted = true;
     await finalizeIfComplete();
