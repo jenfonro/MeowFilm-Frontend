@@ -779,6 +779,80 @@ export const buildPlaybackRecognitionData = ({
   return { source, items };
 };
 
+export const buildDirectSiteEpisodeItems = (entry, runtimeSettings) => {
+  const target = entry && typeof entry === 'object' ? entry : null;
+  if (!target || !normalizeString(target.url)) return [];
+  const compiledRules = compileMagicEpisodeRules(runtimeSettings && runtimeSettings.magicEpisodeRules);
+  const cleanRules = compileMagicCleanRules(runtimeSettings && runtimeSettings.magicEpisodeCleanRegexRules);
+  const segments = buildSegmentItems(target);
+  const folderStats = buildFolderStats(segments);
+  const out = [];
+
+  segments.forEach((segment) => {
+    const fileParsed = extractNormalizedSeasonEpisode(segment.fileName, compiledRules, cleanRules);
+    const displayParsed = !fileParsed.episode
+      ? extractNormalizedSeasonEpisode(segment.displayName, compiledRules, cleanRules)
+      : { season: 0, episode: 0 };
+
+    let season = fileParsed.season;
+    let episode = fileParsed.episode;
+    let quality = extractQualityMark(segment.fileName);
+
+    if (!episode && displayParsed.episode) {
+      season = displayParsed.season;
+      episode = displayParsed.episode;
+    }
+
+    const isPanMockList = !!normalizeString(target.provider);
+    if (isPanMockList && episode > 0 && season <= 0) {
+      const currentQuality = pickUniqueFolderQuality(folderStats, segment.currentPath);
+      const currentSeason = pickUniqueFolderSeason(folderStats, segment.currentPath);
+      const parentQuality = pickUniqueFolderQuality(folderStats, segment.parentPath);
+      const parentSeason = pickUniqueFolderSeason(folderStats, segment.parentPath);
+      if (currentSeason > 0) {
+        season = currentSeason;
+      } else if (currentQuality === '4K' && parentSeason > 0) {
+        season = parentSeason;
+      }
+      if (!quality) {
+        if (currentQuality) quality = currentQuality;
+        else if (currentSeason > 0 && parentQuality) quality = parentQuality;
+      }
+    }
+
+    if (!quality) quality = extractQualityMark(segment.displayName);
+    if (episode <= 0) return;
+
+    out.push({
+      key: `${normalizeString(target.key)}:${segment.index}:${Math.max(1, normalizeInt(season) || 1)}:${episode}`,
+      itemIndex: normalizeInt(segment.index),
+      season: normalizeInt(season),
+      no: normalizeInt(episode),
+      quality,
+      is4k: quality === '4K',
+      displayName: segment.displayName,
+      rawName: segment.rawName,
+      fileName: segment.fileName,
+      segmentIdentity: normalizeString(segment.segmentIdentity),
+      pathName: segment.currentPath ? `/${segment.currentPath}` : '',
+    });
+  });
+
+  return out
+    .filter((item) => item.itemIndex >= 0 && item.no > 0)
+    .sort((left, right) => {
+      const leftSeason = normalizeInt(left && left.season);
+      const rightSeason = normalizeInt(right && right.season);
+      const normalizedLeftSeason = leftSeason > 0 ? leftSeason : 1;
+      const normalizedRightSeason = rightSeason > 0 ? rightSeason : 1;
+      if (normalizedLeftSeason !== normalizedRightSeason) return normalizedLeftSeason - normalizedRightSeason;
+      const leftNo = normalizeInt(left && left.no);
+      const rightNo = normalizeInt(right && right.no);
+      if (leftNo !== rightNo) return leftNo - rightNo;
+      return normalizeInt(left && left.itemIndex) - normalizeInt(right && right.itemIndex);
+    });
+};
+
 export const detectPlaybackSiteContentKind = ({ panSources, runtimeSettings } = {}) => {
   const pans = Array.isArray(panSources) ? panSources : [];
   if (!pans.length) return 'unknown';
