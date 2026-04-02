@@ -3393,18 +3393,22 @@ export default {
       return !!playbackFileIdentity && !!itemFileIdentity && playbackFileIdentity === itemFileIdentity;
     },
     isCurrentRawListPlaybackSelection(item) {
-      if (!this.selectedSiteResultItem || !this.rawDirModeEnabled) return false;
       const entry = item && typeof item === 'object' ? item : null;
       if (!entry || entry.kind !== 'file') return false;
-      const currentPanFlag = normalizeString(this.currentPanSourceEntry && this.currentPanSourceEntry.label);
-      const playbackPanFlag = normalizeString(this.currentPlaybackContext && this.currentPlaybackContext.panFlag);
+      const currentPan = this.currentPanSourceEntry;
+      const currentPanFlag = normalizeString(currentPan && currentPan.label);
+      const playback = this.currentPlaybackContext && typeof this.currentPlaybackContext === 'object'
+        ? this.currentPlaybackContext
+        : null;
+      const playbackPanFlag = normalizeString(playback && playback.panFlag);
       if (!currentPanFlag || currentPanFlag !== playbackPanFlag) return false;
+      const playbackIndex = normalizeInt(playback && playback.itemIndex);
+      const entryIndex = normalizeInt(entry.index);
+      if (playbackIndex < 0 || entryIndex < 0 || playbackIndex !== entryIndex) return false;
+      if (!this.rawDirModeEnabled) return true;
       const viewingPath = normalizeString(this.rawListDisplayPath);
       const playbackPath = normalizeString(this.playerStatsPathName);
-      if (!viewingPath || !playbackPath || viewingPath !== playbackPath) return false;
-      const playbackIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex);
-      const entryIndex = normalizeInt(entry.index);
-      return playbackIndex >= 0 && entryIndex >= 0 && playbackIndex === entryIndex;
+      return !!viewingPath && !!playbackPath && viewingPath === playbackPath;
     },
     ensureActivePlaybackRowVisible() {
       this.$nextTick(() => {
