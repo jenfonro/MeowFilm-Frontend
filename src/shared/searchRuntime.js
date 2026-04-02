@@ -42,6 +42,54 @@ const requestJson = async (url, options = {}) => {
   return data;
 };
 
+export const buildTrailingDigitsFallbackQuery = (query) => {
+  const raw = normalizeString(query);
+  if (!raw) return '';
+  const next = raw.replace(/\s*[0-9]{1,2}\s*$/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!next || next === raw) return '';
+  return next;
+};
+
+export const requestTMDBSearchWithTrailingDigitsFallback = async (query) => {
+  const safeQuery = normalizeString(query);
+  const requestPayload = async (text) =>
+    requestJson(buildTMDBDataURL('search', { q: text }), {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+  const rawPayload = await requestPayload(safeQuery);
+  const rawResults = Array.isArray(rawPayload && rawPayload.results) ? rawPayload.results : [];
+  if (rawResults.length > 0) {
+    return {
+      payload: rawPayload,
+      effectiveQuery: safeQuery,
+      usedFallback: false,
+    };
+  }
+  const fallbackQuery = buildTrailingDigitsFallbackQuery(safeQuery);
+  if (!fallbackQuery) {
+    return {
+      payload: rawPayload,
+      effectiveQuery: safeQuery,
+      usedFallback: false,
+    };
+  }
+  const fallbackPayload = await requestPayload(fallbackQuery);
+  const fallbackResults = Array.isArray(fallbackPayload && fallbackPayload.results) ? fallbackPayload.results : [];
+  if (fallbackResults.length === 0) {
+    return {
+      payload: rawPayload,
+      effectiveQuery: safeQuery,
+      usedFallback: false,
+    };
+  }
+  return {
+    payload: fallbackPayload,
+    effectiveQuery: fallbackQuery,
+    usedFallback: true,
+  };
+};
+
 const normalizeForMatch = (value) =>
   String(value || '')
     .toLowerCase()
@@ -913,10 +961,7 @@ export async function streamSearch(query, config, { onUpdate, blockedSiteKeys = 
       ? (async () => {
           try {
             if (config.searchDisplayMode === 'both') progressTotal += 1;
-            const tmdbPayload = await requestJson(buildTMDBDataURL('search', { q: safeQuery }), {
-              method: 'GET',
-              credentials: 'same-origin',
-            });
+            const { payload: tmdbPayload } = await requestTMDBSearchWithTrailingDigitsFallback(safeQuery);
             output.tmdbItems = mapTmdbItems(tmdbPayload, config.settings, computeMatchScore, {
               rawQuery: safeQuery,
               contentKind,
