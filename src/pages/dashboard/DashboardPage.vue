@@ -749,6 +749,16 @@
                 </div>
                 <div class="adm-text-xs adm-text-gray-500">开启后由 MeowFilm 处理网盘数据。</div>
               </div>
+              <div v-if="showCatSettingsExtras" class="adm-space-y-1 adm-pt-1">
+                <div class="adm-text-sm adm-font-medium adm-text-gray-700">禁用代理透传</div>
+                <div>
+                  <label class="enable-switch" title="禁用代理透传">
+                    <input v-model="catForm.disableProxy" type="checkbox" />
+                    <span class="enable-slider"></span>
+                  </label>
+                </div>
+                <div class="adm-text-xs adm-text-gray-500">开启后将禁用 CatPawRunner 的代理透传功能，m3u8 代理除外。</div>
+              </div>
               <div v-if="showCatSettingsExtras" class="adm-space-y-2">
                 <div class="adm-text-sm adm-font-medium adm-text-gray-700">GoProxy API（挂载在 CatPawRunner 同机）</div>
                 <input v-model="catForm.goProxyApi" class="tv-field" placeholder="/api 或 https://example.com/" autocomplete="off" />
@@ -2526,6 +2536,7 @@ const catForm = ref({
   proxy: '',
   panBuiltinResolverEnabled: true,
   panMockEnabled: false,
+  disableProxy: false,
   goProxyApi: ''
 });
 const goProxySaving = ref(false);
@@ -4217,6 +4228,7 @@ function resetCatForm() {
     proxy: '',
     panBuiltinResolverEnabled: true,
     panMockEnabled: false,
+    disableProxy: false,
     goProxyApi: ''
   };
 }
@@ -4297,6 +4309,7 @@ function buildCatRemoteSettingsSnapshot(data) {
     proxy: typeof settings.proxy === 'string' ? settings.proxy : '',
     panBuiltinResolverEnabled: settings.panBuiltinResolverEnabled !== false,
     pan_mock: !!(settings.pan_mock === true || settings.panMockEnabled === true),
+    disable_proxy: !!settings.disable_proxy,
     goProxyApi: typeof settings.goProxyApi === 'string' ? settings.goProxyApi : '',
     onlineConfigs: onlineConfigs.map(normalizeCatConfigRow).filter((item) => item.name || item.url)
   };
@@ -4307,6 +4320,7 @@ function applyCatRemoteSettingsSnapshot(snapshot) {
   catForm.value.proxy = typeof next.proxy === 'string' ? next.proxy : '';
   catForm.value.panBuiltinResolverEnabled = next.panBuiltinResolverEnabled !== false;
   catForm.value.panMockEnabled = !!next.pan_mock;
+  catForm.value.disableProxy = !!next.disable_proxy;
   catForm.value.goProxyApi = typeof next.goProxyApi === 'string' ? next.goProxyApi : '';
   catOnlineConfigs.value = Array.isArray(next.onlineConfigs)
     ? next.onlineConfigs.map(normalizeCatConfigRow).filter((item) => item.name || item.url)
@@ -4322,6 +4336,7 @@ function buildCatRemoteSettingsPayload() {
     proxy: catForm.value.proxy.trim(),
     panBuiltinResolverEnabled: !!catForm.value.panBuiltinResolverEnabled,
     pan_mock: !!catForm.value.panMockEnabled,
+    disable_proxy: !!catForm.value.disableProxy,
     goProxyApi: catForm.value.goProxyApi.trim(),
     onlineConfigs: catOnlineConfigs.value.map((item) => ({ name: item.name, url: item.url }))
   };
@@ -4385,6 +4400,7 @@ async function hydrateSelectedCatServer({ silent = false } = {}) {
   catForm.value.proxy = '';
   catForm.value.panBuiltinResolverEnabled = true;
   catForm.value.panMockEnabled = false;
+  catForm.value.disableProxy = false;
   catForm.value.goProxyApi = '';
   if (!current.apiBase) return;
   catRemoteLoading.value = true;
@@ -4408,6 +4424,7 @@ async function applyCatRemoteSettingsSnapshotToTarget(targetApiBase, snapshot) {
     proxy: typeof snapshot.proxy === 'string' ? snapshot.proxy.trim() : '',
     panBuiltinResolverEnabled: snapshot.panBuiltinResolverEnabled !== false,
     pan_mock: !!snapshot.pan_mock,
+    disable_proxy: !!snapshot.disable_proxy,
     goProxyApi: typeof snapshot.goProxyApi === 'string' ? snapshot.goProxyApi.trim() : '',
     onlineConfigs: Array.isArray(snapshot.onlineConfigs)
       ? snapshot.onlineConfigs.map((item) => {
