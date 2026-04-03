@@ -63,64 +63,43 @@ const getDisplayDirPath = (value) => {
   return `/${parts.slice(0, -1).join('/')}`;
 };
 
+const normalizeSourceSegments = (entry) => {
+  const source = entry && typeof entry === 'object' ? entry : null;
+  if (!source) return [];
+  return Array.isArray(source.episodeSegments)
+    ? source.episodeSegments.map(normalizeString).filter(Boolean)
+    : [];
+};
+
 export const buildPanSourcesFromDetail = (detail) => {
   const target = detail && typeof detail === 'object' ? detail : null;
   if (!target) return [];
   const directSources = Array.isArray(target.sources) ? target.sources : [];
-  if (directSources.length) {
-    return directSources
-      .map((item, index) => {
-        const label = normalizeString(item && item.label);
-        if (!label) return null;
-        const key = normalizeString(item && item.key) || `source:${index}:${label}`;
-        return {
-          key,
-          label,
-          provider: normalizeString(item && item.provider).toLowerCase(),
-          url: normalizeString(item && item.url),
-          error: normalizeString(item && item.error),
-          loading: item && item.loading === true,
-        };
-      })
-      .filter(Boolean);
-  }
-  const playFrom = normalizeString(target && (target.resolvedPlayFrom || target.playFrom));
-  const playUrl = normalizeString(target && (target.resolvedPlayUrl || target.playUrl));
-  if (!playFrom) return [];
-  const fromParts = playFrom.split('$$$').map(normalizeString).filter(Boolean);
-  const urlParts = playUrl.split('$$$').map(normalizeString);
-  const len = Math.max(fromParts.length, urlParts.length);
-  const out = [];
-  for (let i = 0; i < len; i += 1) {
-    const baseLabel = normalizeString(fromParts[i]);
-    const baseUrl = normalizeString(urlParts[i]);
-    if (!baseLabel) continue;
-    const hasSubs = baseLabel.includes('|||') && baseUrl.includes('|||');
-    const labelParts = baseLabel.includes('|||') ? baseLabel.split('|||').map(normalizeString) : [baseLabel];
-    const urlSegParts = hasSubs ? baseUrl.split('|||').map(normalizeString) : [baseUrl];
-    const subLen = Math.max(labelParts.length, urlSegParts.length);
-    for (let j = 0; j < subLen; j += 1) {
-      const label = normalizeString(labelParts[j]) || baseLabel;
-      const url = normalizeString(urlSegParts[j]);
-      if (!label || !url) continue;
-      out.push({
-        key: `${i}:${j}:${label}`,
+  return directSources
+    .map((item, index) => {
+      const label = normalizeString(item && item.label);
+      if (!label) return null;
+      const key = normalizeString(item && item.key) || `source:${index}:${label}`;
+      return {
+        key,
         label,
-        provider: normalizeString(panMockProviderFromFlag(label)).toLowerCase(),
-        url,
-        error: '',
-        loading: false,
-      });
-    }
-  }
-  return out;
+        provider: normalizeString(item && item.provider).toLowerCase(),
+        sourceKind: normalizeString(item && item.sourceKind) || (normalizeString(item && item.provider) ? 'panmock' : 'normal'),
+        groupIndex: Number.isFinite(Number(item && item.groupIndex)) ? Math.trunc(Number(item.groupIndex)) : index,
+        sourceValue: normalizeString(item && item.sourceValue),
+        episodeSegments: normalizeSourceSegments(item),
+        error: normalizeString(item && item.error),
+        loading: item && item.loading === true,
+      };
+    })
+    .filter(Boolean);
 };
 
 export const buildPanSegment = (entry, index) => {
-  if (!entry || !normalizeString(entry.url)) return null;
+  if (!entry) return null;
   const itemIndex = normalizeInt(index);
   if (itemIndex < 0) return null;
-  const segments = String(entry.url || '').split('#').map(normalizeString).filter(Boolean);
+  const segments = normalizeSourceSegments(entry);
   const segment = segments[itemIndex] || '';
   if (!segment) return null;
   const dollarIdx = segment.indexOf('$');
@@ -501,7 +480,7 @@ const findCachedPlaybackTargetForPrimaryEpisode = ({
     const siteItem = context && context.siteItem ? context.siteItem : null;
     const panEntry = context && context.panEntry ? context.panEntry : null;
     const panKey = normalizeString(panEntry && panEntry.key);
-    if (!siteItem || !panEntry || !panKey || !normalizeString(panEntry && panEntry.url)) continue;
+    if (!siteItem || !panEntry || !panKey || !normalizeSourceSegments(panEntry).length) continue;
     const candidates = typeof collectCandidates === 'function'
       ? collectCandidates(siteItem, targetGlobal, targetLoose, matchOptions)
       : [];
@@ -556,7 +535,7 @@ const findCachedPlaybackTargetAcrossStore = ({
     for (let j = 0; j < panSources.length; j += 1) {
       const panEntry = panSources[j];
       const panKey = normalizeString(panEntry && panEntry.key);
-      if (!panKey || !normalizeString(panEntry && panEntry.url)) continue;
+      if (!panKey || !normalizeSourceSegments(panEntry).length) continue;
       const candidates = typeof collectCandidates === 'function'
         ? collectCandidates(siteItem, targetGlobal, targetLoose, matchOptions)
         : [];
@@ -778,7 +757,7 @@ const findHistoryDetailPlaybackTarget = ({
   for (let i = 0; i < panSources.length; i += 1) {
     const panEntry = panSources[i];
     const panKey = normalizeString(panEntry && panEntry.key);
-    if (!panKey || !normalizeString(panEntry && panEntry.url)) continue;
+    if (!panKey || !normalizeSourceSegments(panEntry).length) continue;
     const picked = pickTargetCandidate({ candidates, panKey, isCandidateAllowed, compareCandidates });
     if (!picked) continue;
     const segment = buildPanSegment(panEntry, picked.itemIndex);

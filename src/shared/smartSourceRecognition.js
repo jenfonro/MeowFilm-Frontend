@@ -365,10 +365,11 @@ const pickUniqueFolderQuality = (stats, path) => {
 };
 
 const buildSegmentItems = (entry) => {
-  const url = normalizeString(entry && entry.url);
-  if (!url) return [];
-  return url
-    .split('#')
+  const segments = Array.isArray(entry && entry.episodeSegments)
+    ? entry.episodeSegments.map(normalizeString).filter(Boolean)
+    : [];
+  if (!segments.length) return [];
+  return segments
     .map((segment, index) => {
       const raw = normalizeString(segment);
       if (!raw) return null;
@@ -637,7 +638,7 @@ export const buildPlaybackRecognitionData = ({
         panFlag: normalizeString(entry && entry.label),
       }
     : null;
-  if (!entry || !entry.url) {
+  if (!entry || !Array.isArray(entry.episodeSegments) || !entry.episodeSegments.length) {
     return { source, items: [] };
   }
 
@@ -781,7 +782,7 @@ export const buildPlaybackRecognitionData = ({
 
 export const buildDirectSiteEpisodeItems = (entry, runtimeSettings) => {
   const target = entry && typeof entry === 'object' ? entry : null;
-  if (!target || !normalizeString(target.url)) return [];
+  if (!target || !Array.isArray(target.episodeSegments) || !target.episodeSegments.length) return [];
   const compiledRules = compileMagicEpisodeRules(runtimeSettings && runtimeSettings.magicEpisodeRules);
   const cleanRules = compileMagicCleanRules(runtimeSettings && runtimeSettings.magicEpisodeCleanRegexRules);
   const segments = buildSegmentItems(target);

@@ -794,6 +794,12 @@ const buildSegmentPlaybackIdentity = (segment) => {
   return normalizeString(seg && seg.segmentIdentity);
 };
 
+const getPanEntrySegments = (entry) => (
+  Array.isArray(entry && entry.episodeSegments)
+    ? entry.episodeSegments.map(normalizeString).filter(Boolean)
+    : []
+);
+
 const buildEpisodeMappingSignature = (mapping) => {
   const target = mapping && typeof mapping === 'object' ? mapping : null;
   if (!target) return '';
@@ -1210,9 +1216,9 @@ export default {
     forceDirectSiteRawListMode() {
       if (this.isTmdbMode || this.selectedSiteResultItem || this.contentKind === 'movie') return false;
       const entry = this.currentPanSourceEntry;
-      if (!entry || !normalizeString(entry.url)) return false;
+      if (!entry || !getPanEntrySegments(entry).length) return false;
       if (this.directSiteEpisodeItems.length) return false;
-      return String(entry.url || '').split('#').map(normalizeString).filter(Boolean).length > 0;
+      return getPanEntrySegments(entry).length > 0;
     },
     effectiveForceRawListMode() {
       return this.forceRawListMode || this.forceDirectSiteRawListMode;
@@ -1325,8 +1331,7 @@ export default {
     directSiteEpisodeCount() {
       if (this.isTmdbMode || this.selectedSiteResultItem || this.contentKind === 'movie') return 0;
       const entry = this.currentPanSourceEntry;
-      if (!entry || !normalizeString(entry.url)) return 0;
-      return String(entry.url || '').split('#').map(normalizeString).filter(Boolean).length;
+      return getPanEntrySegments(entry).length;
     },
     directSiteEpisodeItems() {
       if (this.isTmdbMode || this.selectedSiteResultItem || this.contentKind === 'movie') return [];
@@ -1728,7 +1733,7 @@ export default {
       if (this.currentPanSourceEntry && this.currentPanSourceEntry.error) {
         return this.currentPanSourceEntry.error;
       }
-      if (this.currentPanSourceEntry && !normalizeString(this.currentPanSourceEntry.url)) {
+      if (this.currentPanSourceEntry && !getPanEntrySegments(this.currentPanSourceEntry).length) {
         return '暂无数据';
       }
       if (!this.isTmdbMode && !this.selectedSiteResultItem && this.contentKind === 'series' && !this.episodeButtons.length) {
@@ -1787,19 +1792,20 @@ export default {
       const entry = this.currentPanSourceEntry;
       if (!this.rawListMode || !entry) return false;
       if (!(this.siteResultDetailData && this.siteResultDetailData.panMock)) return false;
-      return !!normalizeString(entry.provider) && !!normalizeString(entry.url);
+      return !!normalizeString(entry.provider) && getPanEntrySegments(entry).length > 0;
     },
     rawDirIdentity() {
       const entry = this.currentPanSourceEntry;
       if (!this.rawDirModeEnabled || !entry) return '';
       return [
         normalizeString(entry.label),
-        normalizeString(entry.url),
+        getPanEntrySegments(entry).join('#'),
       ].join('::');
     },
     rawDirTree() {
       const entry = this.currentPanSourceEntry;
-      if (!this.rawDirModeEnabled || !entry || !entry.url) return null;
+      const segments = getPanEntrySegments(entry);
+      if (!this.rawDirModeEnabled || !entry || !segments.length) return null;
       const root = { dirs: new Map(), files: [] };
       const ensureDir = (node, name) => {
         const key = normalizeString(name);
@@ -1807,7 +1813,7 @@ export default {
         if (!node.dirs.has(key)) node.dirs.set(key, { name: key, dirs: new Map(), files: [] });
         return node.dirs.get(key);
       };
-      entry.url.split('#').forEach((segment, index) => {
+      segments.forEach((segment, index) => {
         const raw = normalizeString(segment);
         if (!raw) return;
         const dollarIdx = raw.indexOf('$');
@@ -1889,8 +1895,8 @@ export default {
     rawListItems() {
       if (this.rawDirModeEnabled) return this.rawDirEntries;
       const entry = this.currentPanSourceEntry;
-      if (!entry || !entry.url) return [];
-      const segments = entry.url.split('#').map(normalizeString).filter(Boolean);
+      const segments = getPanEntrySegments(entry);
+      if (!entry || !segments.length) return [];
       let allFileNamesSame = true;
       let firstFileName = null;
       segments.forEach((segment) => {
@@ -2791,7 +2797,7 @@ export default {
       const nextItemIndex = normalizeInt(seg && seg.index);
       const namingContext = buildStatsNamingContext(
         pan,
-        normalizeString(pan && pan.url).split('#').map(normalizeString).filter(Boolean),
+        getPanEntrySegments(pan),
         this.displayTitle,
       );
       const nextPathName = namingContext.preferFile ? resolvePlayerStatsPathName({ segment: seg, candidate: cand }) : '';
@@ -3017,7 +3023,7 @@ export default {
     syncPlayerStatsForResolvedSegment({ siteResultItem, pan, segment, candidate }) {
       const namingContext = buildStatsNamingContext(
         pan,
-        normalizeString(pan && pan.url).split('#').map(normalizeString).filter(Boolean),
+        getPanEntrySegments(pan),
         this.displayTitle,
       );
       this.playerStatsSiteName = buildPlaybackSiteLabel(siteResultItem);
@@ -4240,7 +4246,7 @@ export default {
     syncPlayerStatsForSegment({ item, pan, segment }) {
       const namingContext = buildStatsNamingContext(
         pan,
-        normalizeString(pan && pan.url).split('#').map(normalizeString).filter(Boolean),
+        getPanEntrySegments(pan),
         this.displayTitle,
       );
       this.playerStatsSiteName = buildPlaybackSiteLabel(item);

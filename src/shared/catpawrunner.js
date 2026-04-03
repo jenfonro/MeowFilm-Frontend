@@ -200,6 +200,37 @@ export async function requestCatPlay({ apiBase, username, payload, query, header
 }
 
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+const splitEpisodeSegments = (value) =>
+  normalizeString(value)
+    .split('#')
+    .map(normalizeString)
+    .filter(Boolean);
+
+const buildJoinedEpisodeSegments = (segments) =>
+  (Array.isArray(segments) ? segments.map(normalizeString).filter(Boolean) : []).join('#');
+
+const normalizeSourceEntry = (item, index = 0) => {
+  const source = item && typeof item === 'object' ? item : {};
+  const label = normalizeString(source.label);
+  if (!label) return null;
+  const episodeSegments = Array.isArray(source.episodeSegments)
+    ? source.episodeSegments.map(normalizeString).filter(Boolean)
+    : splitEpisodeSegments(source.url);
+  const sourceValue = normalizeString(source.sourceValue)
+    || normalizeString(source.baseUrl)
+    || buildJoinedEpisodeSegments(episodeSegments);
+  return {
+    key: normalizeString(source.key) || `source:${index}:${label}`,
+    label,
+    provider: normalizeString(source.provider).toLowerCase(),
+    sourceKind: normalizeString(source.sourceKind) || (normalizeString(source.provider) ? 'panmock' : 'normal'),
+    groupIndex: Number.isFinite(Number(source.groupIndex)) ? Math.trunc(Number(source.groupIndex)) : index,
+    sourceValue,
+    episodeSegments,
+    error: normalizeString(source.error),
+    loading: source && source.loading === true,
+  };
+};
 
 const detailCache = new Map();
 const resolvedDetailCache = new Map();
@@ -337,7 +368,7 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
   const panMock = readPanMockEnabledFromRaw(raw);
   const fromStr = normalizeString(playFrom);
   const urlStr = normalizeString(playUrl);
-  if (!panMock || !fromStr) {
+  if (!fromStr) {
     return { playFrom: fromStr, playUrl: urlStr, panMock, sources: [], panMock189AccessByShareId: {}, resolutionComplete: true };
   }
 
@@ -353,7 +384,10 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
       key: item.key,
       label: item.label,
       provider: item.provider,
-      url: item.url,
+      sourceKind: item.sourceKind,
+      groupIndex: item.groupIndex,
+      sourceValue: item.sourceValue,
+      episodeSegments: Array.isArray(item.episodeSegments) ? item.episodeSegments.slice() : [],
       error: item.error,
       loading: !!item.loading,
     }));
@@ -372,15 +406,15 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
       const nextUrlSubs = [];
       entries.forEach((item) => {
         if (item.provider) {
-          if (normalizeString(item.url)) {
+          if (Array.isArray(item.episodeSegments) && item.episodeSegments.length) {
             nextFromSubs.push(item.label);
-            nextUrlSubs.push(item.url);
+            nextUrlSubs.push(buildJoinedEpisodeSegments(item.episodeSegments));
           }
           return;
         }
-        if (!normalizeString(item.baseUrl)) return;
+        if (!Array.isArray(item.episodeSegments) || !item.episodeSegments.length) return;
         nextFromSubs.push(item.label);
-        nextUrlSubs.push(item.baseUrl);
+        nextUrlSubs.push(buildJoinedEpisodeSegments(item.episodeSegments));
       });
       if (nextFromSubs.length && nextUrlSubs.length) {
         outFrom.push(nextFromSubs.join('|||'));
@@ -417,12 +451,14 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
       const urlSeg = normalizeString(urlSubs[j]);
       if (!label) continue;
       const provider = panMockProviderFromFlag(label);
+      const episodeSegments = provider ? [] : splitEpisodeSegments(urlSeg);
       sourceEntries.push({
         key: `${i}:${j}:${label}`,
         label,
         provider,
-        baseUrl: urlSeg,
-        url: provider ? '' : urlSeg,
+        sourceKind: provider ? 'panmock' : 'normal',
+        sourceValue: urlSeg,
+        episodeSegments,
         error: '',
         loading: !!provider,
         groupIndex: i,
@@ -444,7 +480,7 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
     }
   }
 
-  if (!reqMap.size) return buildResolvedOutput(true);
+  if (!panMock || !reqMap.size) return buildResolvedOutput(true);
 
   emitUpdate(false);
 
@@ -457,7 +493,7 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
         if (vod) {
           sourceEntries.forEach((item) => {
             if (`${item.provider}::${item.label}` !== resolveKey) return;
-            item.url = vod;
+            item.episodeSegments = splitEpisodeSegments(vod);
             item.error = '';
             item.loading = false;
           });
@@ -475,7 +511,7 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
         }
         sourceEntries.forEach((item) => {
           if (`${item.provider}::${item.label}` !== resolveKey) return;
-          item.url = '';
+          item.episodeSegments = [];
           item.error = '暂无数据';
           item.loading = false;
         });
@@ -483,7 +519,7 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
       } catch (error) {
         sourceEntries.forEach((item) => {
           if (`${item.provider}::${item.label}` !== resolveKey) return;
-          item.url = '';
+          item.episodeSegments = [];
           item.error = error && error.message ? String(error.message) : '请求失败';
           item.loading = false;
         });
@@ -561,8 +597,6 @@ export const fetchCatResolvedDetailCached = async ({ apiBase, spiderApi, siteDet
     const baseData = {
       raw,
       ...detail,
-      resolvedPlayFrom: normalizeString(detail.playFrom),
-      resolvedPlayUrl: normalizeString(detail.playUrl),
       sources: [],
       panMock189AccessByShareId: {},
       resolutionComplete: !detail.panMock,
@@ -580,9 +614,9 @@ export const fetchCatResolvedDetailCached = async ({ apiBase, spiderApi, siteDet
     const resolved = await resolvePanMockPlaySources(raw, detail.playFrom, detail.playUrl, { onUpdate: emitPartial, signal });
     const data = {
       ...baseData,
-      resolvedPlayFrom: normalizeString(resolved.playFrom),
-      resolvedPlayUrl: normalizeString(resolved.playUrl),
-      sources: Array.isArray(resolved.sources) ? resolved.sources : [],
+      // playFrom/playUrl stay as input-compatibility fields; sources is the only
+      // normalized runtime source model consumed by playback flows.
+      sources: Array.isArray(resolved.sources) ? resolved.sources.map((item, index) => normalizeSourceEntry(item, index)).filter(Boolean) : [],
       panMock189AccessByShareId:
         resolved && resolved.panMock189AccessByShareId && typeof resolved.panMock189AccessByShareId === 'object'
           ? resolved.panMock189AccessByShareId
