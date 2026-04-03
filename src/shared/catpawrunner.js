@@ -1,4 +1,4 @@
-import { extractTianyiShareCodeAndAccessCode, panMockProviderFromFlag, parseMockPasscodeFromRawName } from '../utils/matchCore';
+import { extractTianyiShareCodeAndAccessCode, normalizePanMockFlag, panMockProviderFromFlag } from '../utils/matchCore';
 
 export function normalizecatpawrunnerApiBase(inputUrl) {
   const raw = typeof inputUrl === 'string' ? inputUrl.trim() : '';
@@ -312,16 +312,21 @@ const callPanList = async (provider, body, { signal } = {}) => {
   return data && typeof data === 'object' ? data : null;
 };
 
-export const requestPanListByProviderFlag = async ({ provider, playFlag, signal } = {}) => {
+export const requestPanListByProviderFlag = async ({ provider, playFlag, passcode = '', signal } = {}) => {
   const key = normalizeString(provider).toLowerCase();
-  const flag = normalizeString(playFlag);
+  const flag = normalizePanMockFlag(playFlag);
+  const pass = normalizeString(passcode);
   if (!key || !flag) return null;
   const body = (() => {
-    if (key === 'quark') return { flag, passcode: '' };
-    if (key === 'uc') return { flag, passcode: '' };
-    if (key === 'baidu') return { flag, pwd: '' };
-    if (key === '139') return { flag, passcode: '' };
-    if (key === '189') return { flag, accessCode: '' };
+    if (key === 'quark') return { flag, passcode: pass };
+    if (key === 'uc') return { flag, passcode: pass };
+    if (key === 'baidu') return { flag, pwd: pass };
+    if (key === '139') return { flag, passcode: pass };
+    if (key === '189') {
+      const { shareCode, accessCode } = extractTianyiShareCodeAndAccessCode(flag, pass);
+      if (!shareCode) return null;
+      return { flag: `天意-${shareCode}`, shareCode, accessCode: accessCode || '' };
+    }
     return null;
   })();
   if (!body) return null;
@@ -332,7 +337,7 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
   const panMock = readPanMockEnabledFromRaw(raw);
   const fromStr = normalizeString(playFrom);
   const urlStr = normalizeString(playUrl);
-  if (!panMock || !fromStr || !urlStr) {
+  if (!panMock || !fromStr) {
     return { playFrom: fromStr, playUrl: urlStr, panMock, sources: [], panMock189AccessByShareId: {}, resolutionComplete: true };
   }
 
@@ -402,15 +407,15 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
   for (let i = 0; i < len; i += 1) {
     const baseLabel = normalizeString(fromParts[i]);
     const baseUrl = normalizeString(urlParts[i]);
-    if (!baseLabel || !baseUrl) continue;
+    if (!baseLabel) continue;
     const hasSubs = baseLabel.includes('|||') && baseUrl.includes('|||');
     const fromSubs = baseLabel.includes('|||') ? baseLabel.split('|||').map(normalizeString) : [baseLabel];
     const urlSubs = hasSubs ? baseUrl.split('|||').map(normalizeString) : [baseUrl];
     const subLen = Math.max(fromSubs.length, urlSubs.length);
     for (let j = 0; j < subLen; j += 1) {
-      const label = normalizeString(fromSubs[j]) || baseLabel;
+      const label = normalizePanMockFlag(normalizeString(fromSubs[j]) || baseLabel);
       const urlSeg = normalizeString(urlSubs[j]);
-      if (!label || !urlSeg) continue;
+      if (!label) continue;
       const provider = panMockProviderFromFlag(label);
       sourceEntries.push({
         key: `${i}:${j}:${label}`,
@@ -423,21 +428,17 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
         groupIndex: i,
       });
       if (!provider) continue;
-      const firstSeg = normalizeString(urlSeg.split('#')[0]);
-      const dollarIdx = firstSeg.indexOf('$');
-      const epUrl = dollarIdx >= 0 ? firstSeg.slice(dollarIdx + 1).trim() : firstSeg;
-      const rawName = extractRawNamesFromEpisodeUrl(epUrl)[0] || '';
       let requestBody = null;
       if (provider === '189') {
-        const { shareCode, accessCode } = extractTianyiShareCodeAndAccessCode(label, rawName);
+        const { shareCode, accessCode } = extractTianyiShareCodeAndAccessCode(label, urlSeg);
         if (!shareCode) continue;
-        requestBody = { flag: `天意-${shareCode}`, accessCode: accessCode || '' };
+        requestBody = { flag: `天意-${shareCode}`, shareCode, accessCode: accessCode || '' };
       } else if (provider === 'baidu') {
-        requestBody = { flag: label, pwd: parseMockPasscodeFromRawName(rawName) || '' };
+        requestBody = { flag: label, pwd: urlSeg || '' };
       } else if (provider === '139') {
-        requestBody = { flag: label, passcode: parseMockPasscodeFromRawName(rawName) || '' };
+        requestBody = { flag: label, passcode: urlSeg || '' };
       } else {
-        requestBody = { flag: label, passcode: parseMockPasscodeFromRawName(rawName) || '' };
+        requestBody = { flag: label, passcode: urlSeg || '' };
       }
       reqMap.set(`${provider}::${label}`, { provider, label, requestBody });
     }

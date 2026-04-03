@@ -8,8 +8,15 @@ export const buildEpisodeMatchKey = (displayName, rawName) => {
   return `${name}||${raw}`.trim();
 };
 
+export const normalizePanMockFlag = (flag) => {
+  let s = typeof flag === 'string' ? flag.trim() : '';
+  if (!s) return '';
+  if (s.startsWith('百度原画-') && s.includes('#')) s = String(s.split('#')[0] || '').trim();
+  return s;
+};
+
 export const panMockProviderFromFlag = (flag) => {
-  const s = typeof flag === 'string' ? flag.trim() : '';
+  const s = normalizePanMockFlag(flag);
   if (!s) return '';
   // pan_mock routing must use fixed flag recognition and must NOT depend on user-config aliases.
   if (!s.includes('-')) return '';
@@ -34,47 +41,28 @@ export const guessPreferredPanFromFlag = (flag) => {
 export const parseMockPasscodeFromRawName = (rawName) => {
   let t = typeof rawName === 'string' ? rawName.trim() : '';
   if (!t) return '';
+  t = t.replace(/\s*\[[^\]]*]\s*$/g, '').trim();
+  t = t.replace(/^\s*\[[^\]]*]\s*/g, '').trim();
   if (t.toLowerCase().endsWith('.mp4')) t = t.slice(0, -4);
+  if (t.toLowerCase().endsWith('-nopass')) t = t.slice(0, -7).trim();
+  if (t.toLowerCase().endsWith('_nopass')) t = t.slice(0, -7).trim();
   t = String(t || '').trim();
-  if (!t || t.toLowerCase() === 'nopass') return '';
-  return t;
+  if (!t) return '';
+  const lower = t.toLowerCase();
+  if (lower === 'nopass' || lower === 'none' || t === '无密码') return '';
+  const firstToken = String(t.split(/\s+/)[0] || '').trim();
+  return firstToken || '';
 };
 
 export const extractTianyiShareCodeAndAccessCode = (flag, rawName) => {
-  const label = typeof flag === 'string' ? flag.trim() : '';
-  const normalizeTianyiPass = (raw) => {
-    let t = typeof raw === 'string' ? raw.trim() : '';
-    if (!t) return '';
-    const lower = t.toLowerCase();
-    if (lower.endsWith('-nopass')) t = t.slice(0, -7);
-    else if (lower.endsWith('_nopass')) t = t.slice(0, -7);
-    return t.trim();
-  };
-  const pass = normalizeTianyiPass(parseMockPasscodeFromRawName(rawName));
+  const label = normalizePanMockFlag(flag);
+  const pass = typeof rawName === 'string' ? rawName.trim() : '';
   let shareCode = '';
-  let accessCode = '';
   if (label) {
-    const m = /(?:天意|天翼)-([A-Za-z0-9]{6,64})/.exec(label);
+    const m = /天意-([A-Za-z0-9]{6,64})/.exec(label);
     if (m && m[1]) shareCode = String(m[1]).trim();
   }
-  if (!pass) return { shareCode, accessCode };
-  if (pass.includes('_')) {
-    const seg = pass.split('_', 2);
-    if (!shareCode && seg[0] && String(seg[0]).trim()) shareCode = String(seg[0]).trim();
-    if (seg.length === 2) accessCode = String(seg[1] || '').trim();
-  } else if (pass.includes('-')) {
-    const seg = pass.split('-', 2);
-    if (!shareCode && seg[0] && String(seg[0]).trim()) shareCode = String(seg[0]).trim();
-    if (seg.length === 2) accessCode = String(seg[1] || '').trim();
-  } else {
-    if (!shareCode && /^(?:[A-Za-z0-9]{6,64})$/.test(pass)) {
-      shareCode = pass;
-    } else {
-      accessCode = pass;
-    }
-  }
-  if (accessCode.toLowerCase() === 'nopass') accessCode = '';
-  return { shareCode, accessCode };
+  return { shareCode, accessCode: pass };
 };
 
 export const scoreEpisodeDisplayName = (textRaw, titleLower) => {

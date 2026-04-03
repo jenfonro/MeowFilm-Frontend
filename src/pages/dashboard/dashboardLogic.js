@@ -483,7 +483,7 @@ function panMockProviderFromFlag(flag) {
 function extractTianyiShareCodeLike(flagOrURL) {
   const value = typeof flagOrURL === 'string' ? flagOrURL.trim() : '';
   if (!value) return '';
-  const match1 = value.match(/(?:天意|天翼)-([A-Za-z0-9]{6,64})/);
+  const match1 = value.match(/天意-([A-Za-z0-9]{6,64})/);
   if (match1 && match1[1]) return String(match1[1]).trim();
   const match2 = value.match(/^https?:\/\/cloud\.189\.cn\/t\/([A-Za-z0-9]{6,64})(?:\b|\/|$)/i);
   if (match2 && match2[1]) return String(match2[1]).trim();

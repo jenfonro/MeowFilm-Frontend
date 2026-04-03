@@ -86,15 +86,15 @@ export const buildPanSourcesFromDetail = (detail) => {
   }
   const playFrom = normalizeString(target && (target.resolvedPlayFrom || target.playFrom));
   const playUrl = normalizeString(target && (target.resolvedPlayUrl || target.playUrl));
-  if (!playFrom || !playUrl) return [];
+  if (!playFrom) return [];
   const fromParts = playFrom.split('$$$').map(normalizeString).filter(Boolean);
-  const urlParts = playUrl.split('$$$').map(normalizeString).filter(Boolean);
+  const urlParts = playUrl.split('$$$').map(normalizeString);
   const len = Math.max(fromParts.length, urlParts.length);
   const out = [];
   for (let i = 0; i < len; i += 1) {
     const baseLabel = normalizeString(fromParts[i]);
     const baseUrl = normalizeString(urlParts[i]);
-    if (!baseLabel || !baseUrl) continue;
+    if (!baseLabel) continue;
     const hasSubs = baseLabel.includes('|||') && baseUrl.includes('|||');
     const labelParts = baseLabel.includes('|||') ? baseLabel.split('|||').map(normalizeString) : [baseLabel];
     const urlSegParts = hasSubs ? baseUrl.split('|||').map(normalizeString) : [baseUrl];
