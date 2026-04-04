@@ -243,7 +243,9 @@
                           role="option"
                           :aria-selected="option.key === selectedPanSource ? 'true' : 'false'"
                           @click.stop="selectPanSource(option.key)"
-                        >{{ option.label }}</div>
+                        >
+                          {{ option.label }}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1229,11 +1231,11 @@ export default {
     showPanSourceRow() {
       if (!this.activeSitePlaybackItem) return false;
       if (this.selectedSiteResultItem) {
-        return !this.siteResultDetailLoading && this.currentPanSourceOptions.length > 0;
+        return !!(this.siteResultDetailData && this.currentPanSourceOptions.length > 0);
       }
       return !this.detailLoading && this.currentPanSourceOptions.length > 0;
     },
-    siteResultDetailResolutionPending() {
+    siteResultDetailResolutionIncomplete() {
       if (!this.selectedSiteResultItem) return false;
       if (this.siteResultDetailLoading) return true;
       const detail = this.siteResultDetailData && typeof this.siteResultDetailData === 'object'
@@ -1581,12 +1583,14 @@ export default {
     },
     showSeasonBar() {
       if (this.rawListMode) return false;
-      if (this.siteResultDetailResolutionPending) return false;
+      if (this.selectedSiteResultItem) return this.selectedSiteEpisodePanelState === 'episodes' && this.episodeSeasonOptions.length > 0;
+      if (this.siteResultDetailResolutionIncomplete) return false;
       return this.episodeSeasonOptions.length > 0;
     },
     showRangeBar() {
       if (this.rawListMode) return false;
-      if (this.siteResultDetailResolutionPending) return false;
+      if (this.selectedSiteResultItem) return this.selectedSiteEpisodePanelState === 'episodes' && this.episodeRangeOptions.length > 1;
+      if (this.siteResultDetailResolutionIncomplete) return false;
       return this.episodeRangeOptions.length > 1;
     },
     playSearchQuery() {
@@ -1694,6 +1698,48 @@ export default {
     siteDetailPanSources() {
       return buildPanSourcesFromDetailRuntime(this.siteResultDetailData);
     },
+    selectedSitePanState() {
+      if (!this.selectedSiteResultItem) {
+        return {
+          loading: false,
+          error: '',
+          hasSegments: false,
+          hasProjectedEpisodes: false,
+        };
+      }
+      const entry = this.currentPanSourceEntry;
+      const segments = getPanEntrySegments(entry);
+      return {
+        loading: !!(entry && entry.loading),
+        error: normalizeString(entry && entry.error),
+        hasSegments: segments.length > 0,
+        hasProjectedEpisodes: this.projectedEpisodeButtons.length > 0,
+      };
+    },
+    selectedSiteEpisodeStatusText() {
+      if (!this.selectedSiteResultItem) return '';
+      if (this.siteResultDetailError) return this.siteResultDetailError;
+      if (!this.siteResultDetailData) return '';
+      if (!this.currentPanSourceOptions.length) return '暂无数据';
+      if (!this.currentPanSourceEntry) return '暂无数据';
+      if (this.selectedSitePanState.loading) return '';
+      if (this.selectedSitePanState.error) return this.selectedSitePanState.error;
+      if (this.selectedSitePanState.hasProjectedEpisodes) return '';
+      if (this.selectedSitePanState.hasSegments) {
+        return this.rawListMode ? '' : '暂无匹配选集，可切换原始列表';
+      }
+      return '暂无数据';
+    },
+    selectedSiteEpisodePanelState() {
+      if (!this.selectedSiteResultItem) return 'episodes';
+      if (!this.siteResultDetailData) return 'loading';
+      if (!this.currentPanSourceEntry) return 'status';
+      if (this.selectedSitePanState.loading) return 'loading';
+      if (this.selectedSitePanState.hasProjectedEpisodes) return 'episodes';
+      if (this.selectedSitePanState.hasSegments && this.rawListMode) return 'raw';
+      if (this.selectedSiteEpisodeStatusText) return 'status';
+      return 'episodes';
+    },
     siteResultEpisodeStatusText() {
       if (this.showTmdbMovieCandidateList) {
         if (normalizeString(this.playError)) return normalizeString(this.playError);
@@ -1708,7 +1754,7 @@ export default {
       }
       if (!this.activeSitePlaybackItem) return '';
       if (this.selectedSiteResultItem) {
-        if (this.siteResultDetailError) return this.siteResultDetailError;
+        return this.selectedSiteEpisodeStatusText;
       } else if (this.detailLoading) {
         return '';
       }
@@ -1742,10 +1788,7 @@ export default {
         return 'movie-candidates';
       }
       if (this.selectedSiteResultItem) {
-        if (this.siteResultDetailResolutionPending) return 'loading';
-        if (this.rawListMode && this.showPanSourceRow) return 'raw';
-        if (this.siteResultEpisodeStatusText) return 'status';
-        return 'episodes';
+        return this.selectedSiteEpisodePanelState;
       }
       if (!this.isTmdbMode && this.activeSitePlaybackItem) {
         if (this.detailLoading) return 'loading';
@@ -3094,7 +3137,7 @@ export default {
         return;
       }
       if (this.selectedSiteResultItem) {
-        if (this.siteResultDetailResolutionPending || !this.currentPanSourceOptions.length || !this.rawListItems.length) return;
+        if (!this.siteResultDetailData || this.selectedSitePanState.loading || !this.currentPanSourceOptions.length || !this.rawListItems.length) return;
         this.syncPlaybackContextFromHistoryRow(row);
         return;
       }
