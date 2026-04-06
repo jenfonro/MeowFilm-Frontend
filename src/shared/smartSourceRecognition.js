@@ -5,6 +5,7 @@ import {
   tmdbGlobalEpisodeNoOf,
   tmdbSeasonEpisodeOfGlobal,
 } from './smartEpisodeMapping';
+import { normalizeSeasonEpisodeMarkers, parseChineseNumeralToInt } from './episodeMarkerNormalize';
 
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 const normalizeInt = (value) => {
@@ -114,36 +115,6 @@ const cleanMagicEpisodeText = (text, cleanRules) => {
   return normalizeString(out);
 };
 
-const parseChineseNumeralToInt = (raw) => {
-  const s = normalizeString(raw).replace(/两/g, '二');
-  if (!s) return 0;
-  if (/^\d+$/.test(s)) return normalizeInt(s);
-  const digit = (ch) => ({ 零: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }[ch] ?? -1);
-  const parseSection = (sec) => {
-    let total = 0;
-    let num = 0;
-    for (let i = 0; i < sec.length; i += 1) {
-      const ch = sec[i];
-      const d = digit(ch);
-      if (d >= 0) {
-        num = d;
-        continue;
-      }
-      const unit = ch === '十' ? 10 : ch === '百' ? 100 : ch === '千' ? 1000 : 0;
-      if (!unit) continue;
-      if (!num) num = 1;
-      total += num * unit;
-      num = 0;
-    }
-    return total + num;
-  };
-  if (s.includes('万')) {
-    const [left, right] = s.split('万');
-    return parseSection(left || '') * 10000 + parseSection(right || '');
-  }
-  return parseSection(s);
-};
-
 const extractSeasonHintFromText = (text) => {
   const raw = normalizeString(text);
   if (!raw) return 0;
@@ -157,8 +128,9 @@ const extractSeasonHintFromText = (text) => {
 
 const extractNormalizedSeasonEpisode = (text, compiledRules, cleanRules) => {
   const rawText = normalizeString(text);
-  const cleaned = cleanMagicEpisodeText(rawText, cleanRules);
-  if (!rawText && !cleaned) return { season: 0, episode: 0 };
+  const normalizedRawText = normalizeSeasonEpisodeMarkers(rawText);
+  const cleaned = normalizeSeasonEpisodeMarkers(cleanMagicEpisodeText(normalizedRawText || rawText, cleanRules));
+  if (!normalizedRawText && !cleaned) return { season: 0, episode: 0 };
   const parseNormalized = (value) => {
     const input = normalizeString(value);
     if (!input) return null;
@@ -175,7 +147,7 @@ const extractNormalizedSeasonEpisode = (text, compiledRules, cleanRules) => {
     }
     return null;
   };
-  const direct = parseNormalized(rawText) || parseNormalized(cleaned);
+  const direct = parseNormalized(normalizedRawText) || parseNormalized(cleaned);
   if (direct && direct.episode > 0) return direct;
   for (let i = 0; i < compiledRules.length; i += 1) {
     const rule = compiledRules[i];
@@ -192,7 +164,7 @@ const extractNormalizedSeasonEpisode = (text, compiledRules, cleanRules) => {
           }
         })()
       : ((matched[2] != null ? String(matched[2]) : '') || (matched[1] != null ? String(matched[1]) : '') || String(matched[0] || ''));
-    const parsed = parseNormalized(normalized);
+    const parsed = parseNormalized(normalizeSeasonEpisodeMarkers(normalized));
     if (parsed && parsed.episode > 0) return parsed;
   }
   return { season: 0, episode: 0 };

@@ -2299,6 +2299,7 @@ import {
   saveMetadataSettings,
   validateSearchDisplayMode
 } from './dashboardLogic';
+import { normalizeSeasonEpisodeMarkers } from '../../shared/episodeMarkerNormalize';
 
 const props = defineProps({
   bootstrap: {
@@ -5160,12 +5161,12 @@ function runMagicEpisodeRuleTest() {
     setMagicTestOutput(magicEpisodeRuleTestOutput, 'error', '无匹配规则');
     return;
   }
-  let cleaned = filename;
+  let cleaned = normalizeSeasonEpisodeMarkers(filename);
   magicEpisodeCleanRegexRules.value.forEach((rule) => {
     const regex = buildRegexFromInput(rule, { defaultFlags: 'ig', forceGlobal: true });
     if (regex) cleaned = cleaned.replace(regex, ' ');
   });
-  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  cleaned = normalizeSeasonEpisodeMarkers(cleaned.replace(/\s+/g, ' ').trim());
   const failures = [];
   for (let index = 0; index < list.length; index += 1) {
     const rule = list[index];
@@ -5183,7 +5184,7 @@ function runMagicEpisodeRuleTest() {
       setMagicTestOutput(magicEpisodeRuleTestOutput, 'success', `命中第 ${index + 1} 条：未设置 replace（无改写）`);
       return;
     }
-    const output = cleaned.replace(regex, replace);
+    const output = normalizeSeasonEpisodeMarkers(cleaned.replace(regex, replace));
     if (!output) {
       setMagicTestOutput(magicEpisodeRuleTestOutput, 'error', `命中第 ${index + 1} 条，但改写失败`);
       return;
