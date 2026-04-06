@@ -14,6 +14,14 @@
       <div v-show="showBufferRing" class="m-buffer-ring" aria-hidden="true"></div>
 
       <div class="yt-ui" :class="{ 'yt-ui--show': overlayVisible }">
+        <div v-if="portraitMode" class="yt-top" @click.stop @mousedown.stop @touchstart.stop>
+          <button class="yt-top__back" type="button" aria-label="退出竖屏" title="退出竖屏" @click.stop="emitExitPortrait">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <div class="yt-top__title">{{ portraitTopText }}</div>
+        </div>
 	      <div v-if="!isMobile" class="yt-bar" @click.stop @mousedown.stop @touchstart.stop>
 	        <div class="yt-progress" :style="{ '--yt-progress-p': progressFrac, '--yt-buffer-p': bufferedFrac }">
 	          <div class="yt-progress__track" aria-hidden="true">
@@ -38,8 +46,8 @@
             @blur="onSeekCancel"
           />
         </div>
-        <div class="yt-row">
-          <div class="yt-pill yt-left">
+        <div class="yt-row" ref="desktopRowEl">
+          <div class="yt-pill yt-left" ref="leftPillEl">
             <button class="yt-btn" type="button" :aria-label="playing ? '暂停' : '播放'" @click.stop="togglePlay">
               <svg viewBox="0 0 24 24" class="yt-ico">
                 <template v-if="playing">
@@ -102,8 +110,8 @@
             <div class="yt-time">{{ displayTimeLabel }}</div>
           </div>
 
-          <div class="yt-pill yt-right">
-            <div v-for="m in extraMenusResolved" :key="m.key" class="yt-proxy" :ref="(el) => setExtraMenuEl(m.key, el)">
+          <div class="yt-pill yt-right" ref="rightPillEl">
+            <div v-for="m in extraMenusVisible" :key="m.key" class="yt-proxy" :ref="(el) => setExtraMenuEl(m.key, el)">
               <button
                 class="yt-proxy__btn"
                 type="button"
@@ -129,7 +137,7 @@
             </div>
 
             <button
-              v-for="a in extraActionsResolved"
+              v-for="a in extraActionsVisible"
               :key="a.key"
               class="yt-proxy__btn"
               type="button"
@@ -140,7 +148,7 @@
               {{ a.label }}
             </button>
 
-            <div v-if="goProxyOptions.length > 1" class="yt-proxy" ref="goProxyEl">
+            <div v-if="showGoProxyControl" class="yt-proxy" ref="goProxyEl">
               <button
                 class="yt-proxy__btn"
                 type="button"
@@ -164,6 +172,7 @@
               </div>
             </div>
             <button
+              v-if="showPipControl"
               class="yt-btn"
               type="button"
               :aria-label="isPip ? '退出画中画' : '画中画'"
@@ -373,7 +382,7 @@
 </template>
 
 <script setup>
-	import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+	import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 	import Artplayer from 'artplayer';
 
 	const emit = defineEmits([
@@ -388,6 +397,7 @@
 		'goproxyselect',
 		'extramenuselect',
 		'extraaction',
+    'exit-portrait',
 	]);
 
 	const props = defineProps({
@@ -404,14 +414,19 @@
 		extraMenus: { type: Array, default: () => [] },
 		extraActions: { type: Array, default: () => [] },
 		toastText: { type: String, default: '' },
+    portraitMode: { type: Boolean, default: false },
+    portraitTopText: { type: String, default: '' },
 	});
 
-	const container = ref(null);
-	const shell = ref(null);
-	const settingEl = ref(null);
-	const goProxyEl = ref(null);
-	const extraMenuEls = new Map();
-	const teleportTarget = ref(null);
+const container = ref(null);
+const shell = ref(null);
+const settingEl = ref(null);
+const goProxyEl = ref(null);
+const desktopRowEl = ref(null);
+const leftPillEl = ref(null);
+const rightPillEl = ref(null);
+const extraMenuEls = new Map();
+const teleportTarget = ref(null);
 
 	const extraMenuOpenKey = ref('');
 
@@ -422,12 +437,16 @@ let cleanupNativeVideoListeners = null;
 let cleanupPlayerElListeners = null;
 let cleanupNoCorsEnforcer = null;
 let cleanupInfoExtraObserver = null;
+let cleanupDesktopLayoutObserver = null;
 let infoExtraSyncing = false;
 
 let timeUpdateRaf = 0;
 let timeUpdatePending = 0;
 let timeUpdateEmitAt = 0;
 let desktopClickTimer = 0;
+let rightFitRaf = 0;
+let rightFitSyncing = false;
+let rightFitReschedule = false;
 
 const playing = ref(false);
 const currentTime = ref(0);
@@ -446,15 +465,24 @@ const aspectRatio = ref('default');
 	const volumeHover = ref(false);
 	const uiVisible = ref(true);
 	const desktopControlsVisible = ref(true);
-	const isFullscreen = ref(false);
-	const isPip = ref(false);
-	const isMobile = ref(false);
-	const isIos = ref(false);
+const rightHiddenCount = ref(0);
+const isFullscreen = ref(false);
+const isPip = ref(false);
+const isMobile = ref(false);
+const isIos = ref(false);
+const portraitMode = computed(() => !!props.portraitMode);
+const portraitTopText = computed(() => String(props.portraitTopText || '').trim());
 const overlayVisible = computed(() => {
 	  const hasExtraMenu = !!extraMenuOpenKey.value;
 	  if (isMobile.value) return uiVisible.value || !playing.value || settingsOpen.value || goProxyMenuOpen.value || hasExtraMenu;
 	  return desktopControlsVisible.value || settingsOpen.value || goProxyMenuOpen.value || hasExtraMenu || !playing.value;
 	});
+
+const emitExitPortrait = () => {
+  try {
+    emit('exit-portrait');
+  } catch (_e) {}
+};
 
 const extraMenusResolved = computed(() => {
   const list = Array.isArray(props.extraMenus) ? props.extraMenus : [];
@@ -489,8 +517,209 @@ const extraActionsResolved = computed(() => {
       if (!key || !label) return null;
       return { key, label, ariaLabel, disabled };
     })
-    .filter(Boolean);
+	    .filter(Boolean);
 });
+
+const rightOptionalKeys = computed(() => {
+  const keys = [];
+  for (const m of extraMenusResolved.value) keys.push(`menu:${m.key}`);
+  for (const a of extraActionsResolved.value) keys.push(`action:${a.key}`);
+  if (Array.isArray(props.goProxyOptions) && props.goProxyOptions.length > 1) keys.push('goproxy');
+  keys.push('pip');
+  return keys;
+});
+
+const rightHiddenKeySet = computed(() => {
+  const keys = rightOptionalKeys.value;
+  if (!keys.length) return new Set();
+  const count = Math.max(0, Math.min(Number(rightHiddenCount.value) || 0, keys.length));
+  return new Set(keys.slice(0, count));
+});
+
+const extraMenusVisible = computed(() =>
+  extraMenusResolved.value.filter((m) => !rightHiddenKeySet.value.has(`menu:${m.key}`))
+);
+const extraActionsVisible = computed(() =>
+  extraActionsResolved.value.filter((a) => !rightHiddenKeySet.value.has(`action:${a.key}`))
+);
+const showGoProxyControl = computed(
+  () => Array.isArray(props.goProxyOptions) && props.goProxyOptions.length > 1 && !rightHiddenKeySet.value.has('goproxy')
+);
+const showPipControl = computed(() => !rightHiddenKeySet.value.has('pip'));
+
+const clampRightHiddenCount = (next) => {
+  const total = rightOptionalKeys.value.length;
+  const raw = Number(next);
+  const normalized = Number.isFinite(raw) ? Math.floor(raw) : 0;
+  return Math.max(0, Math.min(normalized, total));
+};
+
+const getDesktopRowGap = () => {
+  try {
+    const row = desktopRowEl.value;
+    if (!row || typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return 0;
+    const style = window.getComputedStyle(row);
+    const raw =
+      style.columnGap ||
+      style.gap ||
+      style.getPropertyValue('column-gap') ||
+      style.getPropertyValue('gap') ||
+      '0';
+    const px = parseFloat(raw);
+    return Number.isFinite(px) ? Math.max(0, px) : 0;
+  } catch (_e) {
+    return 0;
+  }
+};
+
+const getDesktopRowOverflow = () => {
+  try {
+    const row = desktopRowEl.value;
+    const left = leftPillEl.value;
+    const right = rightPillEl.value;
+    if (!row || !left || !right) return 0;
+    const rowWidth = row.clientWidth || 0;
+    const leftWidth = left.offsetWidth || 0;
+    const rightWidth = right.offsetWidth || 0;
+    const used = leftWidth + rightWidth + getDesktopRowGap();
+    return used - rowWidth;
+  } catch (_e) {
+    return 0;
+  }
+};
+
+const applyRightHiddenCount = async (next) => {
+  const normalized = clampRightHiddenCount(next);
+  if (rightHiddenCount.value === normalized) return;
+  rightHiddenCount.value = normalized;
+  await nextTick();
+};
+
+const syncDesktopRightControlsFit = async () => {
+  if (rightFitSyncing) {
+    rightFitReschedule = true;
+    return;
+  }
+  rightFitSyncing = true;
+  try {
+    const total = rightOptionalKeys.value.length;
+    if (!total || isMobile.value) {
+      await applyRightHiddenCount(0);
+      return;
+    }
+    if (!desktopRowEl.value || !leftPillEl.value || !rightPillEl.value) {
+      await applyRightHiddenCount(0);
+      return;
+    }
+
+    let hidden = clampRightHiddenCount(rightHiddenCount.value);
+    await applyRightHiddenCount(hidden);
+
+    let overflow = getDesktopRowOverflow();
+    while (overflow > 0.5 && hidden < total) {
+      hidden += 1;
+      await applyRightHiddenCount(hidden);
+      overflow = getDesktopRowOverflow();
+    }
+
+    while (hidden > 0) {
+      const probeHidden = hidden - 1;
+      await applyRightHiddenCount(probeHidden);
+      const probeOverflow = getDesktopRowOverflow();
+      if (probeOverflow > 0.5) {
+        await applyRightHiddenCount(hidden);
+        break;
+      }
+      hidden = probeHidden;
+    }
+  } finally {
+    rightFitSyncing = false;
+    if (rightFitReschedule) {
+      rightFitReschedule = false;
+      scheduleSyncDesktopRightControlsFit();
+    }
+  }
+};
+
+const scheduleSyncDesktopRightControlsFit = () => {
+  if (typeof window === 'undefined') return;
+  if (rightFitRaf) {
+    try {
+      window.cancelAnimationFrame(rightFitRaf);
+    } catch (_e) {}
+    rightFitRaf = 0;
+  }
+  if (typeof window.requestAnimationFrame !== 'function') {
+    window.setTimeout(() => {
+      syncDesktopRightControlsFit();
+    }, 0);
+    return;
+  }
+  rightFitRaf = window.requestAnimationFrame(() => {
+    rightFitRaf = 0;
+    syncDesktopRightControlsFit();
+  });
+};
+
+const bindDesktopLayoutObserver = () => {
+  try {
+    if (typeof cleanupDesktopLayoutObserver === 'function') cleanupDesktopLayoutObserver();
+  } catch (_e) {}
+  cleanupDesktopLayoutObserver = null;
+
+  try {
+    if (typeof ResizeObserver !== 'function') return;
+    const targets = [shell.value, desktopRowEl.value, leftPillEl.value, rightPillEl.value].filter(Boolean);
+    if (!targets.length) return;
+    const obs = new ResizeObserver(() => {
+      scheduleSyncDesktopRightControlsFit();
+    });
+    for (const target of targets) {
+      try {
+        obs.observe(target);
+      } catch (_e) {}
+    }
+    cleanupDesktopLayoutObserver = () => {
+      try {
+        obs.disconnect();
+      } catch (_e) {}
+    };
+  } catch (_e) {
+    cleanupDesktopLayoutObserver = null;
+  }
+};
+
+watch(
+  () => rightHiddenKeySet.value,
+  (hiddenSet) => {
+    if (extraMenuOpenKey.value && hiddenSet.has(`menu:${extraMenuOpenKey.value}`)) extraMenuOpenKey.value = '';
+    if (goProxyMenuOpen.value && hiddenSet.has('goproxy')) goProxyMenuOpen.value = false;
+  }
+);
+
+watch(
+  [desktopRowEl, leftPillEl, rightPillEl, isMobile],
+  () => {
+    bindDesktopLayoutObserver();
+    scheduleSyncDesktopRightControlsFit();
+  },
+  { flush: 'post' }
+);
+
+watch(
+  () =>
+    [
+      rightOptionalKeys.value.join('|'),
+      props.goProxyLabel || '',
+      extraMenuOpenKey.value,
+      goProxyMenuOpen.value ? '1' : '0',
+      settingsOpen.value ? '1' : '0',
+    ].join('||'),
+  () => {
+    scheduleSyncDesktopRightControlsFit();
+  },
+  { immediate: true, flush: 'post' }
+);
 
 const toastText = computed(() => (props.toastText || '').trim());
 const toastVisible = ref(false);
@@ -704,6 +933,8 @@ const isUiControlTarget = (target) => {
   if (!target || typeof target.closest !== 'function') return false;
   return !!target.closest(
     [
+      '.yt-top',
+      '.yt-top__back',
       '.yt-bar',
       '.yt-setting',
       '.yt-setting__menu',
@@ -1945,6 +2176,7 @@ onMounted(() => {
         // Some browsers (and some fullscreen implementations) may re-parent elements,
         // making containment checks unreliable. For our UI, "any fullscreen" is enough.
         isFullscreen.value = !!document.fullscreenElement;
+        scheduleSyncDesktopRightControlsFit();
         if (!isMobile.value) {
           desktopControlsVisible.value = true;
           scheduleDesktopAutoHide();
@@ -1964,6 +2196,8 @@ onMounted(() => {
       };
     }
   } catch (_) {}
+  bindDesktopLayoutObserver();
+  scheduleSyncDesktopRightControlsFit();
 });
 watch(
   () => props.url,
@@ -1985,6 +2219,12 @@ watch(
 	);
 
 onBeforeUnmount(() => {
+  if (rightFitRaf) {
+    try {
+      if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(rightFitRaf);
+    } catch (_e) {}
+    rightFitRaf = 0;
+  }
   if (hideTimer) {
     window.clearTimeout(hideTimer);
     hideTimer = 0;
@@ -2001,6 +2241,10 @@ onBeforeUnmount(() => {
     }
   } catch (_e) {}
   mediaQuery = null;
+  try {
+    if (typeof cleanupDesktopLayoutObserver === 'function') cleanupDesktopLayoutObserver();
+  } catch (_e) {}
+  cleanupDesktopLayoutObserver = null;
   document.removeEventListener('mousedown', onDocDown, true);
   try {
     const el = shell.value;
@@ -2073,11 +2317,13 @@ const play = async () => {
   --yt-pill-pad-x: 10px;
   --yt-pill-gap: 8px;
   --yt-time-size: 12px;
+  --yt-font-family: "PingFang SC", "Helvetica Neue", "Microsoft YaHei", Roboto, Arial, sans-serif;
 
   position: relative;
   width: 100%;
   height: 100%;
   background: #000;
+  border-radius: var(--play-player-radius, 12px);
 }
 
 .tv-artplayer.tv-artplayer--fullscreen {
@@ -2093,6 +2339,8 @@ const play = async () => {
 .artplayer-root {
   width: 100%;
   height: 100%;
+  border-radius: var(--play-player-radius, 12px);
+  overflow: hidden;
 }
 
 .yt-toast {
@@ -2121,6 +2369,8 @@ const play = async () => {
   position: relative;
   width: 100% !important;
   height: 100% !important;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 :deep(.art-contextmenus) {
@@ -2204,6 +2454,8 @@ const play = async () => {
   right: 0;
   bottom: 0;
   z-index: 110;
+  font-family: var(--yt-font-family);
+  text-shadow: none;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -2214,6 +2466,83 @@ const play = async () => {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+}
+
+.yt-top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 120;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding-top: max(10px, calc(env(safe-area-inset-top) + 8px));
+  padding-left: 12px;
+  padding-right: 12px;
+  pointer-events: auto;
+}
+
+.yt-top::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.46) 0%,
+    rgba(0, 0, 0, 0.24) 52%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  pointer-events: none;
+}
+
+.yt-top__back {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  height: 32px;
+  width: 32px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.96);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s ease;
+  touch-action: manipulation;
+}
+
+.yt-top__back:hover {
+  opacity: 0.85;
+}
+
+.yt-top__back svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+.yt-top__title {
+  position: relative;
+  z-index: 1;
+  margin-left: 8px;
+  min-width: 0;
+  min-height: 32px;
+  max-width: min(72vw, 520px);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 32px;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .yt-progress__range {

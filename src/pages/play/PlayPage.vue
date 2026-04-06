@@ -2,6 +2,7 @@
   <main
     id="playPage"
     class="play-page play-page-root"
+    :class="{ 'play-page--portrait': isPortraitMode }"
   >
     <div class="play-page__content">
       <div class="play-header ui-page-header">
@@ -29,6 +30,20 @@
       <div class="play-page__main">
         <div class="play-episode-toggle-wrap">
           <button
+            id="playPortraitToggle"
+            class="play-episode-toggle"
+            type="button"
+            :title="portraitModeToggleTitleText"
+            :aria-label="portraitModeToggleTitleText"
+            @click="togglePortraitMode"
+          >
+            <svg class="play-episode-toggle__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="7.5" y="3.5" width="9" height="17" rx="2"></rect>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h4"></path>
+            </svg>
+            <span class="play-episode-toggle__label">{{ portraitModeToggleLabelText }}</span>
+          </button>
+          <button
             id="episodePanelToggle"
             class="play-episode-toggle"
             type="button"
@@ -51,9 +66,9 @@
           </button>
         </div>
 
-        <div id="playGrid" ref="playGridEl" class="play-grid" :class="{ 'play-grid--panel-hidden': isEpisodePanelCollapsed }">
-          <div id="playerArea" ref="playerAreaEl" class="play-player-area">
-            <div ref="playerAreaContentEl" class="play-player-stack">
+	        <div id="playGrid" ref="playGridEl" class="play-grid" :class="{ 'play-grid--panel-hidden': isEpisodePanelCollapsed }">
+	          <div id="playerArea" ref="playerAreaEl" class="play-player-area" :style="portraitPlayerAreaStyle">
+	            <div ref="playerAreaContentEl" class="play-player-stack">
               <div class="play-video-ratio">
                 <div class="play-video-ratio__inner">
                   <ArtPlayer
@@ -62,6 +77,8 @@
                     :poster="''"
                     :headers="playerHeaders"
                     :title="displayTitle"
+                    :portrait-mode="isPortraitMode"
+                    :portrait-top-text="portraitTopTitleEpisodeText"
                     :stats-extra="playerStatsExtra"
                     :extra-menus="playerExtraMenus"
                     :extra-actions="playerExtraActions"
@@ -81,6 +98,7 @@
                     @goproxyselect="onGoProxySelect"
                     @extramenuselect="onPlayerExtraMenuSelect"
                     @extraaction="onPlayerExtraAction"
+                    @exit-portrait="togglePortraitMode"
                   />
                   <div
                     v-show="showPlayerStatusOverlay"
@@ -1191,7 +1209,17 @@ export default {
       if (!this.siteSourceSelectWidth) return null;
       return { width: `${this.siteSourceSelectWidth}px` };
     },
+    isPortraitMode() {
+      return !!this.portraitMode;
+    },
+    portraitModeToggleLabelText() {
+      return this.isPortraitMode ? '退出竖屏' : '竖屏';
+    },
+    portraitModeToggleTitleText() {
+      return this.isPortraitMode ? '退出竖屏播放模式' : '进入竖屏播放模式';
+    },
     isEpisodePanelCollapsed() {
+      if (this.isPortraitMode) return true;
       return this.episodePanelHidden && this.viewportWidth >= 1024;
     },
     episodePanelToggleLabelText() {
@@ -1203,6 +1231,12 @@ export default {
     episodePanelStyle() {
       if (this.playerAreaHeight <= 0 || this.viewportWidth < 768) return null;
       return { height: `${this.playerAreaHeight}px` };
+    },
+    portraitPlayerAreaStyle() {
+      if (!this.isPortraitMode) return null;
+      const width = Math.max(0, normalizeInt(this.portraitPlayerAreaWidth));
+      if (width <= 0) return null;
+      return { width: `${width}px` };
     },
     thirdPartyCollapsedPlayers() {
       return THIRD_PARTY_PLAYERS.slice(0, 3);
@@ -2185,6 +2219,33 @@ export default {
       }
       return null;
     },
+    portraitTopEpisodeTarget() {
+      if (this.selectedSiteResultItem) {
+        const projected = this.projectedSiteEpisodeItems.find((item) => this.isCurrentProjectedPlaybackSelection(item)) || null;
+        if (projected) {
+          return {
+            season: Math.max(1, normalizeInt(projected && projected.season) || 1),
+            episode: normalizeInt(projected && projected.no),
+          };
+        }
+        return null;
+      }
+      return this.currentPrimaryPlaybackEpisodeTarget;
+    },
+    portraitEpisodeText() {
+      const target = this.portraitTopEpisodeTarget;
+      const episodeNo = normalizeInt(target && target.episode);
+      if (episodeNo <= 0) return '';
+      const seasonNo = Math.max(1, normalizeInt(target && target.season) || 1);
+      if (this.episodeSeasonRows.length > 1) return `第${seasonNo}季第${episodeNo}集`;
+      return `第${episodeNo}集`;
+    },
+    portraitTopTitleEpisodeText() {
+      const title = normalizeString(this.displayTitle);
+      const episodeText = normalizeString(this.portraitEpisodeText);
+      if (title && episodeText) return `${title}·${episodeText}`;
+      return title || episodeText;
+    },
     goProxyUiEligible() {
       const settings = this.runtimeSettings && typeof this.runtimeSettings === 'object' ? this.runtimeSettings : null;
       if (!settings || !settings.goProxyEnabled) return false;
@@ -2324,9 +2385,12 @@ export default {
       siteSourceOptions: [],
       selectedSiteSource: '',
       selectedPanSource: '',
+      portraitMode: false,
       episodePanelHidden: false,
+      episodePanelHiddenBeforePortrait: false,
       siteSourceResizeObserver: null,
       viewportWidth: typeof window === 'undefined' ? 0 : Math.max(0, normalizeInt(window.innerWidth)),
+      portraitPlayerAreaWidth: 0,
       playerAreaHeight: 0,
       playerAreaResizeObserver: null,
       thirdPartyExpanded: false,
@@ -4665,6 +4729,20 @@ export default {
       this.cacheRecognitionForCurrentSiteResult();
       this.syncHistoryDisplayContextIfReady();
     },
+    togglePortraitMode() {
+      const entering = !this.isPortraitMode;
+      if (entering) {
+        this.seedPortraitPlayerAreaWidth();
+        this.episodePanelHiddenBeforePortrait = this.episodePanelHidden;
+        this.episodePanelHidden = true;
+      } else if (this.viewportWidth >= 1024) {
+        this.episodePanelHidden = !!this.episodePanelHiddenBeforePortrait;
+      }
+      this.portraitMode = entering;
+      this.siteSourceOpen = false;
+      this.panSourceOpen = false;
+      this.$nextTick(() => this.syncPlayerLayoutMetrics());
+    },
     toggleEpisodePanel() {
       if (this.viewportWidth < 1024) return;
       this.episodePanelHidden = !this.episodePanelHidden;
@@ -4953,6 +5031,7 @@ export default {
     },
     syncPlayerLayoutMetrics() {
       this.syncViewportWidth();
+      this.syncPortraitPlayerAreaWidth();
       this.syncPlayerAreaHeight();
     },
     handleViewportResize() {
@@ -4965,17 +5044,52 @@ export default {
         : 0;
       this.playerAreaHeight = height > 0 ? height : 0;
     },
+    syncPortraitPlayerAreaWidth() {
+      if (!this.isPortraitMode) {
+        this.portraitPlayerAreaWidth = 0;
+        return;
+      }
+      const stageEl = this.$refs.playGridEl;
+      const stageRect = stageEl && typeof stageEl.getBoundingClientRect === 'function'
+        ? stageEl.getBoundingClientRect()
+        : null;
+      const stageWidth = stageRect ? Math.max(0, Math.floor(stageRect.width)) : 0;
+      const stageHeight = stageRect ? Math.max(0, Math.floor(stageRect.height)) : 0;
+      if (stageWidth <= 0 || stageHeight <= 0) {
+        this.portraitPlayerAreaWidth = 0;
+        return;
+      }
+      const PORTRAIT_ASPECT = 9 / 16;
+      const widthByHeight = stageHeight * PORTRAIT_ASPECT;
+      const nextWidth = Math.max(0, Math.floor(Math.min(stageWidth, widthByHeight)));
+      this.portraitPlayerAreaWidth = nextWidth > 0 ? nextWidth : 0;
+    },
+    seedPortraitPlayerAreaWidth() {
+      if (typeof window === 'undefined') return;
+      const viewportWidth = Math.max(0, normalizeInt(window.innerWidth));
+      const viewportHeight = Math.max(0, normalizeInt(window.innerHeight));
+      if (viewportWidth <= 0 || viewportHeight <= 0) return;
+      const PORTRAIT_ASPECT = 9 / 16;
+      const portraitStageGapTop = 10;
+      const portraitStageGapBottom = 10;
+      const usableHeight = Math.max(0, viewportHeight - portraitStageGapTop - portraitStageGapBottom);
+      const widthByHeight = usableHeight * PORTRAIT_ASPECT;
+      const nextWidth = Math.max(0, Math.floor(Math.min(viewportWidth, widthByHeight)));
+      if (nextWidth > 0) this.portraitPlayerAreaWidth = nextWidth;
+    },
     bindPlayerAreaHeight() {
       this.$nextTick(() => {
-        this.syncPlayerAreaHeight();
+        this.syncPlayerLayoutMetrics();
         if (this.playerAreaResizeObserver) {
           this.playerAreaResizeObserver.disconnect();
           this.playerAreaResizeObserver = null;
         }
-        const el = this.$refs.playerAreaContentEl || this.$refs.playerAreaEl;
-        if (typeof ResizeObserver === 'function' && el) {
-          this.playerAreaResizeObserver = new ResizeObserver(() => this.syncPlayerAreaHeight());
-          this.playerAreaResizeObserver.observe(el);
+        const playerEl = this.$refs.playerAreaContentEl || this.$refs.playerAreaEl;
+        const gridEl = this.$refs.playGridEl;
+        if (typeof ResizeObserver === 'function' && (playerEl || gridEl)) {
+          this.playerAreaResizeObserver = new ResizeObserver(() => this.syncPlayerLayoutMetrics());
+          if (playerEl) this.playerAreaResizeObserver.observe(playerEl);
+          if (gridEl && gridEl !== playerEl) this.playerAreaResizeObserver.observe(gridEl);
         }
       });
     },
@@ -5163,6 +5277,8 @@ export default {
 </script>
 <style>
 .play-page {
+  --play-player-radius: 12px;
+  --play-video-ratio-padding-top: 56.25%;
   flex: 1 1 auto;
   padding-top: calc(3rem + env(safe-area-inset-top));
   padding-bottom: calc(3.5rem + env(safe-area-inset-bottom));
@@ -5223,15 +5339,66 @@ export default {
   padding-right: var(--play-main-inset);
 }
 
+.play-page--portrait {
+  --portrait-stage-gap-top: 10px;
+  --portrait-stage-gap-bottom: 10px;
+  --play-player-radius: 18px;
+  --play-video-ratio-padding-top: 177.7777778%;
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  width: 100vw;
+  height: 100svh;
+  min-height: 100svh;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .play-page--portrait {
+    z-index: 1;
+  }
+}
+
+.play-page--portrait .play-page__content {
+  --play-main-inset: 0px;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.play-page--portrait .play-header {
+  display: none;
+}
+
+.play-page--portrait .play-page__main {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 0;
+  padding-top: var(--portrait-stage-gap-top);
+  padding-bottom: var(--portrait-stage-gap-bottom);
+  padding-left: 0;
+  padding-right: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
 .play-episode-toggle-wrap {
   display: none;
+  gap: 8px;
 }
 
 @media (min-width: 1024px) {
   .play-episode-toggle-wrap {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
   }
+}
+
+.play-page--portrait .play-episode-toggle-wrap {
+  display: none !important;
 }
 
 .play-episode-toggle {
@@ -5306,9 +5473,29 @@ export default {
   align-items: start;
 }
 
+.play-page--portrait .play-grid {
+  gap: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) !important;
+  place-items: center;
+  overflow: hidden;
+}
+
 .play-player-area {
-  border-radius: 12px;
+  border-radius: var(--play-player-radius);
   border: 1px solid transparent;
+  overflow: hidden;
+}
+
+.play-page--portrait .play-player-area {
+  width: 100%;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  min-height: 0;
+  border-width: 0;
 }
 
 .dark .play-player-area {
@@ -5423,6 +5610,10 @@ export default {
   padding: 18px;
   background: radial-gradient(circle at 50% 45%, rgba(2, 6, 23, 0.78) 0%, rgba(2, 6, 23, 0.35) 55%, rgba(2, 6, 23, 0) 100%);
   backdrop-filter: none;
+}
+
+.play-page--portrait .play-player-overlay {
+  background: transparent;
 }
 
 .play-player-overlay__panel {
@@ -5935,6 +6126,10 @@ export default {
     grid-column: 1 / -1 !important;
   }
 
+  .play-page--portrait #playerArea {
+    grid-column: 1 / -1 !important;
+  }
+
   #playerArea {
     grid-column: 1 / 2 !important;
   }
@@ -5952,7 +6147,7 @@ export default {
   width: 100%;
   background: #000;
   min-height: 240px;
-  border-radius: 12px;
+  border-radius: var(--play-player-radius);
   overflow: hidden;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
 }
@@ -5960,7 +6155,7 @@ export default {
 .play-video-ratio::before {
   content: "";
   display: block;
-  padding-top: 56.25%;
+  padding-top: var(--play-video-ratio-padding-top);
 }
 
 .play-video-ratio__inner {
@@ -5968,12 +6163,18 @@ export default {
   inset: 0;
   width: 100%;
   height: 100%;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 .play-player-stack {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.play-page--portrait .play-thirdparty-bar {
+  display: none;
 }
 
 .play-thirdparty-btn,
@@ -6052,17 +6253,6 @@ export default {
   }
 }
 
-/* iOS Safari: videos can go "audio-only black screen" when their parent clips (border-radius + overflow hidden).
-   On iOS, avoid clipping the video element; keep layout responsive without relying on fixed pixels. */
-@supports (-webkit-touch-callout: none) {
-  .play-video-ratio {
-    border-radius: 0 !important;
-    overflow: visible !important;
-    box-shadow: none !important;
-  }
-}
-
-
 .episode-resizer {
   display: none;
 }
@@ -6136,6 +6326,10 @@ export default {
   padding: 16px;
   border: 1px solid rgba(229, 231, 235, 0.3);
   backdrop-filter: blur(8px);
+}
+
+.play-page--portrait .play-detail {
+  display: none;
 }
 
 @media (min-width: 640px) {
