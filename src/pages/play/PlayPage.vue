@@ -28,18 +28,32 @@
 
       <div class="play-page__main">
         <div class="play-episode-toggle-wrap">
-          <button id="episodePanelToggle" class="play-episode-toggle" type="button" title="隐藏选集面板">
-            <svg id="episodePanelToggleIcon" class="play-episode-toggle__icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button
+            id="episodePanelToggle"
+            class="play-episode-toggle"
+            type="button"
+            :title="episodePanelToggleTitleText"
+            :aria-label="episodePanelToggleTitleText"
+            @click="toggleEpisodePanel"
+          >
+            <svg
+              id="episodePanelToggleIcon"
+              class="play-episode-toggle__icon"
+              :class="{ 'play-episode-toggle__icon--collapsed': isEpisodePanelCollapsed }"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
-            <span id="episodePanelToggleLabel" class="play-episode-toggle__label">隐藏</span>
+            <span id="episodePanelToggleLabel" class="play-episode-toggle__label">{{ episodePanelToggleLabelText }}</span>
             <div id="episodePanelToggleDot" class="play-episode-toggle__dot"></div>
           </button>
         </div>
 
-        <div id="playGrid" ref="playGridEl" class="play-grid">
+        <div id="playGrid" ref="playGridEl" class="play-grid" :class="{ 'play-grid--panel-hidden': isEpisodePanelCollapsed }">
           <div id="playerArea" ref="playerAreaEl" class="play-player-area">
-            <div class="play-player-stack">
+            <div ref="playerAreaContentEl" class="play-player-stack">
               <div class="play-video-ratio">
                 <div class="play-video-ratio__inner">
                   <ArtPlayer
@@ -134,7 +148,13 @@
             </div>
           </div>
 
-          <div id="episodePanel" ref="episodePanelEl" class="play-episode-panel" :style="episodePanelStyle">
+          <div
+            v-show="!isEpisodePanelCollapsed"
+            id="episodePanel"
+            ref="episodePanelEl"
+            class="play-episode-panel"
+            :style="episodePanelStyle"
+          >
             <div id="episodePanelResizer" ref="episodePanelResizerEl" class="episode-resizer" aria-hidden="true"></div>
             <div id="episodeSelector" class="play-episode-selector">
               <div class="episode-tab-header play-episode-tabs">
@@ -1171,8 +1191,17 @@ export default {
       if (!this.siteSourceSelectWidth) return null;
       return { width: `${this.siteSourceSelectWidth}px` };
     },
+    isEpisodePanelCollapsed() {
+      return this.episodePanelHidden && this.viewportWidth >= 1024;
+    },
+    episodePanelToggleLabelText() {
+      return this.isEpisodePanelCollapsed ? '显示' : '隐藏';
+    },
+    episodePanelToggleTitleText() {
+      return `${this.episodePanelToggleLabelText}选集换源面板`;
+    },
     episodePanelStyle() {
-      if (this.playerAreaHeight <= 0 || typeof window === 'undefined' || window.innerWidth < 768) return null;
+      if (this.playerAreaHeight <= 0 || this.viewportWidth < 768) return null;
       return { height: `${this.playerAreaHeight}px` };
     },
     thirdPartyCollapsedPlayers() {
@@ -2295,7 +2324,9 @@ export default {
       siteSourceOptions: [],
       selectedSiteSource: '',
       selectedPanSource: '',
+      episodePanelHidden: false,
       siteSourceResizeObserver: null,
+      viewportWidth: typeof window === 'undefined' ? 0 : Math.max(0, normalizeInt(window.innerWidth)),
       playerAreaHeight: 0,
       playerAreaResizeObserver: null,
       thirdPartyExpanded: false,
@@ -2381,6 +2412,8 @@ export default {
     this.resetSwitchSkipState();
     document.addEventListener('click', this.handleDocumentClick, true);
     window.addEventListener('tv:smart-matchblock-updated', this.handleSmartMatchBlockUpdated);
+    window.addEventListener('resize', this.handleViewportResize, { passive: true });
+    this.syncViewportWidth();
     this.bindSiteSourceWidth();
     this.bindPlayerAreaHeight();
     this.setEpisodePanelWidth(this.defaultEpisodePanelWidth);
@@ -2398,6 +2431,7 @@ export default {
     clearCurrentPlaybackContext();
     document.removeEventListener('click', this.handleDocumentClick, true);
     window.removeEventListener('tv:smart-matchblock-updated', this.handleSmartMatchBlockUpdated);
+    window.removeEventListener('resize', this.handleViewportResize);
     if (this.siteSourceResizeObserver) {
       this.siteSourceResizeObserver.disconnect();
       this.siteSourceResizeObserver = null;
@@ -4631,6 +4665,15 @@ export default {
       this.cacheRecognitionForCurrentSiteResult();
       this.syncHistoryDisplayContextIfReady();
     },
+    toggleEpisodePanel() {
+      if (this.viewportWidth < 1024) return;
+      this.episodePanelHidden = !this.episodePanelHidden;
+      if (this.episodePanelHidden) {
+        this.siteSourceOpen = false;
+        this.panSourceOpen = false;
+      }
+      this.$nextTick(() => this.syncPlayerLayoutMetrics());
+    },
     toggleThirdPartyExpanded() {
       this.thirdPartyExpanded = !this.thirdPartyExpanded;
     },
@@ -4904,8 +4947,19 @@ export default {
         }
       });
     },
+    syncViewportWidth() {
+      if (typeof window === 'undefined') return;
+      this.viewportWidth = Math.max(0, normalizeInt(window.innerWidth));
+    },
+    syncPlayerLayoutMetrics() {
+      this.syncViewportWidth();
+      this.syncPlayerAreaHeight();
+    },
+    handleViewportResize() {
+      this.syncPlayerLayoutMetrics();
+    },
     syncPlayerAreaHeight() {
-      const el = this.$refs.playerAreaEl;
+      const el = this.$refs.playerAreaContentEl || this.$refs.playerAreaEl;
       const height = el && typeof el.getBoundingClientRect === 'function'
         ? Math.round(el.getBoundingClientRect().height)
         : 0;
@@ -4918,7 +4972,7 @@ export default {
           this.playerAreaResizeObserver.disconnect();
           this.playerAreaResizeObserver = null;
         }
-        const el = this.$refs.playerAreaEl;
+        const el = this.$refs.playerAreaContentEl || this.$refs.playerAreaEl;
         if (typeof ResizeObserver === 'function' && el) {
           this.playerAreaResizeObserver = new ResizeObserver(() => this.syncPlayerAreaHeight());
           this.playerAreaResizeObserver.observe(el);
@@ -5218,6 +5272,10 @@ export default {
   transition: transform 0.2s ease;
 }
 
+.play-episode-toggle__icon--collapsed {
+  transform: rotate(180deg);
+}
+
 .dark .play-episode-toggle__icon {
   color: rgba(156, 163, 175, 1);
 }
@@ -5245,6 +5303,7 @@ export default {
 .play-grid {
   display: grid;
   gap: 16px;
+  align-items: start;
 }
 
 .play-player-area {
@@ -5868,6 +5927,13 @@ export default {
     grid-template-columns: minmax(0, 1fr) var(--episode-panel-width, 314px);
   }
 
+  #playGrid.play-grid--panel-hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #playGrid.play-grid--panel-hidden #playerArea {
+    grid-column: 1 / -1 !important;
+  }
 
   #playerArea {
     grid-column: 1 / 2 !important;
