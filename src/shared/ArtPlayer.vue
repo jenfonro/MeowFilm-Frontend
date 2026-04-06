@@ -398,6 +398,7 @@
 		'extramenuselect',
 		'extraaction',
     'exit-portrait',
+    'episodedelta',
 	]);
 
 	const props = defineProps({
@@ -1822,9 +1823,9 @@ const seekBySeconds = (deltaSeconds) => {
 };
 
 const emitEpisodeDelta = (delta) => {
-  try {
-    window.dispatchEvent(new CustomEvent('tvplayer:episode', { detail: { delta } }));
-  } catch (_) {}
+  const normalized = Number(delta) > 0 ? 1 : (Number(delta) < 0 ? -1 : 0);
+  if (!normalized) return;
+  emit('episodedelta', normalized);
 };
 
 const toggleMute = () => {

@@ -98,6 +98,7 @@
                     @goproxyselect="onGoProxySelect"
                     @extramenuselect="onPlayerExtraMenuSelect"
                     @extraaction="onPlayerExtraAction"
+                    @episodedelta="onPlayerEpisodeDelta"
                     @exit-portrait="togglePortraitMode"
                   />
                   <div
@@ -3721,6 +3722,11 @@ export default {
       if (currentGlobal <= 0) return null;
       return this.focusPrimaryEpisodeByGlobal(currentGlobal + 1);
     },
+    async findPreviousPrimaryEpisodeButton() {
+      const currentGlobal = Math.max(0, normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.globalEpisode));
+      if (currentGlobal <= 1) return null;
+      return this.focusPrimaryEpisodeByGlobal(currentGlobal - 1);
+    },
     findNextProjectedSiteEpisodeItem() {
       const list = Array.isArray(this.projectedSiteEpisodeItems) ? this.projectedSiteEpisodeItems : [];
       if (!list.length) return null;
@@ -3734,37 +3740,85 @@ export default {
       if (currentIndex < 0) return null;
       return list[currentIndex + 1] || null;
     },
-    async playNextSiteListItem(itemIndex, globalEpisode = 0) {
+    findPreviousProjectedSiteEpisodeItem() {
+      const list = Array.isArray(this.projectedSiteEpisodeItems) ? this.projectedSiteEpisodeItems : [];
+      if (!list.length) return null;
+      const currentGlobal = Math.max(0, normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.globalEpisode));
+      if (currentGlobal > 1) {
+        const exact = list.find((item) => normalizeInt(item && item.global) === currentGlobal - 1) || null;
+        if (exact) return exact;
+      }
+      const currentItemIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex);
+      const currentIndex = list.findIndex((item) => normalizeInt(item && item.itemIndex) === currentItemIndex);
+      if (currentIndex <= 0) return null;
+      return list[currentIndex - 1] || null;
+    },
+    async playSiteListItemByIndex(itemIndex, globalEpisode = 0) {
       const targetIndex = normalizeInt(itemIndex);
       if (targetIndex < 0) return false;
       const selected = this.selectSiteEpisodeFile(targetIndex, {
         globalEpisode: Math.max(0, normalizeInt(globalEpisode)),
       });
       if (!selected) return false;
+      this.beginExplicitPlaybackTransition('play_url');
       await this.playSiteResultItemByIndex(targetIndex);
       return true;
+    },
+    async playPreviousFromCurrentContext() {
+      if (this.selectedSiteResultItem) {
+        if (!this.rawListMode) {
+          const previousProjected = this.findPreviousProjectedSiteEpisodeItem();
+          if (!previousProjected) return false;
+          return this.playSiteListItemByIndex(
+            normalizeInt(previousProjected.itemIndex),
+            normalizeInt(previousProjected.global),
+          );
+        }
+        const previousIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex) - 1;
+        return this.playSiteListItemByIndex(previousIndex, this.getCurrentPanSegmentGlobalEpisode(previousIndex));
+      }
+      if (this.isTmdbMode) {
+        const previousPrimary = await this.findPreviousPrimaryEpisodeButton();
+        if (!previousPrimary) return false;
+        this.beginExplicitPlaybackTransition('detail');
+        await this.playPrimaryEpisodeItem(previousPrimary);
+        return true;
+      }
+      const previousIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex) - 1;
+      return this.playSiteListItemByIndex(previousIndex, this.getCurrentPanSegmentGlobalEpisode(previousIndex));
     },
     async playNextFromCurrentContext() {
       if (this.selectedSiteResultItem) {
         if (!this.rawListMode) {
           const nextProjected = this.findNextProjectedSiteEpisodeItem();
           if (!nextProjected) return false;
-          return this.playNextSiteListItem(
+          return this.playSiteListItemByIndex(
             normalizeInt(nextProjected.itemIndex),
             normalizeInt(nextProjected.global),
           );
         }
         const nextIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex) + 1;
-        return this.playNextSiteListItem(nextIndex, this.getCurrentPanSegmentGlobalEpisode(nextIndex));
+        return this.playSiteListItemByIndex(nextIndex, this.getCurrentPanSegmentGlobalEpisode(nextIndex));
       }
       if (this.isTmdbMode) {
         const nextPrimary = await this.findNextPrimaryEpisodeButton();
         if (!nextPrimary) return false;
+        this.beginExplicitPlaybackTransition('detail');
         await this.playPrimaryEpisodeItem(nextPrimary);
         return true;
       }
       const nextIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex) + 1;
-      return this.playNextSiteListItem(nextIndex, this.getCurrentPanSegmentGlobalEpisode(nextIndex));
+      return this.playSiteListItemByIndex(nextIndex, this.getCurrentPanSegmentGlobalEpisode(nextIndex));
+    },
+    async switchEpisodeByDelta(deltaRaw, { showBoundaryToast = true } = {}) {
+      const delta = Number(deltaRaw) > 0 ? 1 : (Number(deltaRaw) < 0 ? -1 : 0);
+      if (!delta) return false;
+      const ok = delta > 0
+        ? await this.playNextFromCurrentContext()
+        : await this.playPreviousFromCurrentContext();
+      if (ok || !showBoundaryToast) return ok;
+      this.showPlayerActionToast(delta > 0 ? '已经是最后一集' : '已经是第一集');
+      return false;
     },
     resolveCachedPlaybackTarget(globalEpisode, wantEpisodeInSeason = 0, {
       matchOptions = null,
@@ -4643,6 +4697,10 @@ export default {
       onPlayerHistoryTimeUpdate(info);
       void syncHistoryProgressIfPossible();
     },
+    async onPlayerEpisodeDelta(deltaRaw) {
+      if (this.autoNextInFlight || normalizeInt(this.smartPlaybackPendingRunSeq) > 0) return;
+      await this.switchEpisodeByDelta(deltaRaw, { showBoundaryToast: true });
+    },
     onPlayerPlaying() {
       this.playLoading = false;
       this.playError = '';
@@ -4681,7 +4739,7 @@ export default {
           await syncHistoryProgressIfPossible({ force: true });
         } catch (_error) {}
         try {
-          await this.playNextFromCurrentContext();
+          await this.switchEpisodeByDelta(1, { showBoundaryToast: false });
         } finally {
           window.setTimeout(() => {
             this.autoNextInFlight = false;
