@@ -3042,12 +3042,13 @@ export default {
       }
       if (!this.isRawListFileInteractive(item)) return;
       if (item.kind === 'file') {
+        const targetGlobalEpisode = this.getCurrentPanSegmentGlobalEpisode(item.index);
         const selected = this.selectSiteEpisodeFile(item.index, {
-          globalEpisode: this.getCurrentPanSegmentGlobalEpisode(item.index),
+          globalEpisode: targetGlobalEpisode,
         });
         if (!selected) return;
         this.beginExplicitPlaybackTransition('play_url');
-        void this.playSiteResultItemByIndex(item.index);
+        void this.playSiteResultItemByIndex(item.index, targetGlobalEpisode);
       }
     },
     onEpisodeItemClick(item) {
@@ -3065,7 +3066,7 @@ export default {
       });
       if (!selected) return;
       this.beginExplicitPlaybackTransition('play_url');
-      void this.playSiteResultItemByIndex(itemIndex);
+      void this.playSiteResultItemByIndex(itemIndex, normalizeInt(item && item.global));
     },
     buildPanSegment(entry, index) {
       return buildPanSegmentRuntime(entry, index);
@@ -3157,37 +3158,62 @@ export default {
       this.playerStatsRawFileName = pickRawFileNameForStats(segment && segment.displayName, segment && segment.rawName, namingContext);
     },
     buildPlayHistoryWarmContext() {
-      if (!this.isTmdbMode) return {};
-      const baseContext = {
-        contentKey: this.playContentPreferenceKey,
-        Poster: this.detailPoster,
-        Remark: this.detailRemarkText,
-        tmdbId: this.tmdbId,
-        tmdbType: normalizeString(this.tmdbType || this.searchType).toLowerCase(),
-        tmdbSeason: this.tmdbMovieMode ? 0 : this.currentEpisodeSeasonNumber,
-      };
-      const existingRow = findPlayHistoryRowForContext(baseContext) || null;
       const playback = this.currentPlaybackContext && typeof this.currentPlaybackContext === 'object'
         ? this.currentPlaybackContext
         : null;
-      return {
+      const isTmdb = !!this.isTmdbMode;
+      const baseContentKey = isTmdb
+        ? normalizeString(this.playContentPreferenceKey)
+        : (normalizeString(this.playContentPreferenceKey) || normalizeString(this.displayTitle));
+      if (!baseContentKey) return {};
+      const baseContext = {
+        contentKey: baseContentKey,
+        Poster: this.detailPoster,
+        Remark: isTmdb ? this.detailRemarkText : this.historyRemarkText,
+        tmdbId: isTmdb ? normalizeInt(this.tmdbId) : 0,
+        tmdbType: isTmdb ? normalizeString(this.tmdbType || this.searchType).toLowerCase() : '',
+        tmdbSeason: isTmdb ? (this.tmdbMovieMode ? 0 : this.currentEpisodeSeasonNumber) : 0,
+      };
+      const existingRow = findPlayHistoryRowForContext(baseContext) || null;
+      const fallbackSiteEpisodeIndex = normalizeInt(playback && playback.itemIndex) >= 0
+        ? normalizeInt(playback && playback.itemIndex) + 1
+        : 0;
+      const mergedContext = {
         contentKey: normalizeString(existingRow && existingRow.contentKey) || baseContext.contentKey,
-        reportEnabled: true,
-        siteKey: normalizeString(existingRow && existingRow.siteKey) || normalizeString(playback && playback.siteKey),
-        siteName: normalizeString(existingRow && existingRow.siteName) || normalizeString(playback && playback.siteName),
-        spiderApi: normalizeString(existingRow && existingRow.spiderApi) || normalizeString(playback && playback.spiderApi),
-        siteDetail: normalizeString(existingRow && existingRow.siteDetail) || normalizeString(playback && playback.siteDetail),
+        reportEnabled: isTmdb,
+        siteKey: normalizeString(existingRow && existingRow.siteKey)
+          || normalizeString(this.siteKey)
+          || normalizeString(playback && playback.siteKey),
+        siteName: normalizeString(existingRow && existingRow.siteName)
+          || normalizeString(this.siteName)
+          || normalizeString(playback && playback.siteName),
+        spiderApi: normalizeString(existingRow && existingRow.spiderApi)
+          || normalizeString(this.spiderApi)
+          || normalizeString(playback && playback.spiderApi),
+        siteDetail: normalizeString(existingRow && existingRow.siteDetail)
+          || normalizeString(this.siteDetail)
+          || normalizeString(playback && playback.siteDetail),
         Poster: normalizeString(existingRow && existingRow.Poster) || baseContext.Poster,
         Remark: normalizeString(existingRow && existingRow.Remark) || baseContext.Remark,
-        tmdbId: normalizeInt(existingRow && existingRow.tmdbId) || baseContext.tmdbId,
-        tmdbType: normalizeString(existingRow && existingRow.tmdbType) || baseContext.tmdbType,
-        tmdbSeason: normalizeInt(existingRow && existingRow.tmdbSeason)
-          || normalizeInt(playback && playback.tmdbSeason)
-          || normalizeInt(baseContext.tmdbSeason),
-        tmdbEpisode: normalizeInt(existingRow && existingRow.tmdbEpisode) || normalizeInt(playback && playback.tmdbEpisode),
+        tmdbId: isTmdb
+          ? (normalizeInt(existingRow && existingRow.tmdbId) || baseContext.tmdbId)
+          : normalizeInt(existingRow && existingRow.tmdbId),
+        tmdbType: isTmdb
+          ? (normalizeString(existingRow && existingRow.tmdbType) || baseContext.tmdbType)
+          : normalizeString(existingRow && existingRow.tmdbType),
+        tmdbSeason: isTmdb
+          ? (
+            normalizeInt(existingRow && existingRow.tmdbSeason)
+            || normalizeInt(playback && playback.tmdbSeason)
+            || normalizeInt(baseContext.tmdbSeason)
+          )
+          : normalizeInt(existingRow && existingRow.tmdbSeason),
+        tmdbEpisode: isTmdb
+          ? (normalizeInt(existingRow && existingRow.tmdbEpisode) || normalizeInt(playback && playback.tmdbEpisode))
+          : normalizeInt(existingRow && existingRow.tmdbEpisode),
         globalEpisode: normalizeInt(existingRow && existingRow.globalEpisode) || normalizeInt(playback && playback.globalEpisode),
         playFlag: normalizeString(existingRow && existingRow.playFlag) || normalizeString(playback && playback.panFlag),
-        siteEpisodeIndex: normalizeInt(existingRow && existingRow.siteEpisodeIndex) || (normalizeInt(playback && playback.itemIndex) >= 0 ? normalizeInt(playback && playback.itemIndex) + 1 : 0),
+        siteEpisodeIndex: normalizeInt(existingRow && existingRow.siteEpisodeIndex) || fallbackSiteEpisodeIndex,
         siteEpisodeFile: normalizeString(existingRow && existingRow.siteEpisodeFile) || normalizeString(playback && playback.rawFileName),
         playbackItemId: normalizeString(existingRow && existingRow.playbackItemId),
         selectionKey: normalizeString(existingRow && existingRow.selectionKey) || normalizeString(playback && playback.selectionKey),
@@ -3195,6 +3221,7 @@ export default {
           ? !!existingRow.preOrder
           : false,
       };
+      return mergedContext;
     },
     async togglePreOrder() {
       if (this.preOrderToggleBusy || !this.showPreOrderButton) return;
@@ -3485,17 +3512,18 @@ export default {
         });
         if (!selected) return false;
         this.beginExplicitPlaybackTransition('play_url');
-        return !!(await this.playSiteResultItemByIndex(itemIndex));
+        return !!(await this.playSiteResultItemByIndex(itemIndex, normalizeInt(target.item && target.item.global)));
       }
       if (target.kind === 'site-raw') {
         const itemIndex = normalizeInt(target.item && target.item.index);
         if (itemIndex < 0) return false;
+        const targetGlobalEpisode = this.getCurrentPanSegmentGlobalEpisode(itemIndex);
         const selected = this.selectSiteEpisodeFile(itemIndex, {
-          globalEpisode: this.getCurrentPanSegmentGlobalEpisode(itemIndex),
+          globalEpisode: targetGlobalEpisode,
         });
         if (!selected) return false;
         this.beginExplicitPlaybackTransition('play_url');
-        return !!(await this.playSiteResultItemByIndex(itemIndex));
+        return !!(await this.playSiteResultItemByIndex(itemIndex, targetGlobalEpisode));
       }
       return false;
     },
@@ -3525,18 +3553,23 @@ export default {
         : null;
       const nextGlobalEpisode = Math.max(0, normalizeInt(globalEpisode));
       const canReportTMDBHistory = !!this.isTmdbMode;
+      const nextSiteKey = normalizeString(item && item.siteKey) || normalizeString(this.siteKey);
+      const nextSpiderApi = normalizeString(item && item.spiderApi) || normalizeString(this.spiderApi);
+      const nextSiteDetail = normalizeString(item && item.siteDetail)
+        || normalizeString(playback && playback.siteDetail)
+        || normalizeString(this.siteDetail);
       const tmdbTarget = canReportTMDBHistory && nextGlobalEpisode > 0
         ? tmdbSeasonEpisodeOfGlobal(this.detailTMDBData, nextGlobalEpisode)
         : null;
       return buildPlayHistoryPayload({
-        contentKey: this.playContentPreferenceKey,
-        reportEnabled: canReportTMDBHistory ? (this.tmdbMovieMode || nextGlobalEpisode > 0) : false,
-        siteKey: normalizeString(item && item.siteKey) || normalizeString(this.siteKey),
+        contentKey: normalizeString(this.playContentPreferenceKey) || normalizeString(this.displayTitle),
+        reportEnabled: canReportTMDBHistory
+          ? (this.tmdbMovieMode || nextGlobalEpisode > 0)
+          : (!!nextSiteKey && !!nextSpiderApi && !!nextSiteDetail),
+        siteKey: nextSiteKey,
         siteName: normalizeString(item && item.siteName) || normalizeString(this.siteName),
-        spiderApi: normalizeString(item && item.spiderApi) || normalizeString(this.spiderApi),
-        siteDetail: normalizeString(item && item.siteDetail)
-          || normalizeString(playback && playback.siteDetail)
-          || (!canReportTMDBHistory ? normalizeString(this.siteDetail) : ''),
+        spiderApi: nextSpiderApi,
+        siteDetail: nextSiteDetail,
         Poster: this.detailPoster,
         Remark: this.historyRemarkText,
         tmdbId: canReportTMDBHistory ? this.tmdbId : 0,
@@ -3706,7 +3739,20 @@ export default {
     },
     getCurrentPanSegmentGlobalEpisode(index) {
       const hit = this.getCurrentPanRecognitionCandidate(index);
-      return Math.max(0, normalizeInt(hit && hit.mapping && hit.mapping.global));
+      const mappedGlobalEpisode = Math.max(0, normalizeInt(hit && hit.mapping && hit.mapping.global));
+      if (mappedGlobalEpisode > 0) return mappedGlobalEpisode;
+      return this.getSingleSeasonFallbackGlobalEpisode(index);
+    },
+    getSingleSeasonFallbackGlobalEpisode(index) {
+      const itemIndex = normalizeInt(index);
+      if (itemIndex < 0 || !this.isTmdbMode || this.tmdbMovieMode) return 0;
+      const rows = Array.isArray(this.tmdbBaseSeasonRows) ? this.tmdbBaseSeasonRows : [];
+      if (rows.length !== 1) return 0;
+      const episodeTotal = Math.max(0, normalizeInt(rows[0] && rows[0].episodes));
+      if (episodeTotal <= 0) return 0;
+      const candidateGlobal = itemIndex + 1;
+      if (candidateGlobal <= 0 || candidateGlobal > episodeTotal) return 0;
+      return candidateGlobal;
     },
     getCurrentPanRecognitionCandidate(index) {
       const itemIndex = normalizeInt(index);
@@ -3727,88 +3773,83 @@ export default {
       if (currentGlobal <= 1) return null;
       return this.focusPrimaryEpisodeByGlobal(currentGlobal - 1);
     },
-    findNextProjectedSiteEpisodeItem() {
+    findProjectedSiteEpisodeItemByDelta(deltaRaw) {
+      const delta = Number(deltaRaw) > 0 ? 1 : (Number(deltaRaw) < 0 ? -1 : 0);
+      if (!delta) return null;
       const list = Array.isArray(this.projectedSiteEpisodeItems) ? this.projectedSiteEpisodeItems : [];
       if (!list.length) return null;
       const currentGlobal = Math.max(0, normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.globalEpisode));
-      if (currentGlobal > 0) {
-        const exact = list.find((item) => normalizeInt(item && item.global) === currentGlobal + 1) || null;
+      if (currentGlobal > 0 && currentGlobal + delta > 0) {
+        const exact = list.find((item) => normalizeInt(item && item.global) === currentGlobal + delta) || null;
         if (exact) return exact;
       }
       const currentItemIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex);
       const currentIndex = list.findIndex((item) => normalizeInt(item && item.itemIndex) === currentItemIndex);
       if (currentIndex < 0) return null;
-      return list[currentIndex + 1] || null;
+      const targetIndex = currentIndex + delta;
+      if (targetIndex < 0 || targetIndex >= list.length) return null;
+      return list[targetIndex] || null;
+    },
+    findNextProjectedSiteEpisodeItem() {
+      return this.findProjectedSiteEpisodeItemByDelta(1);
     },
     findPreviousProjectedSiteEpisodeItem() {
-      const list = Array.isArray(this.projectedSiteEpisodeItems) ? this.projectedSiteEpisodeItems : [];
-      if (!list.length) return null;
-      const currentGlobal = Math.max(0, normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.globalEpisode));
-      if (currentGlobal > 1) {
-        const exact = list.find((item) => normalizeInt(item && item.global) === currentGlobal - 1) || null;
-        if (exact) return exact;
-      }
-      const currentItemIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex);
-      const currentIndex = list.findIndex((item) => normalizeInt(item && item.itemIndex) === currentItemIndex);
-      if (currentIndex <= 0) return null;
-      return list[currentIndex - 1] || null;
+      return this.findProjectedSiteEpisodeItemByDelta(-1);
     },
     async playSiteListItemByIndex(itemIndex, globalEpisode = 0) {
       const targetIndex = normalizeInt(itemIndex);
       if (targetIndex < 0) return false;
+      const targetGlobalEpisode = Math.max(0, normalizeInt(globalEpisode));
       const selected = this.selectSiteEpisodeFile(targetIndex, {
-        globalEpisode: Math.max(0, normalizeInt(globalEpisode)),
+        globalEpisode: targetGlobalEpisode,
       });
       if (!selected) return false;
       this.beginExplicitPlaybackTransition('play_url');
-      await this.playSiteResultItemByIndex(targetIndex);
+      await this.playSiteResultItemByIndex(targetIndex, targetGlobalEpisode);
       return true;
     },
-    async playPreviousFromCurrentContext() {
+    async playPrimaryEpisodeByDelta(deltaRaw) {
+      const delta = Number(deltaRaw) > 0 ? 1 : (Number(deltaRaw) < 0 ? -1 : 0);
+      if (!delta) return false;
+      const targetPrimary = delta > 0
+        ? await this.findNextPrimaryEpisodeButton()
+        : await this.findPreviousPrimaryEpisodeButton();
+      if (!targetPrimary) return false;
+      this.beginExplicitPlaybackTransition('detail');
+      await this.playPrimaryEpisodeItem(targetPrimary);
+      return true;
+    },
+    playSiteListByDelta(deltaRaw) {
+      const delta = Number(deltaRaw) > 0 ? 1 : (Number(deltaRaw) < 0 ? -1 : 0);
+      if (!delta) return Promise.resolve(false);
+      const currentIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex);
+      const targetIndex = currentIndex + delta;
+      return this.playSiteListItemByIndex(targetIndex, this.getCurrentPanSegmentGlobalEpisode(targetIndex));
+    },
+    async playFromCurrentContextByDelta(deltaRaw) {
+      const delta = Number(deltaRaw) > 0 ? 1 : (Number(deltaRaw) < 0 ? -1 : 0);
+      if (!delta) return false;
       if (this.selectedSiteResultItem) {
         if (!this.rawListMode) {
-          const previousProjected = this.findPreviousProjectedSiteEpisodeItem();
-          if (!previousProjected) return false;
+          const projectedTarget = this.findProjectedSiteEpisodeItemByDelta(delta);
+          if (!projectedTarget) return false;
           return this.playSiteListItemByIndex(
-            normalizeInt(previousProjected.itemIndex),
-            normalizeInt(previousProjected.global),
+            normalizeInt(projectedTarget.itemIndex),
+            normalizeInt(projectedTarget.global),
           );
         }
-        const previousIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex) - 1;
-        return this.playSiteListItemByIndex(previousIndex, this.getCurrentPanSegmentGlobalEpisode(previousIndex));
+        return this.playSiteListByDelta(delta);
       }
       if (this.isTmdbMode) {
-        const previousPrimary = await this.findPreviousPrimaryEpisodeButton();
-        if (!previousPrimary) return false;
-        this.beginExplicitPlaybackTransition('detail');
-        await this.playPrimaryEpisodeItem(previousPrimary);
-        return true;
+        return this.playPrimaryEpisodeByDelta(delta);
       }
-      const previousIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex) - 1;
-      return this.playSiteListItemByIndex(previousIndex, this.getCurrentPanSegmentGlobalEpisode(previousIndex));
+      return this.playSiteListByDelta(delta);
+    },
+    async playPreviousFromCurrentContext() {
+      return this.playFromCurrentContextByDelta(-1);
     },
     async playNextFromCurrentContext() {
-      if (this.selectedSiteResultItem) {
-        if (!this.rawListMode) {
-          const nextProjected = this.findNextProjectedSiteEpisodeItem();
-          if (!nextProjected) return false;
-          return this.playSiteListItemByIndex(
-            normalizeInt(nextProjected.itemIndex),
-            normalizeInt(nextProjected.global),
-          );
-        }
-        const nextIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex) + 1;
-        return this.playSiteListItemByIndex(nextIndex, this.getCurrentPanSegmentGlobalEpisode(nextIndex));
-      }
-      if (this.isTmdbMode) {
-        const nextPrimary = await this.findNextPrimaryEpisodeButton();
-        if (!nextPrimary) return false;
-        this.beginExplicitPlaybackTransition('detail');
-        await this.playPrimaryEpisodeItem(nextPrimary);
-        return true;
-      }
-      const nextIndex = normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.itemIndex) + 1;
-      return this.playSiteListItemByIndex(nextIndex, this.getCurrentPanSegmentGlobalEpisode(nextIndex));
+      return this.playFromCurrentContextByDelta(1);
     },
     async switchEpisodeByDelta(deltaRaw, { showBoundaryToast = true } = {}) {
       const delta = Number(deltaRaw) > 0 ? 1 : (Number(deltaRaw) < 0 ? -1 : 0);
@@ -4595,12 +4636,13 @@ export default {
       }
       void this.runPlayerControlSmartPlayback({ actionKey: key });
     },
-    async playSiteResultItemByIndex(index) {
+    async playSiteResultItemByIndex(index, preferredGlobalEpisode = 0) {
       const item = this.activeSitePlaybackItem;
       const pan = this.currentPanSourceEntry;
       const segment = this.buildCurrentPanSegment(index);
       if (!item || !pan || !segment || !normalizeString(segment.episodeUrl)) return false;
-      const globalEpisode = this.getCurrentPanSegmentGlobalEpisode(index);
+      const globalEpisode = Math.max(0, normalizeInt(preferredGlobalEpisode))
+        || this.getCurrentPanSegmentGlobalEpisode(index);
       this.resetSmartPlaybackRuntimeState({ stopStream: true });
       return this.playResolvedSiteSegment({
         siteItem: item,

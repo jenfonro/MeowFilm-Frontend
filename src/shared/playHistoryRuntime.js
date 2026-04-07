@@ -89,6 +89,20 @@ const historyProgressState = {
 
 const cloneHistoryRows = (items) => (Array.isArray(items) ? items.map((item) => ({ ...(item || {}) })) : []);
 
+const emitPlayHistoryUpdated = () => {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
+  }
+};
+
+const refreshPlayHistoryListFromServer = async () => {
+  playHistoryListState.dirty = true;
+  const requested = Math.max(0, normalizeInt(historyListState.requestedLimit));
+  const limit = Math.max(50, requested || 0);
+  await ensurePlayHistoryItems({ limit, force: true });
+  emitPlayHistoryUpdated();
+};
+
 const removePlayHistoryRowLocally = ({ contentKey = '', siteKey = '', siteDetail = '' } = {}) => {
   const normalizedContentKey = normalizeString(contentKey);
   const normalizedSiteKey = normalizeString(siteKey);
@@ -120,58 +134,54 @@ const sameBaseHistoryTarget = (row, context) => {
   return normalizeString(item.contentKey).toLowerCase() === targetContentKey;
 };
 
-const buildHistoryRowFromContext = (context, extra = {}, currentRow = null) => {
-  const target = context && typeof context === 'object' ? context : {};
-  const patch = extra && typeof extra === 'object' ? extra : {};
-  let resolvedPreOrder = false;
-  if (typeof patch.preOrder === 'boolean') {
-    resolvedPreOrder = patch.preOrder;
-  } else if (currentRow && typeof currentRow === 'object' && typeof currentRow.preOrder === 'boolean') {
-    resolvedPreOrder = !!currentRow.preOrder;
-  } else if (typeof target.preOrder === 'boolean') {
-    resolvedPreOrder = !!target.preOrder;
-  }
-  return {
-    contentKey: normalizeString(target.contentKey),
-    siteKey: normalizeString(target.siteKey),
-    siteName: normalizeString(target.siteName),
-    spiderApi: normalizeString(target.spiderApi),
-    siteDetail: normalizeString(target.siteDetail),
-    Poster: normalizeString(target.Poster),
-    Remark: normalizeString(target.Remark),
-    tmdbId: Math.max(0, normalizeInt(target.tmdbId)),
-    tmdbType: normalizeString(target.tmdbType),
-    tmdbSeason: Math.max(0, normalizeInt(target.tmdbSeason)),
-    tmdbEpisode: Math.max(0, normalizeInt(target.tmdbEpisode)),
-    globalEpisode: Math.max(0, normalizeInt(target.globalEpisode)),
-    playFlag: normalizeString(target.playFlag),
-    siteEpisodeIndex: Math.max(0, normalizeInt(target.siteEpisodeIndex)),
-    siteEpisodeFile: normalizeString(target.siteEpisodeFile),
-    playbackItemId: normalizeString(target.playbackItemId),
-    preOrder: resolvedPreOrder,
-    playbackPositionTicks: Math.max(0, normalizeInt64(patch.playbackPositionTicks)),
-    playbackRuntimeTicks: Math.max(0, normalizeInt64(patch.playbackRuntimeTicks)),
-    updatedAt: new Date().toISOString(),
-  };
-};
-
-const mergeHistoryRowLocally = (context, extra = {}) => {
+const sameEpisodeHistoryTarget = (row, context) => {
+  const item = row && typeof row === 'object' ? row : null;
   const target = context && typeof context === 'object' ? context : null;
-  if (!target) return;
-  const list = Array.isArray(playHistoryListState.items) ? playHistoryListState.items.slice() : [];
-  const index = list.findIndex((item) => sameBaseHistoryTarget(item, target));
-  const currentRow = index >= 0 ? list[index] : null;
-  const nextRow = buildHistoryRowFromContext(target, extra, currentRow);
-  if (index >= 0) {
-    list.splice(index, 1);
+  if (!item || !target || !sameBaseHistoryTarget(item, target)) return false;
+
+  const rowPlaybackItemId = normalizeString(item.playbackItemId);
+  const targetPlaybackItemId = normalizeString(target.playbackItemId);
+  if (rowPlaybackItemId && targetPlaybackItemId) return rowPlaybackItemId === targetPlaybackItemId;
+
+  const rowGlobalEpisode = Math.max(0, normalizeInt(item.globalEpisode));
+  const targetGlobalEpisode = Math.max(0, normalizeInt(target.globalEpisode));
+  if (rowGlobalEpisode > 0 && targetGlobalEpisode > 0) return rowGlobalEpisode === targetGlobalEpisode;
+
+  const rowTMDBType = normalizeString(item.tmdbType).toLowerCase();
+  const targetTMDBType = normalizeString(target.tmdbType).toLowerCase();
+  const rowTMDBID = Math.max(0, normalizeInt(item.tmdbId));
+  const targetTMDBID = Math.max(0, normalizeInt(target.tmdbId));
+  if (rowTMDBID > 0 && targetTMDBID > 0 && rowTMDBID === targetTMDBID && rowTMDBType === targetTMDBType) {
+    if (rowTMDBType === 'movie') return true;
+    const rowSeason = Math.max(0, normalizeInt(item.tmdbSeason));
+    const rowEpisode = Math.max(0, normalizeInt(item.tmdbEpisode));
+    const targetSeason = Math.max(0, normalizeInt(target.tmdbSeason));
+    const targetEpisode = Math.max(0, normalizeInt(target.tmdbEpisode));
+    if (rowSeason > 0 && rowEpisode > 0 && targetSeason > 0 && targetEpisode > 0) {
+      return rowSeason === targetSeason && rowEpisode === targetEpisode;
+    }
   }
-  list.unshift(nextRow);
-  updateHistoryListState({
-    items: list,
-    at: Date.now(),
-    dirty: false,
-    error: '',
-  });
+
+  const rowSiteKey = normalizeString(item.siteKey);
+  const targetSiteKey = normalizeString(target.siteKey);
+  const rowSiteDetail = normalizeString(item.siteDetail);
+  const targetSiteDetail = normalizeString(target.siteDetail);
+  if (!rowSiteKey || !targetSiteKey || !rowSiteDetail || !targetSiteDetail) return false;
+  if (rowSiteKey !== targetSiteKey || rowSiteDetail !== targetSiteDetail) return false;
+
+  const rowSelectionKey = normalizeString(item.selectionKey);
+  const targetSelectionKey = normalizeString(target.selectionKey);
+  if (rowSelectionKey && targetSelectionKey) return rowSelectionKey === targetSelectionKey;
+
+  const rowEpisodeIndex = Math.max(0, normalizeInt(item.siteEpisodeIndex));
+  const targetEpisodeIndex = Math.max(0, normalizeInt(target.siteEpisodeIndex));
+  if (rowEpisodeIndex > 0 && targetEpisodeIndex > 0) return rowEpisodeIndex === targetEpisodeIndex;
+
+  const rowEpisodeFile = normalizeString(item.siteEpisodeFile);
+  const targetEpisodeFile = normalizeString(target.siteEpisodeFile);
+  if (rowEpisodeFile && targetEpisodeFile) return rowEpisodeFile === targetEpisodeFile;
+
+  return false;
 };
 
 const updateHistoryListState = ({ items, at = Date.now(), dirty = false, error = '' } = {}) => {
@@ -253,9 +263,7 @@ export const deletePlayHistoryItem = async ({ contentKey = '', siteKey = '', sit
     siteKey: normalizedSiteKey,
     siteDetail: normalizedSiteDetail,
   });
-  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-    window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
-  }
+  emitPlayHistoryUpdated();
 };
 
 export const warmPlayHistoryForContext = async (context = {}, { limit = 50 } = {}) => {
@@ -271,7 +279,7 @@ export const findPlayHistoryRowForContext = (context = {}, { sameEpisodeOnly = f
   if (!target) return null;
   const list = Array.isArray(playHistoryListState.items) ? playHistoryListState.items : [];
   if (sameEpisodeOnly) {
-    return list.find((item) => sameBaseHistoryTarget(item, target)) || null;
+    return list.find((item) => sameEpisodeHistoryTarget(item, target)) || null;
   }
   return list.find((item) => sameBaseHistoryTarget(item, target)) || null;
 };
@@ -366,7 +374,7 @@ const readResumeSecondsFromHistory = async (context) => {
     && now - playHistoryListState.at < 15_000
     && Array.isArray(playHistoryListState.items)
   ) {
-    const hit = playHistoryListState.items.find((item) => sameBaseHistoryTarget(item, target)) || null;
+    const hit = playHistoryListState.items.find((item) => sameEpisodeHistoryTarget(item, target)) || null;
     return fromTicks(hit && hit.playbackPositionTicks);
   }
   try {
@@ -374,7 +382,7 @@ const readResumeSecondsFromHistory = async (context) => {
   } catch (_error) {
     return 0;
   }
-  const hit = (Array.isArray(playHistoryListState.items) ? playHistoryListState.items : []).find((item) => sameBaseHistoryTarget(item, target)) || null;
+  const hit = (Array.isArray(playHistoryListState.items) ? playHistoryListState.items : []).find((item) => sameEpisodeHistoryTarget(item, target)) || null;
   return fromTicks(hit && hit.playbackPositionTicks);
 };
 
@@ -515,10 +523,7 @@ const commitHistoryBaseIfNeeded = async (reason = '') => {
         preOrder: !!context.preOrder,
         playbackItemId: context.playbackItemId,
       }, { dedupe: false });
-      mergeHistoryRowLocally(context);
-      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-        window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
-      }
+      await refreshPlayHistoryListFromServer();
     } catch (_error) {
       // ignore
     }
@@ -619,13 +624,7 @@ export const syncHistoryProgressIfPossible = async ({ force = false } = {}) => {
         playbackPositionTicks: positionTicks,
         playbackRuntimeTicks: runtimeTicks,
       }, { dedupe: false });
-      mergeHistoryRowLocally(context, {
-        playbackPositionTicks: positionTicks,
-        playbackRuntimeTicks: runtimeTicks,
-      });
-      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-        window.dispatchEvent(new CustomEvent('tv:play-history-updated'));
-      }
+      await refreshPlayHistoryListFromServer();
     } catch (_error) {
       // ignore
     }
