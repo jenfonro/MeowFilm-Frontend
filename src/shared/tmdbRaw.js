@@ -112,7 +112,9 @@ export const buildTMDBDetailTextBadge = (detail, tmdbType = '') => {
   const ordinarySeasons = getTMDBOrdinarySeasons(detail);
   const seasonCount = ordinarySeasons.length;
   const totalEpisodes = ordinarySeasons.reduce((sum, item) => sum + normalizeInt(item && item.episodes), 0);
-  const status = getTMDBStatus(detail).toLowerCase();
+  const normalizedStatus = getTMDBStatus(detail);
+  const status = normalizedStatus.toLowerCase();
+  const isContinuing = status === 'continuing' || status === 'returning series' || status === 'in production';
   const nextEpisode = getTMDBNextEpisodeToAir(detail);
   const nextSeasonNumber = normalizeInt(nextEpisode && nextEpisode.seasonNumber);
   const nextEpisodeNumber = normalizeInt(nextEpisode && nextEpisode.episodeNumber);
@@ -133,5 +135,17 @@ export const buildTMDBDetailTextBadge = (detail, tmdbType = '') => {
     return `更新至第${currentEpisodeNumber}集`;
   }
 
-  return normalizeString(status) ? '持续更新' : '';
+  if (isContinuing) {
+    const lastSeason = seasonCount > 0 ? ordinarySeasons[seasonCount - 1] : null;
+    const lastSeasonNumber = normalizeInt(lastSeason && lastSeason.season);
+    const lastSeasonEpisodeCount = normalizeInt(lastSeason && lastSeason.episodes);
+    if (lastSeasonEpisodeCount > 0) {
+      if (seasonCount > 1 && lastSeasonNumber > 1) {
+        return `更新至第${lastSeasonNumber}季第${lastSeasonEpisodeCount}集`;
+      }
+      return `更新至第${Math.max(totalEpisodes, lastSeasonEpisodeCount)}集`;
+    }
+  }
+
+  return normalizedStatus ? '持续更新' : '';
 };
