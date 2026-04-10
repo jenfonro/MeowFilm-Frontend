@@ -29,7 +29,9 @@ const completedQueries = ref([]);
 const queryStateCache = new Map();
 const queryStatusCache = new Map();
 const queryListeners = new Map();
+const queryRunTokenCache = new Map();
 let searchRunSeq = 0;
+let queryRunTokenSeq = 0;
 let configInFlight = null;
 let historyLoaded = false;
 
@@ -168,13 +170,48 @@ export const performSearchSessionSearch = async (
   const safeQuery = normalizeQueryKey(query);
   const safeScope = normalizeQueryScope(scope);
   const scopedKey = buildScopedQueryKey(safeScope, safeQuery);
-  const runSeq = ++searchRunSeq;
   if (affectUi) {
     inputValue.value = safeQuery;
     activeQuery.value = safeQuery;
     resetSearchResultState();
   }
   if (!safeQuery) return;
+  const runSeq = affectUi ? ++searchRunSeq : searchRunSeq;
+  const runToken = ++queryRunTokenSeq;
+  queryRunTokenCache.set(scopedKey, runToken);
+  let completedByUiPreempt = false;
+
+  const isScopedPreempted = () => queryRunTokenCache.get(scopedKey) !== runToken;
+  const isUiPreempted = () => affectUi && runSeq !== searchRunSeq;
+  const buildStatusSnapshot = () => ({
+    ...(affectUi ? searchState.value : (queryStateCache.get(scopedKey) || createEmptySearchState())),
+    progressDone: affectUi ? progressDone.value : Number(queryStateCache.get(scopedKey)?.progressDone || 0),
+    progressTotal: affectUi ? progressTotal.value : Number(queryStateCache.get(scopedKey)?.progressTotal || 0),
+  });
+  const markCompleted = () => {
+    completedQueries.value = completedQueries.value.includes(scopedKey)
+      ? completedQueries.value
+      : [...completedQueries.value, scopedKey];
+    queryStatusCache.set(scopedKey, 'completed');
+    notifyQueryListeners(
+      safeQuery,
+      buildStatusSnapshot(),
+      'completed',
+      safeScope
+    );
+  };
+  const shouldStop = () => {
+    if (isScopedPreempted()) return true;
+    if (isUiPreempted()) {
+      if (!completedByUiPreempt) {
+        completedByUiPreempt = true;
+        markCompleted();
+      }
+      return true;
+    }
+    return false;
+  };
+
   completedQueries.value = completedQueries.value.filter((item) => item !== scopedKey);
   queryStatusCache.set(scopedKey, 'loading');
   notifyQueryListeners(safeQuery, createEmptySearchState(), 'loading', safeScope);
@@ -182,13 +219,13 @@ export const performSearchSessionSearch = async (
   if (affectUi) loading.value = true;
   try {
     const config = await ensureSearchSessionConfig(baseBootstrap);
-    if (runSeq !== searchRunSeq) return;
+    if (shouldStop()) return;
     const effectiveConfig = normalizeQueryKey(searchDisplayModeOverride)
       ? { ...config, searchDisplayMode: normalizeQueryKey(searchDisplayModeOverride) }
       : config;
     if (saveHistoryEnabled) {
       const nextHistory = await saveSearchHistory(safeQuery).catch(() => historyItems.value);
-      if (runSeq !== searchRunSeq) return;
+      if (shouldStop()) return;
       historyItems.value = nextHistory;
       historyLoaded = true;
     }
@@ -196,7 +233,7 @@ export const performSearchSessionSearch = async (
       blockedSiteKeys,
       contentKind,
       onUpdate(nextState) {
-        if (runSeq !== searchRunSeq) return;
+        if (shouldStop()) return;
         if (affectUi) searchState.value = nextState;
         queryStateCache.set(scopedKey, cloneSearchSnapshot(nextState));
         if (affectUi) {
@@ -206,39 +243,20 @@ export const performSearchSessionSearch = async (
         notifyQueryListeners(safeQuery, nextState, 'loading', safeScope);
       },
     });
-    if (runSeq === searchRunSeq && !errorText.value && safeQuery) {
-      completedQueries.value = completedQueries.value.includes(scopedKey)
-        ? completedQueries.value
-        : [...completedQueries.value, scopedKey];
-      queryStatusCache.set(scopedKey, 'completed');
-      notifyQueryListeners(
-        safeQuery,
-        {
-          ...(affectUi ? searchState.value : (queryStateCache.get(scopedKey) || createEmptySearchState())),
-          progressDone: affectUi ? progressDone.value : Number(queryStateCache.get(scopedKey)?.progressDone || 0),
-          progressTotal: affectUi ? progressTotal.value : Number(queryStateCache.get(scopedKey)?.progressTotal || 0),
-        },
-        'completed',
-        safeScope
-      );
-    }
+    if (shouldStop()) return;
+    if (!errorText.value && safeQuery) markCompleted();
   } catch (error) {
-    if (runSeq !== searchRunSeq) return;
+    if (shouldStop()) return;
     if (affectUi) errorText.value = `搜索失败：${error && error.message ? error.message : '未知错误'}`;
     queryStatusCache.set(scopedKey, 'error');
     notifyQueryListeners(
       safeQuery,
-      {
-        ...(affectUi ? searchState.value : (queryStateCache.get(scopedKey) || createEmptySearchState())),
-        progressDone: affectUi ? progressDone.value : Number(queryStateCache.get(scopedKey)?.progressDone || 0),
-        progressTotal: affectUi ? progressTotal.value : Number(queryStateCache.get(scopedKey)?.progressTotal || 0),
-      },
+      buildStatusSnapshot(),
       'error',
       safeScope
     );
   } finally {
-    if (runSeq !== searchRunSeq) return;
-    if (affectUi) loading.value = false;
+    if (affectUi && runSeq === searchRunSeq) loading.value = false;
   }
 };
 

@@ -4423,9 +4423,15 @@ export default {
       }
     },
     async runPlayerControlSmartPlayback({ actionKey, selectedValue = '' } = {}) {
-      if (!this.isPlayerInTmdbMode) return;
+      if (!this.isPlayerInTmdbMode) {
+        this.showPlayerActionToast('当前模式暂不支持画质/网盘切换');
+        return;
+      }
       const globalEpisode = Math.max(0, normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.globalEpisode));
-      if (globalEpisode <= 0) return;
+      if (globalEpisode <= 0) {
+        this.showPlayerActionToast('当前播放上下文未就绪');
+        return;
+      }
       const action = normalizeString(actionKey);
       const value = normalizeString(selectedValue);
       const currentPanFamily = normalizeString(this.currentPlaybackPanFamilyLabel);

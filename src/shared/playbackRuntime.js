@@ -222,7 +222,7 @@ export const buildPlayerControlUiState = ({
       `${normalizeString(playback.panFlag)} ${normalizeString(playback.panKey)}`,
       runtimeSettings,
     ) || '未知';
-  const effectiveQualityValue = normalizeString(playback.sourceQuality) || normalizeString(playback.quality);
+  const effectiveQualityValue = normalizeString(playback.quality) || normalizeString(playback.sourceQuality);
   const currentQualityKey = normalizeQualityModeKeyForUi(effectiveQualityValue);
   const currentQualityLabel = formatQualityLabelForUi(effectiveQualityValue);
 
@@ -373,7 +373,7 @@ const buildCurrentContextPanFamily = (currentContext, runtimeSettings) => (
 
 const buildCurrentContextQualityKey = (currentContext) => (
   normalizeQualityModeKeyForUi(
-    normalizeString(currentContext && currentContext.sourceQuality) || normalizeString(currentContext && currentContext.quality),
+    normalizeString(currentContext && currentContext.quality) || normalizeString(currentContext && currentContext.sourceQuality),
   )
 );
 
