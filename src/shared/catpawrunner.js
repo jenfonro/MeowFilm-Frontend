@@ -234,6 +234,7 @@ const normalizeSourceEntry = (item, index = 0) => {
 
 const detailCache = new Map();
 const resolvedDetailCache = new Map();
+const panListCache = new Map();
 
 const notifyResolvedDetailListeners = (cacheKey, data) => {
   const cached = resolvedDetailCache.get(cacheKey);
@@ -361,7 +362,37 @@ export const requestPanListByProviderFlag = async ({ provider, playFlag, passcod
     return null;
   })();
   if (!body) return null;
-  return callPanList(key, body, { signal });
+
+  const cacheKey = `${key}::${normalizeString(body && body.flag)}::${normalizeString(body && body.passcode)}::${normalizeString(body && body.pwd)}::${normalizeString(body && body.shareCode)}::${normalizeString(body && body.accessCode)}`;
+  if (cacheKey && panListCache.has(cacheKey)) {
+    const cached = panListCache.get(cacheKey);
+    if (cached && cached.status === 'resolved') return cached.data;
+    if (cached && cached.status === 'pending') return cached.promise;
+  }
+
+  const promise = callPanList(key, body, { signal: null }).then((data) => {
+    panListCache.set(cacheKey, { status: 'resolved', data });
+    return data;
+  }).catch((error) => {
+    panListCache.delete(cacheKey);
+    throw error;
+  });
+
+  panListCache.set(cacheKey, { status: 'pending', promise });
+  if (!signal || typeof signal.addEventListener !== 'function') return promise;
+  if (signal.aborted) return null;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      resolve(value || null);
+    };
+    const onAbort = () => finish(null);
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then((value) => finish(value)).catch(() => finish(null));
+  });
 };
 
 const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, signal } = {}) => {
@@ -638,4 +669,5 @@ export const fetchCatResolvedDetailCached = async ({ apiBase, spiderApi, siteDet
 export const clearCatDetailCache = () => {
   detailCache.clear();
   resolvedDetailCache.clear();
+  panListCache.clear();
 };
