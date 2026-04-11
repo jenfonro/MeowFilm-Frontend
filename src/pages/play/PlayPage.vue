@@ -505,9 +505,9 @@ import {
 } from '../../shared/playHistoryRuntime';
 import {
   ensureSearchSessionConfig,
-  getSearchSessionAnyQuerySnapshot,
-  getSearchSessionAnyQueryStatus,
-  subscribeSearchSessionQuery,
+  getSearchSessionLaneSnapshot,
+  getSearchSessionLaneStatus,
+  subscribeSearchSessionLane,
   performSearchSessionSearch,
 } from '../../shared/searchSession';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
@@ -1693,13 +1693,13 @@ export default {
       const query = this.playSearchQueryOriginal;
       if (!query) return 'idle';
       return normalizeString(this.playSearchLiveStatus)
-        || getSearchSessionAnyQueryStatus(query, this.playSearchPrimaryScope);
+        || getSearchSessionLaneStatus(query, this.playSearchPrimaryScope, 'site');
     },
     playSearchCanonicalStatus() {
       const query = this.playSearchQueryCanonical;
       if (!query || query === this.playSearchQueryOriginal) return 'completed';
       return normalizeString(this.playSearchCanonicalLiveStatus)
-        || getSearchSessionAnyQueryStatus(query, this.playSearchCanonicalScope);
+        || getSearchSessionLaneStatus(query, this.playSearchCanonicalScope, 'site');
     },
     siteSourceSearchState() {
       if (this.playSearchPrimaryStatus === 'loading' || this.playSearchCanonicalStatus === 'loading') return 'loading';
@@ -1723,19 +1723,19 @@ export default {
     playSearchPrimarySnapshot() {
       const query = this.playSearchQueryOriginal;
       if (!query) return null;
-      return this.playSearchLiveSnapshot || getSearchSessionAnyQuerySnapshot(query, this.playSearchPrimaryScope);
+      return this.playSearchLiveSnapshot || getSearchSessionLaneSnapshot(query, this.playSearchPrimaryScope, 'site');
     },
     playSearchCanonicalSnapshot() {
       const query = this.playSearchQueryCanonical;
       if (!query || query === this.playSearchQueryOriginal) return null;
-      return this.playSearchCanonicalLiveSnapshot || getSearchSessionAnyQuerySnapshot(query, this.playSearchCanonicalScope);
+      return this.playSearchCanonicalLiveSnapshot || getSearchSessionLaneSnapshot(query, this.playSearchCanonicalScope, 'site');
     },
     playMergedSearchSnapshot() {
       return mergeSearchSnapshotsBySiteIdentity(this.playSearchPrimarySnapshot, this.playSearchCanonicalSnapshot);
     },
     playSearchSnapshot() {
       return this.playMergedSearchSnapshot || this.playSearchPrimarySnapshot || this.playSearchLiveSnapshot
-        || getSearchSessionAnyQuerySnapshot(this.playSearchQuery, this.effectivePlaySearchScope);
+        || getSearchSessionLaneSnapshot(this.playSearchQuery, this.effectivePlaySearchScope, 'site');
     },
     playSearchRuntimeConfig() {
       return this.playSearchRuntimeConfigData;
@@ -2693,14 +2693,14 @@ export default {
         this.playSearchLiveSnapshot = null;
         this.playSearchLiveStatus = 'idle';
       } else {
-        this.playSearchLiveSnapshot = getSearchSessionAnyQuerySnapshot(query, scope);
-        this.playSearchLiveStatus = getSearchSessionAnyQueryStatus(query, scope);
-        this.playSearchUnsubscribe = subscribeSearchSessionQuery(query, (snapshot, status) => {
+        this.playSearchLiveSnapshot = getSearchSessionLaneSnapshot(query, scope, 'site');
+        this.playSearchLiveStatus = getSearchSessionLaneStatus(query, scope, 'site');
+        this.playSearchUnsubscribe = subscribeSearchSessionLane(query, scope, 'site', (snapshot, status) => {
           if (normalizeSearchKey(this.playSearchQueryOriginal) !== query) return;
           if ((normalizeString(this.playSearchPrimaryScope) || this.playSearchScope) !== scope) return;
           this.playSearchLiveSnapshot = snapshot;
           this.playSearchLiveStatus = normalizeString(status) || 'idle';
-        }, scope);
+        });
       }
       const canonicalQuery = normalizeSearchKey(this.playSearchQueryCanonical);
       const canonicalScope = normalizeString(this.playSearchCanonicalScope);
@@ -2709,14 +2709,14 @@ export default {
         this.playSearchCanonicalLiveStatus = canonicalQuery ? 'completed' : 'idle';
         return;
       }
-      this.playSearchCanonicalLiveSnapshot = getSearchSessionAnyQuerySnapshot(canonicalQuery, canonicalScope);
-      this.playSearchCanonicalLiveStatus = getSearchSessionAnyQueryStatus(canonicalQuery, canonicalScope);
-      this.playSearchCanonicalUnsubscribe = subscribeSearchSessionQuery(canonicalQuery, (snapshot, status) => {
+      this.playSearchCanonicalLiveSnapshot = getSearchSessionLaneSnapshot(canonicalQuery, canonicalScope, 'site');
+      this.playSearchCanonicalLiveStatus = getSearchSessionLaneStatus(canonicalQuery, canonicalScope, 'site');
+      this.playSearchCanonicalUnsubscribe = subscribeSearchSessionLane(canonicalQuery, canonicalScope, 'site', (snapshot, status) => {
         if (normalizeSearchKey(this.playSearchQueryCanonical) !== canonicalQuery) return;
         if (normalizeString(this.playSearchCanonicalScope) !== canonicalScope) return;
         this.playSearchCanonicalLiveSnapshot = snapshot;
         this.playSearchCanonicalLiveStatus = normalizeString(status) || 'idle';
-      }, canonicalScope);
+      });
     },
     unbindPlaySearchQuerySubscription() {
       if (typeof this.playSearchUnsubscribe === 'function') {
@@ -4401,8 +4401,8 @@ export default {
           buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
           playResolvedSiteSegment: (payload) => this.playResolvedSiteSegment(payload),
           getSearchState: (query, scope) => ({
-            snapshot: getSearchSessionAnyQuerySnapshot(query, scope),
-            status: getSearchSessionAnyQueryStatus(query, scope),
+            snapshot: getSearchSessionLaneSnapshot(query, scope, 'site'),
+            status: getSearchSessionLaneStatus(query, scope, 'site'),
           }),
           setAttemptRunSeq: (value) => { this.smartPlaybackAttemptRunSeq = normalizeInt(value); },
           setPendingRunSeq: (value) => { this.smartPlaybackPendingRunSeq = normalizeInt(value); },

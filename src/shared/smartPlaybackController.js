@@ -1,8 +1,8 @@
 import {
-  getSearchSessionAnyQuerySnapshot,
-  getSearchSessionAnyQueryStatus,
+  getSearchSessionLaneSnapshot,
+  getSearchSessionLaneStatus,
   performSearchSessionSearch,
-  subscribeSearchSessionQuery,
+  subscribeSearchSessionLane,
 } from './searchSession';
 import {
   comparePlaybackCandidatesForAction,
@@ -92,8 +92,8 @@ export const runSmartPlaybackController = async ({
       } catch (_error) {}
     }
     return {
-      snapshot: getSearchSessionAnyQuerySnapshot(targetQuery, scope),
-      status: getSearchSessionAnyQueryStatus(targetQuery, scope),
+      snapshot: getSearchSessionLaneSnapshot(targetQuery, scope, 'site'),
+      status: getSearchSessionLaneStatus(targetQuery, scope, 'site'),
     };
   };
   const safeCandidateAllowed = (candidate) => {
@@ -342,14 +342,14 @@ export const runSmartPlaybackController = async ({
     });
   };
 
-  unsubscribe = subscribeSearchSessionQuery(query, (snapshot, status) => {
+  unsubscribe = subscribeSearchSessionLane(query, searchScope, 'site', (snapshot, status) => {
     if (safeStopped()) return;
     scheduleThreadsFromSnapshot(snapshot);
     if (status === 'completed' || status === 'error') {
       searchCompleted = true;
       void finalizeIfComplete();
     }
-  }, searchScope);
+  });
 
   if (typeof onStreamCleanupChange === 'function') {
     onStreamCleanupChange(() => {
