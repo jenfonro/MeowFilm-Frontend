@@ -1,4 +1,4 @@
-import { buildSearchGroupKey, resolveDisplayedSiteGroupKey } from './searchRuntime';
+import { buildSiteSourceItemsForTitle } from './searchRuntime';
 import { ensurePlayHistoryRowForContext } from './playHistoryRuntime';
 import { buildPlaybackRecognitionData } from './smartSourceRecognition';
 import {
@@ -9,15 +9,11 @@ import {
 } from './catpawrunner';
 import { panMockProviderFromFlag } from '../utils/matchCore';
 
-const CIRCLED_DIGITS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳'];
-
 const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 const normalizeInt = (value) => {
   const num = Number(value);
   return Number.isFinite(num) ? Math.trunc(num) : 0;
 };
-
-const formatCircledIndex = (index) => CIRCLED_DIGITS[index] || `(${index + 1})`;
 
 export const buildHistorySitePlaybackItem = (row) => {
   const item = row && typeof row === 'object' ? row : null;
@@ -118,70 +114,8 @@ export const buildPanSegment = (entry, index) => {
   };
 };
 
-export const buildSiteSourceResultItemsFromSnapshot = ({
-  snapshot,
-  runtimeConfig,
-  blockedSiteKeys = [],
-  blockedMatchIndex = {},
-  title = '',
-  contentKind = 'tv',
-} = {}) => {
-  if (!snapshot || !runtimeConfig) return [];
-  const siteItems = Array.isArray(snapshot.siteItems) ? snapshot.siteItems : [];
-  if (!siteItems.length) return [];
-  const targetGroupKey = buildSearchGroupKey(title, runtimeConfig.aggregateRules, { contentKind });
-  if (!targetGroupKey) return [];
-  const displayMode = normalizeString(runtimeConfig && runtimeConfig.searchDisplayMode);
-  const tmdbByGroup = new Map();
-  (Array.isArray(snapshot.tmdbItems) ? snapshot.tmdbItems : []).forEach((item) => {
-    const groupKey = normalizeString(item && item.groupKey);
-    if (!groupKey) return;
-    tmdbByGroup.set(groupKey, item);
-  });
-  const blockedKeySet = new Set(
-    (Array.isArray(blockedSiteKeys) ? blockedSiteKeys : [])
-      .map((item) => normalizeString(item))
-      .filter(Boolean)
-  );
-  const blockedMatchMap = blockedMatchIndex && typeof blockedMatchIndex === 'object' ? blockedMatchIndex : {};
-  const siteOrderMap = runtimeConfig.siteOrderMap instanceof Map ? runtimeConfig.siteOrderMap : new Map();
-  const matched = siteItems
-    .filter(
-      (item) =>
-        item &&
-        normalizeString(resolveDisplayedSiteGroupKey(item, tmdbByGroup, displayMode)) === targetGroupKey &&
-        !blockedKeySet.has(normalizeString(item.siteKey)) &&
-        !(
-          blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.siteDetail)}`]
-          && blockedMatchMap[`${normalizeString(item.siteKey)}::${normalizeString(item.siteDetail)}`].blockAll
-        )
-    )
-    .slice()
-    .sort((left, right) => {
-      const leftOrder = siteOrderMap.has(left.siteKey) ? siteOrderMap.get(left.siteKey) : 999999;
-      const rightOrder = siteOrderMap.has(right.siteKey) ? siteOrderMap.get(right.siteKey) : 999999;
-      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-      const leftLen = normalizeString(left.title).length;
-      const rightLen = normalizeString(right.title).length;
-      if (leftLen !== rightLen) return rightLen - leftLen;
-      return 0;
-    });
-  const titleCounts = new Map();
-  matched.forEach((item) => {
-    const duplicateKey = `${normalizeString(item.siteKey)}::${normalizeString(item.title)}`;
-    titleCounts.set(duplicateKey, (titleCounts.get(duplicateKey) || 0) + 1);
-  });
-  const titleIndexes = new Map();
-  return matched.map((item) => {
-    const duplicateKey = `${normalizeString(item.siteKey)}::${normalizeString(item.title)}`;
-    const nextIndex = titleIndexes.has(duplicateKey) ? titleIndexes.get(duplicateKey) + 1 : 0;
-    titleIndexes.set(duplicateKey, nextIndex);
-    const duplicateCount = titleCounts.get(duplicateKey) || 0;
-    return {
-      ...item,
-      displayLabel: `${normalizeString(item.siteName)}-${normalizeString(item.title)}${duplicateCount > 1 ? ` ${formatCircledIndex(nextIndex)}` : ''}`,
-    };
-  });
+export const buildSiteSourceResultItemsFromSnapshot = (options = {}) => {
+  return buildSiteSourceItemsForTitle(options);
 };
 
 export const getSiteResultCacheEntry = (store, itemOrId) => {

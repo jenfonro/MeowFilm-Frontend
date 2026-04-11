@@ -266,7 +266,8 @@ export const runSmartPlaybackController = async ({
       if (!dedupeKey) return;
       candidateRegistry.set(dedupeKey, candidate);
     });
-    return requestResolvePlayback();
+    await requestResolvePlayback();
+    return true;
   };
 
   const runNextQueuedSiteThread = () => {
@@ -287,6 +288,10 @@ export const runSmartPlaybackController = async ({
         for (let i = 0; i < items.length; i += 1) {
           if (safeStopped()) return;
           const siteItem = items[i];
+
+          const reused = await registerCandidates(siteItem);
+          if (reused || safeStopped()) continue;
+
           const detailAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
           if (detailAbortController) pendingDetailAbortControllers.add(detailAbortController);
           const detail = await Promise.resolve()

@@ -161,7 +161,6 @@ import {
   addSmartMatchBlockItem,
   deleteSmartMatchBlockItem,
   fetchBlockedMatchIndex,
-  resolveCanonicalSearchVariants,
 } from '../../shared/searchRuntime';
 
 const props = defineProps({
@@ -397,10 +396,8 @@ const openItem = (item) => {
   const current = item && typeof item === 'object' ? item : null;
   if (!current) return;
   const activeKeyword = normalizeString(activeQuery.value);
-  const canonicalSearch = resolveCanonicalSearchVariants(activeKeyword, {
-    contentKind: current.tmdbType === 'movie' ? 'movie' : 'tv',
-  });
   const playTitle = current.title ? String(current.title) : '';
+  const playSearchOriginal = normalizeString(playTitle);
   const displayRemark = normalizeString(current.textBadge);
   if (current.sourceKind === 'site') {
     emit('open-item', {
@@ -428,8 +425,7 @@ const openItem = (item) => {
     remark: displayRemark,
     tmdbId: current.tmdbId,
     tmdbType: current.tmdbType,
-    searchQueryOriginal: canonicalSearch.raw,
-    searchQueryCanonical: canonicalSearch.canonical,
+    searchQueryOriginal: playSearchOriginal || activeKeyword,
   });
 };
 

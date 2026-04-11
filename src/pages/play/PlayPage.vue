@@ -516,8 +516,6 @@ import {
   buildSearchGroupKey,
   clearBlockedMatchCaches,
   fetchBlockedMatchIndex,
-  mergeSearchSnapshotsBySiteIdentity,
-  resolveCanonicalSearchVariants,
 } from '../../shared/searchRuntime';
 import { runSmartPlaybackController } from '../../shared/smartPlaybackController';
 import {
@@ -1164,7 +1162,6 @@ export default {
     isTmdbMode: { type: Boolean, default: false },
     contentKey: { type: String, default: '' },
     searchQueryOriginal: { type: String, default: '' },
-    searchQueryCanonical: { type: String, default: '' },
     videoYear: { type: String, default: '' },
     searchType: { type: String, default: '' },
     siteKey: { type: String, default: '' },
@@ -1658,20 +1655,14 @@ export default {
       return this.episodeRangeOptions.length > 1;
     },
     playSearchQuery() {
+      if (this.isTmdbMode) {
+        return normalizeSearchKey(this.playSearchQueryOriginal || this.displayTitle);
+      }
       return normalizeSearchKey(this.displayTitle);
     },
     playSearchQueryOriginal() {
       if (!this.isTmdbMode) return '';
-      return normalizeSearchKey(this.searchQueryOriginal || this.displayTitle);
-    },
-    playSearchQueryCanonical() {
-      if (!this.isTmdbMode) return '';
-      const propCanonical = normalizeSearchKey(this.searchQueryCanonical);
-      if (propCanonical) return propCanonical;
-      const variants = resolveCanonicalSearchVariants(this.searchQueryOriginal || this.displayTitle, {
-        contentKind: this.playSearchContentKind,
-      });
-      return normalizeSearchKey(variants.canonical || this.displayTitle);
+      return normalizeSearchKey(this.displayTitle || this.searchQueryOriginal);
     },
     playSearchContentKind() {
       return this.isTmdbMode && this.tmdbMovieMode ? 'movie' : 'tv';
@@ -1683,10 +1674,8 @@ export default {
       if (this.isTmdbMode && this.playSearchQueryOriginal) return 'default';
       return `${this.playSearchScope}:primary`;
     },
-    playSearchCanonicalScope() {
-      return `${this.playSearchScope}:canonical`;
-    },
     effectivePlaySearchScope() {
+      if (this.isTmdbMode) return this.playSearchPrimaryScope;
       return this.playSearchScope;
     },
     playSearchPrimaryStatus() {
@@ -1695,21 +1684,12 @@ export default {
       return normalizeString(this.playSearchLiveStatus)
         || getSearchSessionLaneStatus(query, this.playSearchPrimaryScope, 'site');
     },
-    playSearchCanonicalStatus() {
-      const query = this.playSearchQueryCanonical;
-      if (!query || query === this.playSearchQueryOriginal) return 'completed';
-      return normalizeString(this.playSearchCanonicalLiveStatus)
-        || getSearchSessionLaneStatus(query, this.playSearchCanonicalScope, 'site');
-    },
     siteSourceSearchState() {
-      if (this.playSearchPrimaryStatus === 'loading' || this.playSearchCanonicalStatus === 'loading') return 'loading';
-      if (this.playSearchPrimaryStatus !== 'completed') return this.playSearchPrimaryStatus;
-      if (this.playSearchCanonicalStatus !== 'completed') return this.playSearchCanonicalStatus;
-      return 'completed';
+      return this.playSearchPrimaryStatus;
     },
     showSiteSourceSearchOption() {
-      if (!this.playSearchQueryOriginal && !this.playSearchQueryCanonical) return false;
-      return this.playSearchPrimaryStatus !== 'completed' || this.playSearchCanonicalStatus !== 'completed';
+      if (!this.playSearchQueryOriginal) return false;
+      return this.playSearchPrimaryStatus !== 'completed';
     },
     siteSourceSearchBusy() {
       return this.siteSourceSearchManualLoading || this.siteSourceSearchState === 'loading';
@@ -1725,16 +1705,8 @@ export default {
       if (!query) return null;
       return this.playSearchLiveSnapshot || getSearchSessionLaneSnapshot(query, this.playSearchPrimaryScope, 'site');
     },
-    playSearchCanonicalSnapshot() {
-      const query = this.playSearchQueryCanonical;
-      if (!query || query === this.playSearchQueryOriginal) return null;
-      return this.playSearchCanonicalLiveSnapshot || getSearchSessionLaneSnapshot(query, this.playSearchCanonicalScope, 'site');
-    },
-    playMergedSearchSnapshot() {
-      return mergeSearchSnapshotsBySiteIdentity(this.playSearchPrimarySnapshot, this.playSearchCanonicalSnapshot);
-    },
     playSearchSnapshot() {
-      return this.playMergedSearchSnapshot || this.playSearchPrimarySnapshot || this.playSearchLiveSnapshot
+      return this.playSearchPrimarySnapshot || this.playSearchLiveSnapshot
         || getSearchSessionLaneSnapshot(this.playSearchQuery, this.effectivePlaySearchScope, 'site');
     },
     playSearchRuntimeConfig() {
@@ -1744,13 +1716,7 @@ export default {
       return findPlayHistoryRowForContext(this.buildPlayHistoryWarmContext()) || null;
     },
     siteSourceResultItems() {
-      const items = buildSiteSourceResultItemsFromSnapshotRuntime({
-        snapshot: this.playMergedSearchSnapshot || this.playSearchSnapshot,
-        runtimeConfig: this.playSearchRuntimeConfig,
-        blockedSiteKeys: this.playBlockedSiteKeys,
-        title: this.displayTitle,
-        contentKind: this.playSearchContentKind,
-      });
+      const items = this.buildSiteSourceResultItemsFromSnapshot(this.playSearchSnapshot);
       if (!this.isTmdbMode) return items;
       const historyItem = buildHistorySitePlaybackItemRuntime(this.playHistoryRowForMenu);
       return withSiteSourceDisplayLabels(historyItem ? [historyItem].concat(items) : items);
@@ -2380,9 +2346,6 @@ export default {
       playSearchLiveSnapshot: null,
       playSearchLiveStatus: 'idle',
       playSearchUnsubscribe: null,
-      playSearchCanonicalLiveSnapshot: null,
-      playSearchCanonicalLiveStatus: 'idle',
-      playSearchCanonicalUnsubscribe: null,
       siteSourceOptions: [],
       selectedSiteSource: '',
       selectedPanSource: '',
@@ -2407,6 +2370,7 @@ export default {
       doubanLoading: false,
       siteResultDetailData: null,
       siteResultDetailStore: {},
+      siteResultDetailInFlightMap: {},
       siteResultRecognitionStore: {},
       playBlockedSiteKeys: [],
       playBlockedMatchIndex: {},
@@ -2692,30 +2656,15 @@ export default {
       if (!query) {
         this.playSearchLiveSnapshot = null;
         this.playSearchLiveStatus = 'idle';
-      } else {
-        this.playSearchLiveSnapshot = getSearchSessionLaneSnapshot(query, scope, 'site');
-        this.playSearchLiveStatus = getSearchSessionLaneStatus(query, scope, 'site');
-        this.playSearchUnsubscribe = subscribeSearchSessionLane(query, scope, 'site', (snapshot, status) => {
-          if (normalizeSearchKey(this.playSearchQueryOriginal) !== query) return;
-          if ((normalizeString(this.playSearchPrimaryScope) || this.playSearchScope) !== scope) return;
-          this.playSearchLiveSnapshot = snapshot;
-          this.playSearchLiveStatus = normalizeString(status) || 'idle';
-        });
-      }
-      const canonicalQuery = normalizeSearchKey(this.playSearchQueryCanonical);
-      const canonicalScope = normalizeString(this.playSearchCanonicalScope);
-      if (!canonicalQuery || canonicalQuery === query) {
-        this.playSearchCanonicalLiveSnapshot = null;
-        this.playSearchCanonicalLiveStatus = canonicalQuery ? 'completed' : 'idle';
         return;
       }
-      this.playSearchCanonicalLiveSnapshot = getSearchSessionLaneSnapshot(canonicalQuery, canonicalScope, 'site');
-      this.playSearchCanonicalLiveStatus = getSearchSessionLaneStatus(canonicalQuery, canonicalScope, 'site');
-      this.playSearchCanonicalUnsubscribe = subscribeSearchSessionLane(canonicalQuery, canonicalScope, 'site', (snapshot, status) => {
-        if (normalizeSearchKey(this.playSearchQueryCanonical) !== canonicalQuery) return;
-        if (normalizeString(this.playSearchCanonicalScope) !== canonicalScope) return;
-        this.playSearchCanonicalLiveSnapshot = snapshot;
-        this.playSearchCanonicalLiveStatus = normalizeString(status) || 'idle';
+      this.playSearchLiveSnapshot = getSearchSessionLaneSnapshot(query, scope, 'site');
+      this.playSearchLiveStatus = getSearchSessionLaneStatus(query, scope, 'site');
+      this.playSearchUnsubscribe = subscribeSearchSessionLane(query, scope, 'site', (snapshot, status) => {
+        if (normalizeSearchKey(this.playSearchQueryOriginal) !== query) return;
+        if ((normalizeString(this.playSearchPrimaryScope) || this.playSearchScope) !== scope) return;
+        this.playSearchLiveSnapshot = snapshot;
+        this.playSearchLiveStatus = normalizeString(status) || 'idle';
       });
     },
     unbindPlaySearchQuerySubscription() {
@@ -2723,10 +2672,6 @@ export default {
         this.playSearchUnsubscribe();
       }
       this.playSearchUnsubscribe = null;
-      if (typeof this.playSearchCanonicalUnsubscribe === 'function') {
-        this.playSearchCanonicalUnsubscribe();
-      }
-      this.playSearchCanonicalUnsubscribe = null;
     },
     async ensurePlaySearchRuntimeConfig() {
       if (this.playSearchRuntimeConfigData) return this.playSearchRuntimeConfigData;
@@ -2828,31 +2773,16 @@ export default {
       this.$nextTick(() => this.syncPlaybackDisplayFocus());
     },
     async triggerSiteSourceSearchMore() {
-      if ((!this.playSearchQueryOriginal && !this.playSearchQueryCanonical) || !this.siteSourceSearchInteractive) return;
+      if (!this.playSearchQueryOriginal || !this.siteSourceSearchInteractive) return;
       await this.ensurePlayBlockedSiteKeysLoaded();
       this.siteSourceSearchManualLoading = true;
       try {
-        if (this.playSearchQueryOriginal && this.playSearchPrimaryStatus !== 'completed') {
+        if (this.playSearchPrimaryStatus !== 'completed') {
           await performSearchSessionSearch(this.playSearchQueryOriginal, this.bootstrap, {
             saveHistoryEnabled: false,
             blockedSiteKeys: this.playBlockedSiteKeys,
             affectUi: false,
             scope: this.playSearchPrimaryScope,
-            searchDisplayModeOverride: 'sites',
-            contentKind: this.playSearchContentKind,
-          });
-          return;
-        }
-        if (
-          this.playSearchQueryCanonical
-          && this.playSearchQueryCanonical !== this.playSearchQueryOriginal
-          && this.playSearchCanonicalStatus !== 'completed'
-        ) {
-          await performSearchSessionSearch(this.playSearchQueryCanonical, this.bootstrap, {
-            saveHistoryEnabled: false,
-            blockedSiteKeys: this.playBlockedSiteKeys,
-            affectUi: false,
-            scope: this.playSearchCanonicalScope,
             searchDisplayModeOverride: 'sites',
             contentKind: this.playSearchContentKind,
           });
@@ -3988,6 +3918,45 @@ export default {
     getCachedSiteResultDetail(item) {
       return getSiteResultDetailRuntime(this.siteResultDetailStore, item);
     },
+    buildSiteDetailDedupeKey(item) {
+      const target = item && typeof item === 'object' ? item : null;
+      const siteKey = normalizeString(target && target.siteKey);
+      const spiderApi = normalizeString(target && target.spiderApi);
+      const siteDetail = normalizeString(target && target.siteDetail);
+      if (!siteKey || !spiderApi || !siteDetail) return '';
+      return `${siteKey}::${spiderApi}::${siteDetail}`;
+    },
+    emitSiteDetailInFlightUpdate(entry, detail) {
+      const payload = detail && typeof detail === 'object' ? detail : null;
+      if (!entry || !payload) return;
+      const listeners = entry.listeners instanceof Set ? entry.listeners : new Set();
+      listeners.forEach((listener) => {
+        if (typeof listener !== 'function') return;
+        try {
+          listener(payload);
+        } catch (_error) {}
+      });
+    },
+    async awaitSiteDetailInFlight(entry, signal) {
+      const target = entry && typeof entry === 'object' ? entry : null;
+      const promise = target && target.promise && typeof target.promise.then === 'function'
+        ? target.promise
+        : Promise.resolve(null);
+      if (!signal || typeof signal.addEventListener !== 'function') return promise;
+      if (signal.aborted) return null;
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener('abort', onAbort);
+          resolve(value || null);
+        };
+        const onAbort = () => finish(null);
+        signal.addEventListener('abort', onAbort, { once: true });
+        promise.then((value) => finish(value)).catch(() => finish(null));
+      });
+    },
     buildPrimaryEpisodeGlobalNo(item) {
       const episodeNo = normalizeInt(item && (item.no != null ? item.no : item.text));
       const seasonNo = this.currentEpisodeSeasonNumber;
@@ -4038,20 +4007,71 @@ export default {
     async ensureSiteResultDetailCached(item, { onUpdate, signal } = {}) {
       const target = item && typeof item === 'object' ? item : null;
       if (!target) return null;
+      const cached = this.getCachedSiteResultDetail(target);
+      if (cached && cached.resolutionComplete === true) {
+        if (typeof onUpdate === 'function') onUpdate(cached);
+        return cached;
+      }
+
+      const dedupeKey = this.buildSiteDetailDedupeKey(target);
+      const listener = typeof onUpdate === 'function' ? onUpdate : null;
+      const inFlightMap = this.siteResultDetailInFlightMap && typeof this.siteResultDetailInFlightMap === 'object'
+        ? this.siteResultDetailInFlightMap
+        : {};
+      this.siteResultDetailInFlightMap = inFlightMap;
+
+      const existing = dedupeKey ? inFlightMap[dedupeKey] : null;
+      if (existing && typeof existing === 'object' && existing.promise) {
+        if (listener) {
+          if (!(existing.listeners instanceof Set)) existing.listeners = new Set();
+          existing.listeners.add(listener);
+        }
+        try {
+          return await this.awaitSiteDetailInFlight(existing, signal);
+        } finally {
+          if (listener && existing.listeners instanceof Set) existing.listeners.delete(listener);
+        }
+      }
+
       const settings = await this.ensurePlayRuntimeSettings();
-      return ensureSiteResultDetailCachedRuntime({
+      const created = {
+        listeners: new Set(listener ? [listener] : []),
+        promise: null,
+      };
+      const run = ensureSiteResultDetailCachedRuntime({
         item: target,
         store: this.siteResultDetailStore,
         runtimeSettings: settings,
         timeoutMs: 15000,
-        signal,
+        signal: null,
         onUpdate: (nextDetail) => {
           const payload = nextDetail && typeof nextDetail === 'object' ? nextDetail : null;
           if (!payload) return;
           this.applySiteResultDetailUpdate(target, payload);
-          if (typeof onUpdate === 'function') onUpdate(payload);
+          this.emitSiteDetailInFlightUpdate(created, payload);
         },
+      }).catch(() => null).finally(() => {
+        if (!dedupeKey) return;
+        const current = this.siteResultDetailInFlightMap && this.siteResultDetailInFlightMap[dedupeKey];
+        if (current === created) {
+          const nextMap = { ...(this.siteResultDetailInFlightMap || {}) };
+          delete nextMap[dedupeKey];
+          this.siteResultDetailInFlightMap = nextMap;
+        }
       });
+      created.promise = run;
+      if (dedupeKey) {
+        this.siteResultDetailInFlightMap = {
+          ...this.siteResultDetailInFlightMap,
+          [dedupeKey]: created,
+        };
+      }
+
+      try {
+        return await this.awaitSiteDetailInFlight(created, signal);
+      } finally {
+        if (listener && created.listeners instanceof Set) created.listeners.delete(listener);
+      }
     },
     cacheRecognitionForSiteResult(item, detail, {
       mapping = null,
@@ -5281,13 +5301,7 @@ export default {
         this.bindPlaySearchQuerySubscription();
       },
     },
-    playSearchQueryCanonical() {
-      this.bindPlaySearchQuerySubscription();
-    },
     playSearchPrimaryScope() {
-      this.bindPlaySearchQuerySubscription();
-    },
-    playSearchCanonicalScope() {
       this.bindPlaySearchQuerySubscription();
     },
     detailLoading(next, prev) {

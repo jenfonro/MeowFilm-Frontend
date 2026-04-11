@@ -257,6 +257,130 @@ export const resolveDisplayedSiteGroupKey = (item, tmdbByGroup, displayMode) => 
   return strippedGroupKey;
 };
 
+const CIRCLED_DIGITS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳'];
+const formatCircledIndex = (index) => CIRCLED_DIGITS[index] || `(${index + 1})`;
+
+const buildTMDBGroupMap = (tmdbItems) => {
+  const map = new Map();
+  (Array.isArray(tmdbItems) ? tmdbItems : []).forEach((item) => {
+    const groupKey = normalizeString(item && item.groupKey);
+    if (!groupKey) return;
+    map.set(groupKey, item);
+  });
+  return map;
+};
+
+const buildSiteDisplayGroups = (siteItems, { tmdbByGroup, displayMode, context } = {}) => {
+  const groups = new Map();
+  (Array.isArray(siteItems) ? siteItems : []).forEach((item) => {
+    const key = resolveDisplayedSiteGroupKey(item, tmdbByGroup, displayMode);
+    if (!key) return;
+    const current = groups.get(key) || { representative: null, items: [], siteKeys: new Set(), title: '' };
+    current.items.push(item);
+    current.siteKeys.add(item.siteKey);
+    current.title = current.title || item.title;
+    if (!current.representative || compareRepresentative(item, current.representative, context) < 0) {
+      current.representative = item;
+    }
+    groups.set(key, current);
+  });
+  return groups;
+};
+
+const applyTMDBAggregateIntoCards = (tmdbByGroup, groups) => {
+  Array.from(groups.entries()).forEach(([groupKey, group]) => {
+    const tmdbMatch = tmdbByGroup.get(groupKey) || null;
+    if (!tmdbMatch) return;
+    const siteCount = group && group.siteKeys ? group.siteKeys.size : 0;
+    const aggregateRemark = formatAggregateTVRemark({
+      tmdbMatch,
+      groupTitle: (tmdbMatch && tmdbMatch.title) || (group && group.title) || '',
+      sources: group && Array.isArray(group.items) ? group.items : [],
+    });
+    tmdbMatch.aggregateSourceCount = siteCount;
+    tmdbMatch.aggregateItems = (group && Array.isArray(group.items) ? group.items : []).slice().map((item) => mergeDisplayedSiteItem(item, tmdbMatch));
+    tmdbMatch.aggregateKind = 'tmdb';
+    tmdbMatch.contentKey = buildDisplayedContentKey(tmdbMatch.title, tmdbMatch.contentKey);
+    if (aggregateRemark) tmdbMatch.textBadge = aggregateRemark;
+  });
+};
+
+const sortSiteItemsByRuntimeOrder = (items, siteOrderMap) =>
+  (Array.isArray(items) ? items : [])
+    .slice()
+    .sort((left, right) => {
+      const leftOrder = siteOrderMap.has(left.siteKey) ? siteOrderMap.get(left.siteKey) : 999999;
+      const rightOrder = siteOrderMap.has(right.siteKey) ? siteOrderMap.get(right.siteKey) : 999999;
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      const leftLen = normalizeString(left.title).length;
+      const rightLen = normalizeString(right.title).length;
+      if (leftLen !== rightLen) return rightLen - leftLen;
+      return 0;
+    });
+
+const isSiteItemBlockedForDisplay = (item, blockedKeySet, blockedMatchMap) => {
+  if (!item) return true;
+  if (blockedKeySet.has(normalizeString(item.siteKey))) return true;
+  const matchKey = `${normalizeString(item.siteKey)}::${normalizeString(item.siteDetail)}`;
+  return !!(blockedMatchMap[matchKey] && blockedMatchMap[matchKey].blockAll);
+};
+
+export const buildSiteSourceItemsForTitle = ({
+  snapshot,
+  runtimeConfig,
+  blockedSiteKeys = [],
+  blockedMatchIndex = {},
+  title = '',
+  contentKind = 'tv',
+} = {}) => {
+  if (!snapshot || !runtimeConfig) return [];
+  const siteItems = Array.isArray(snapshot.siteItems) ? snapshot.siteItems : [];
+  if (!siteItems.length) return [];
+  const targetGroupKey = buildSearchGroupKey(title, runtimeConfig.aggregateRules, { contentKind });
+  if (!targetGroupKey) return [];
+  const displayMode = normalizeString(runtimeConfig && runtimeConfig.searchDisplayMode);
+  const tmdbByGroup = buildTMDBGroupMap(snapshot.tmdbItems);
+  const blockedKeySet = new Set(
+    (Array.isArray(blockedSiteKeys) ? blockedSiteKeys : [])
+      .map((item) => normalizeString(item))
+      .filter(Boolean)
+  );
+  const blockedMatchMap = blockedMatchIndex && typeof blockedMatchIndex === 'object' ? blockedMatchIndex : {};
+  const siteOrderMap = runtimeConfig.siteOrderMap instanceof Map ? runtimeConfig.siteOrderMap : new Map();
+
+  const groups = buildSiteDisplayGroups(siteItems, {
+    tmdbByGroup,
+    displayMode,
+    context: runtimeConfig,
+  });
+
+  const group = groups.get(targetGroupKey);
+  if (!group || !Array.isArray(group.items) || !group.items.length) return [];
+
+  const matched = sortSiteItemsByRuntimeOrder(
+    group.items.filter((item) => !isSiteItemBlockedForDisplay(item, blockedKeySet, blockedMatchMap)),
+    siteOrderMap
+  );
+
+  const titleCounts = new Map();
+  matched.forEach((item) => {
+    const duplicateKey = `${normalizeString(item.siteKey)}::${normalizeString(item.title)}`;
+    titleCounts.set(duplicateKey, (titleCounts.get(duplicateKey) || 0) + 1);
+  });
+
+  const titleIndexes = new Map();
+  return matched.map((item) => {
+    const duplicateKey = `${normalizeString(item.siteKey)}::${normalizeString(item.title)}`;
+    const nextIndex = titleIndexes.has(duplicateKey) ? titleIndexes.get(duplicateKey) + 1 : 0;
+    titleIndexes.set(duplicateKey, nextIndex);
+    const duplicateCount = titleCounts.get(duplicateKey) || 0;
+    return {
+      ...item,
+      displayLabel: `${normalizeString(item.siteName)}-${normalizeString(item.title)}${duplicateCount > 1 ? ` ${formatCircledIndex(nextIndex)}` : ''}`,
+    };
+  });
+};
+
 const buildCanonicalSearchTitle = (title, compiledRules, { queryTrailingDigits = '', contentKind = 'tv' } = {}) => {
   const base = sanitizeDisplayTitle(title);
   if (!base) return '';
@@ -1104,12 +1228,7 @@ export function buildDisplayedResults(searchState, config, { rawListMode = false
   const tmdbItems = Array.isArray(searchState && searchState.tmdbItems) ? searchState.tmdbItems : [];
   const siteItems = Array.isArray(searchState && searchState.siteItems) ? searchState.siteItems : [];
   const displayMode = normalizeString(searchState && searchState.displayMode) || normalizeString(config && config.searchDisplayMode);
-  const tmdbByGroup = new Map();
-  tmdbItems.forEach((item) => {
-    const groupKey = normalizeString(item && item.groupKey);
-    if (!groupKey) return;
-    tmdbByGroup.set(groupKey, item);
-  });
+  const tmdbByGroup = buildTMDBGroupMap(tmdbItems);
 
   const normalizedTmdbItems = tmdbItems.map((item) => ({
     ...(item || {}),
@@ -1129,25 +1248,19 @@ export function buildDisplayedResults(searchState, config, { rawListMode = false
   });
 
   if (!rawListMode) {
-    const groups = new Map();
-    siteItems.forEach((item) => {
-      const key = resolveDisplayedSiteGroupKey(item, tmdbByGroup, displayMode);
-      if (!key) return;
-      const current = groups.get(key) || { representative: null, items: [], siteKeys: new Set(), title: '' };
-      current.items.push(item);
-      current.siteKeys.add(item.siteKey);
-      current.title = current.title || item.title;
-      if (!current.representative || compareRepresentative(item, current.representative, config) < 0) {
-        current.representative = item;
-      }
-      groups.set(key, current);
+    const groups = buildSiteDisplayGroups(siteItems, {
+      tmdbByGroup,
+      displayMode,
+      context: config,
     });
+
+    applyTMDBAggregateIntoCards(tmdbByGroup, groups);
 
     siteDisplay = Array.from(groups.entries()).flatMap(([groupKey, group]) => {
       const representative = group.representative;
       if (!representative) return [];
-      const siteCount = group.siteKeys.size;
       const itemCount = Array.isArray(group.items) ? group.items.length : 0;
+      const siteCount = group.siteKeys.size;
       const tmdbMatch = tmdbByGroup.get(groupKey) || null;
       const aggregateRemark = formatAggregateTVRemark({
         tmdbMatch,
@@ -1155,14 +1268,7 @@ export function buildDisplayedResults(searchState, config, { rawListMode = false
         sources: group.items,
       });
 
-      if (tmdbMatch) {
-        tmdbMatch.aggregateSourceCount = siteCount;
-        tmdbMatch.aggregateItems = group.items.slice().map((item) => mergeDisplayedSiteItem(item, tmdbMatch));
-        tmdbMatch.aggregateKind = 'tmdb';
-        tmdbMatch.contentKey = buildDisplayedContentKey(tmdbMatch.title, tmdbMatch.contentKey);
-        if (aggregateRemark) tmdbMatch.textBadge = aggregateRemark;
-        return [];
-      }
+      if (tmdbMatch) return [];
 
       if (itemCount <= 1) {
         return [
