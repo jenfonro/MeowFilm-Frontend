@@ -506,6 +506,7 @@ import {
   syncHistoryProgressIfPossible,
   warmPlayHistoryForContext,
 } from '../../shared/playHistoryRuntime';
+import { apiGetJson, buildQuery } from '../../shared/apiClient';
 import {
   ensureSearchSessionConfig,
   getSearchSessionLaneSnapshot,
@@ -517,8 +518,10 @@ import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import {
   addSmartMatchBlockItem,
   buildSearchGroupKey,
+  buildSmartMatchBlockKeyword,
   clearBlockedMatchCaches,
   fetchBlockedMatchIndex,
+  stripSearchAliasMarkers,
 } from '../../shared/searchRuntime';
 import { runSmartPlaybackController } from '../../shared/smartPlaybackController';
 import {
@@ -547,7 +550,9 @@ import {
 import { fetchTMDBDetailCached } from '../../shared/tmdbRuntime';
 import { fetchTVMetaCached, normalizeTVMetaPayload } from '../../shared/tvMetaRuntime';
 import {
+  buildTMDBDetailTextBadge,
   getTMDBBackdropPath,
+  getTMDBDetailTitle,
   getTMDBNextEpisodeToAir,
   getTMDBOrdinarySeasons,
   getTMDBPosterPath,
@@ -1879,11 +1884,12 @@ export default {
         if (!raw) return;
         const dollarIdx = raw.indexOf('$');
         const displayName = dollarIdx >= 0 ? normalizeString(raw.slice(0, dollarIdx)) : raw;
+        const browseDisplayName = stripDisplayMetaPrefix(displayName);
         const episodeUrl = dollarIdx >= 0 ? normalizeString(raw.slice(dollarIdx + 1)) : raw;
         const rawName = extractRawNamesFromEpisodeUrl(episodeUrl)[0] || '';
         const fileName = getRawFileName(rawName);
         if (!fileName) return;
-        const dirs = splitRawPathSegments(displayName);
+        const dirs = splitRawPathSegments(browseDisplayName);
         let node = root;
         dirs.forEach((dir) => {
           node = ensureDir(node, dir);
@@ -2431,6 +2437,8 @@ export default {
       selectedViewRangeStart: 0,
       preOrderToggleBusy: false,
       selectedSiteEpisodeSelectionKey: '',
+      siteHistoryResolvedByTitle: '',
+      siteHistoryResolvedMeta: null,
       detailFetchSeq: 0,
       selectedSearchResultId: '',
       selectedProjectionSource: 'TMDB',
@@ -3751,37 +3759,143 @@ export default {
         void this.tryAutoplayOnce();
       });
     },
-    buildPlayHistoryPayloadForResolvedSegment({ siteItem, pan, segment, selectionKey, globalEpisode = 0 } = {}) {
+    async ensureSiteHistoryResolvedMeta() {
+      if (this.isTmdbMode) {
+        return {
+          contentKey: normalizeString(this.playContentPreferenceKey),
+          tmdbId: Math.max(0, normalizeInt(this.tmdbId)),
+          tmdbType: normalizeString(this.tmdbType || this.searchType).toLowerCase(),
+        };
+      }
+      const baseTitle = normalizeString(this.playContentPreferenceKey) || normalizeString(this.displayTitle);
+      const kind = this.contentKind === 'movie' ? 'movie' : 'tv';
+      const cleanedTitle = stripSearchAliasMarkers(baseTitle, { contentKind: kind });
+      const settings = await this.ensurePlayRuntimeSettings();
+      const aggregateRules = settings && Array.isArray(settings.magicAggregateRegexRules)
+        ? settings.magicAggregateRegexRules
+        : [];
+      const configCleanedTitle = buildSmartMatchBlockKeyword(cleanedTitle || baseTitle, aggregateRules);
+      const queryTitle = normalizeSearchKey(configCleanedTitle || cleanedTitle || baseTitle);
+      if (!queryTitle) return { contentKey: '', tmdbId: 0, tmdbType: '' };
+      const cachedByTitle = normalizeString(this.siteHistoryResolvedByTitle);
+      const cachedMeta = this.siteHistoryResolvedMeta && typeof this.siteHistoryResolvedMeta === 'object'
+        ? this.siteHistoryResolvedMeta
+        : null;
+      if (cachedByTitle === queryTitle && cachedMeta) return { ...cachedMeta };
+      let nextMeta = { contentKey: queryTitle, tmdbId: 0, tmdbType: '', tmdbPoster: '', tmdbRemark: '' };
+      try {
+        const payload = await apiGetJson(`/api/tmdb/resolve${buildQuery({ type: kind, title: queryTitle })}`, {
+          cacheMs: 0,
+          dedupe: true,
+        });
+        const id = Math.max(0, normalizeInt(payload && payload.id));
+        if (id > 0) {
+          const detail = await fetchTMDBDetailCached({ type: kind, id });
+          const detailTitle = normalizeString(getTMDBDetailTitle(detail, kind));
+          nextMeta = {
+            contentKey: normalizeSearchKey(detailTitle || queryTitle),
+            tmdbId: id,
+            tmdbType: kind,
+            tmdbPoster: normalizeString(getTMDBPosterPath(detail)),
+            tmdbRemark: normalizeString(buildTMDBDetailTextBadge(detail, kind)),
+          };
+        }
+      } catch (_error) {
+        // keep fallback path
+      }
+      this.siteHistoryResolvedByTitle = queryTitle;
+      this.siteHistoryResolvedMeta = { ...nextMeta };
+      return nextMeta;
+    },
+    buildSiteModeTMDBBindingForSegment({ segment, resolvedMeta, panEntry = null } = {}) {
+      const meta = resolvedMeta && typeof resolvedMeta === 'object' ? resolvedMeta : null;
+      const tmdbId = Math.max(0, normalizeInt(meta && meta.tmdbId));
+      const tmdbType = normalizeString(meta && meta.tmdbType).toLowerCase();
+      if (tmdbId <= 0 || (tmdbType !== 'tv' && tmdbType !== 'movie')) {
+        return { tmdbId: 0, tmdbType: '', tmdbSeason: 0, tmdbEpisode: 0 };
+      }
+      if (tmdbType === 'movie') {
+        return { tmdbId, tmdbType, tmdbSeason: 0, tmdbEpisode: 0 };
+      }
+      const entry = panEntry && typeof panEntry === 'object'
+        ? panEntry
+        : (this.currentPanSourceEntry && typeof this.currentPanSourceEntry === 'object' ? this.currentPanSourceEntry : null);
+      const runtimeSettings = this.playRuntimeSettings && typeof this.playRuntimeSettings === 'object'
+        ? this.playRuntimeSettings
+        : {};
+      const targetIndex = Math.max(0, normalizeInt(segment && segment.index));
+      const parsedItems = buildDirectSiteEpisodeItems(entry, runtimeSettings);
+      const matched = parsedItems.find((item) => normalizeInt(item && item.itemIndex) === targetIndex) || null;
+      const episode = Math.max(0, normalizeInt(matched && matched.no));
+      const season = Math.max(0, normalizeInt(matched && matched.season)) || (episode > 0 ? 1 : 0);
+      if (season <= 0 || episode <= 0) {
+        return { tmdbId: 0, tmdbType: '', tmdbSeason: 0, tmdbEpisode: 0 };
+      }
+      return { tmdbId, tmdbType, tmdbSeason: season, tmdbEpisode: episode };
+    },
+    buildPlayHistoryPayloadForResolvedSegment({
+      siteItem,
+      pan,
+      segment,
+      selectionKey,
+      globalEpisode = 0,
+      contentKeyOverride = '',
+      siteTMDBBinding = null,
+      resolvedMeta = null,
+    } = {}) {
       const item = siteItem && typeof siteItem === 'object' ? siteItem : null;
       const playback = this.currentPlaybackContext && typeof this.currentPlaybackContext === 'object'
         ? this.currentPlaybackContext
         : null;
-      const nextGlobalEpisode = Math.max(0, normalizeInt(globalEpisode));
+      const requestedGlobalEpisode = Math.max(0, normalizeInt(globalEpisode));
+      const resolvedGlobalEpisode = requestedGlobalEpisode || Math.max(0, normalizeInt(playback && playback.globalEpisode));
       const canReportTMDBHistory = !!this.isTmdbMode;
-      const nextSiteKey = normalizeString(item && item.siteKey) || normalizeString(this.siteKey);
-      const nextSpiderApi = normalizeString(item && item.spiderApi) || normalizeString(this.spiderApi);
+      const nextSiteKey = normalizeString(item && item.siteKey)
+        || normalizeString(this.siteKey)
+        || normalizeString(playback && playback.siteKey);
+      const nextSpiderApi = normalizeString(item && item.spiderApi)
+        || normalizeString(this.spiderApi)
+        || normalizeString(playback && playback.spiderApi);
       const nextSiteDetail = normalizeString(item && item.siteDetail)
         || normalizeString(playback && playback.siteDetail)
         || normalizeString(this.siteDetail);
-      const tmdbTarget = canReportTMDBHistory && nextGlobalEpisode > 0
-        ? tmdbSeasonEpisodeOfGlobal(this.detailTMDBData, nextGlobalEpisode)
+      const tmdbTarget = canReportTMDBHistory && resolvedGlobalEpisode > 0
+        ? tmdbSeasonEpisodeOfGlobal(this.detailTMDBData, resolvedGlobalEpisode)
         : null;
+      const siteBinding = siteTMDBBinding && typeof siteTMDBBinding === 'object'
+        ? siteTMDBBinding
+        : { tmdbId: 0, tmdbType: '', tmdbSeason: 0, tmdbEpisode: 0 };
+      const meta = resolvedMeta && typeof resolvedMeta === 'object' ? resolvedMeta : null;
       return buildPlayHistoryPayload({
-        contentKey: normalizeString(this.playContentPreferenceKey) || normalizeString(this.displayTitle),
+        contentKey: normalizeString(contentKeyOverride)
+          || normalizeString(this.playContentPreferenceKey)
+          || normalizeString(this.displayTitle),
         reportEnabled: canReportTMDBHistory
-          ? (this.tmdbMovieMode || nextGlobalEpisode > 0)
+          ? (this.tmdbMovieMode || resolvedGlobalEpisode > 0)
           : (!!nextSiteKey && !!nextSpiderApi && !!nextSiteDetail),
         siteKey: nextSiteKey,
-        siteName: normalizeString(item && item.siteName) || normalizeString(this.siteName),
+        siteName: normalizeString(item && item.siteName)
+          || normalizeString(this.siteName)
+          || normalizeString(playback && playback.siteName),
         spiderApi: nextSpiderApi,
         siteDetail: nextSiteDetail,
-        Poster: this.detailPoster,
-        Remark: this.historyRemarkText,
-        tmdbId: canReportTMDBHistory ? this.tmdbId : 0,
-        tmdbType: canReportTMDBHistory ? (this.tmdbType || this.searchType) : '',
-        tmdbSeason: canReportTMDBHistory ? normalizeInt(tmdbTarget && tmdbTarget.season) : 0,
-        tmdbEpisode: canReportTMDBHistory ? normalizeInt(tmdbTarget && tmdbTarget.episode) : 0,
-        globalEpisode: nextGlobalEpisode,
+        Poster: canReportTMDBHistory
+          ? this.detailPoster
+          : (normalizeString(meta && meta.tmdbPoster) || this.detailPoster),
+        Remark: canReportTMDBHistory
+          ? this.historyRemarkText
+          : (normalizeString(meta && meta.tmdbRemark) || this.historyRemarkText),
+        tmdbId: canReportTMDBHistory ? this.tmdbId : Math.max(0, normalizeInt(siteBinding.tmdbId)),
+        tmdbType: canReportTMDBHistory
+          ? (this.tmdbType || this.searchType)
+          : normalizeString(siteBinding.tmdbType).toLowerCase(),
+        tmdbSeason: canReportTMDBHistory
+          ? normalizeInt(tmdbTarget && tmdbTarget.season)
+          : Math.max(0, normalizeInt(siteBinding.tmdbSeason)),
+        tmdbEpisode: canReportTMDBHistory
+          ? normalizeInt(tmdbTarget && tmdbTarget.episode)
+          : Math.max(0, normalizeInt(siteBinding.tmdbEpisode)),
+        globalEpisode: resolvedGlobalEpisode,
         playFlag: normalizeString(pan && pan.label),
         siteEpisodeIndex: Math.max(1, normalizeInt(segment && segment.index) + 1),
         siteEpisodeFile: pickRawFileNameForStats(segment && segment.displayName, segment && segment.rawName),
@@ -4560,6 +4674,12 @@ export default {
         fromHistoryPlayFlag,
         fromHistoryDetail,
       });
+      const siteResolvedMeta = await this.ensureSiteHistoryResolvedMeta();
+      const siteTMDBBinding = this.buildSiteModeTMDBBindingForSegment({
+        segment,
+        resolvedMeta: siteResolvedMeta,
+        panEntry,
+      });
       await preparePlayHistoryContext(
         this.buildPlayHistoryPayloadForResolvedSegment({
           siteItem,
@@ -4567,6 +4687,9 @@ export default {
           segment,
           selectionKey,
           globalEpisode,
+          contentKeyOverride: normalizeString(siteResolvedMeta && siteResolvedMeta.contentKey),
+          siteTMDBBinding,
+          resolvedMeta: siteResolvedMeta,
         }),
       );
       const seq = this.playRequestSeq + 1;
