@@ -73,7 +73,6 @@ export const runSmartPlaybackController = async ({
   let playAttemptRunning = false;
   let queuedRetry = false;
   let currentPendingCandidateKey = '';
-  const pendingDetailAbortControllers = new Set();
   let unsubscribe = () => {};
 
   const safeStopped = () => (typeof isRunStopped === 'function' ? !!isRunStopped() : false);
@@ -107,20 +106,17 @@ export const runSmartPlaybackController = async ({
   const clearPending = () => {
     if (typeof clearPendingAttempt === 'function') clearPendingAttempt();
   };
-  const abortPendingDetails = () => {
-    if (!pendingDetailAbortControllers.size) return;
-    Array.from(pendingDetailAbortControllers).forEach((controller) => {
-      try {
-        controller.abort();
-      } catch (_error) {}
-    });
-    pendingDetailAbortControllers.clear();
-  };
 
-  const buildOrderMap = () => new Map(
+  let latestOrderMap = new Map(
     safeBuildSiteItems(safeGetSearchState(query, searchScope).snapshot)
       .map((entry, index) => [normalizeString(entry && entry.id), index]),
   );
+
+  const rebuildOrderMapFromSnapshot = (snapshot) => {
+    latestOrderMap = new Map(
+      safeBuildSiteItems(snapshot).map((entry, index) => [normalizeString(entry && entry.id), index]),
+    );
+  };
 
   const compareStable = (left, right, orderMap) => {
     const leftOrder = orderMap.has(normalizeString(left && left.siteItem && left.siteItem.id))
@@ -149,7 +145,7 @@ export const runSmartPlaybackController = async ({
   };
 
   const pickBestCandidate = () => {
-    const orderMap = buildOrderMap();
+    const orderMap = latestOrderMap;
     let best = null;
     candidateRegistry.forEach((candidate, candidateKey) => {
       if (!candidateKey || failedCandidateKeys.has(candidateKey)) return;
@@ -203,18 +199,16 @@ export const runSmartPlaybackController = async ({
         : false);
       if (!ok) {
         failedCandidateKeys.add(candidateKey);
-        currentPendingCandidateKey = '';
+        releasePendingPlaybackLock({ clearPending: true });
         if (typeof setAttemptRunSeq === 'function') setAttemptRunSeq(0);
         continue;
       }
-      currentPendingCandidateKey = candidateKey;
-      if (typeof setPendingRunSeq === 'function') setPendingRunSeq(runSeq);
+      acquirePendingPlaybackLock(candidateKey);
       if (typeof setResume === 'function') {
         setResume(async () => {
-          if (safeStopped()) return;
+          if (isClosedLoopStopped()) return;
           if (currentPendingCandidateKey) failedCandidateKeys.add(currentPendingCandidateKey);
-          currentPendingCandidateKey = '';
-          clearPending();
+          releasePendingPlaybackLock({ clearPending: true });
           await requestResolvePlayback();
         });
       }
@@ -224,8 +218,8 @@ export const runSmartPlaybackController = async ({
   };
 
   const requestResolvePlayback = async () => {
-    if (safeStopped()) return false;
-    if (currentPendingCandidateKey || playAttemptRunning) {
+    if (isClosedLoopStopped()) return false;
+    if (shouldBlockResolveRequests()) {
       queuedRetry = true;
       return false;
     }
@@ -234,7 +228,7 @@ export const runSmartPlaybackController = async ({
       return await tryResolvePlayback();
     } finally {
       playAttemptRunning = false;
-      if (!safeStopped() && queuedRetry) {
+      if (!isClosedLoopStopped() && queuedRetry) {
         queuedRetry = false;
         void requestResolvePlayback();
       }
@@ -251,7 +245,41 @@ export const runSmartPlaybackController = async ({
     if (typeof onErrorTextChange === 'function') onErrorTextChange('暂无可匹配片源');
   };
 
-  const registerCandidates = async (siteItem) => {
+  const flowState = {
+    resolveRequestQueued: false,
+    resolveRequestScheduled: false,
+    pendingPlaybackLocked: false,
+  };
+
+  const isClosedLoopStopped = () => safeStopped();
+  const shouldBlockNewDetailRequests = () => isClosedLoopStopped() || flowState.pendingPlaybackLocked;
+  const shouldBlockResolveRequests = () => shouldBlockNewDetailRequests() || playAttemptRunning;
+
+  const releasePendingPlaybackLock = ({ clearPending = true } = {}) => {
+    flowState.pendingPlaybackLocked = false;
+    if (clearPending) currentPendingCandidateKey = '';
+    clearPending();
+  };
+
+  const acquirePendingPlaybackLock = (candidateKey) => {
+    currentPendingCandidateKey = normalizeString(candidateKey);
+    flowState.pendingPlaybackLocked = !!currentPendingCandidateKey;
+    if (flowState.pendingPlaybackLocked && typeof setPendingRunSeq === 'function') setPendingRunSeq(runSeq);
+  };
+
+  const scheduleResolvePlayback = () => {
+    flowState.resolveRequestQueued = true;
+    if (flowState.resolveRequestScheduled || isClosedLoopStopped()) return;
+    flowState.resolveRequestScheduled = true;
+    Promise.resolve().then(async () => {
+      flowState.resolveRequestScheduled = false;
+      if (!flowState.resolveRequestQueued || isClosedLoopStopped()) return;
+      flowState.resolveRequestQueued = false;
+      await requestResolvePlayback();
+    });
+  };
+
+  const registerCandidates = (siteItem) => {
     const candidates = typeof collectRecognitionCandidatesForTarget === 'function'
       ? collectRecognitionCandidatesForTarget(siteItem, {
         matchOptions,
@@ -266,12 +294,12 @@ export const runSmartPlaybackController = async ({
       if (!dedupeKey) return;
       candidateRegistry.set(dedupeKey, candidate);
     });
-    await requestResolvePlayback();
+    scheduleResolvePlayback();
     return true;
   };
 
   const runNextQueuedSiteThread = () => {
-    if (!singleSiteThread || safeStopped()) return;
+    if (!singleSiteThread || shouldBlockNewDetailRequests()) return;
     if (activeThreads > 0) return;
     const next = pendingSiteQueue.shift();
     if (!next) return;
@@ -280,36 +308,31 @@ export const runSmartPlaybackController = async ({
 
   const startSiteThread = (siteKey, items) => {
     const key = normalizeString(siteKey);
-    if (!key || safeStopped() || startedSiteKeys.has(key) || !Array.isArray(items) || !items.length) return;
+    if (!key || shouldBlockNewDetailRequests() || startedSiteKeys.has(key) || !Array.isArray(items) || !items.length) return;
     startedSiteKeys.add(key);
     activeThreads += 1;
     Promise.resolve()
       .then(async () => {
         for (let i = 0; i < items.length; i += 1) {
-          if (safeStopped()) return;
+          if (shouldBlockNewDetailRequests()) return;
           const siteItem = items[i];
 
-          const reused = await registerCandidates(siteItem);
-          if (reused || safeStopped()) continue;
+          const reused = registerCandidates(siteItem);
+          if (reused || shouldBlockNewDetailRequests()) continue;
 
-          const detailAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
-          if (detailAbortController) pendingDetailAbortControllers.add(detailAbortController);
           const detail = await Promise.resolve()
             .then(() => (typeof ensureSiteResultDetailCached === 'function'
               ? ensureSiteResultDetailCached(siteItem, {
-                signal: detailAbortController ? detailAbortController.signal : null,
+                signal: null,
                 onUpdate: (nextDetail) => {
                   const payload = nextDetail && typeof nextDetail === 'object' ? nextDetail : null;
-                  if (!payload || safeStopped()) return;
-                  void registerCandidates(siteItem);
+                  if (!payload || shouldBlockNewDetailRequests()) return;
+                  registerCandidates(siteItem);
                 },
               }).catch(() => null)
-              : null))
-            .finally(() => {
-              if (detailAbortController) pendingDetailAbortControllers.delete(detailAbortController);
-            });
-          if (!detail || safeStopped()) continue;
-          await registerCandidates(siteItem);
+              : null));
+          if (!detail || shouldBlockNewDetailRequests()) continue;
+          registerCandidates(siteItem);
         }
       })
       .finally(async () => {
@@ -324,14 +347,15 @@ export const runSmartPlaybackController = async ({
 
   const enqueueSiteThread = (siteKey, items) => {
     const key = normalizeString(siteKey);
-    if (!key || safeStopped() || startedSiteKeys.has(key) || queuedSiteKeys.has(key) || !Array.isArray(items) || !items.length) return;
+    if (!key || shouldBlockNewDetailRequests() || startedSiteKeys.has(key) || queuedSiteKeys.has(key) || !Array.isArray(items) || !items.length) return;
     queuedSiteKeys.add(key);
     pendingSiteQueue.push({ siteKey: key, items });
     runNextQueuedSiteThread();
   };
 
   const scheduleThreadsFromSnapshot = (snapshot) => {
-    if (safeStopped()) return;
+    if (shouldBlockNewDetailRequests()) return;
+    rebuildOrderMapFromSnapshot(snapshot);
     const items = safeBuildSiteItems(snapshot);
     if (!items.length) return;
     const grouped = new Map();
@@ -348,7 +372,7 @@ export const runSmartPlaybackController = async ({
   };
 
   unsubscribe = subscribeSearchSessionLane(query, searchScope, 'site', (snapshot, status) => {
-    if (safeStopped()) return;
+    if (isClosedLoopStopped()) return;
     scheduleThreadsFromSnapshot(snapshot);
     if (status === 'completed' || status === 'error') {
       searchCompleted = true;
@@ -358,7 +382,6 @@ export const runSmartPlaybackController = async ({
 
   if (typeof onStreamCleanupChange === 'function') {
     onStreamCleanupChange(() => {
-      abortPendingDetails();
       try {
         unsubscribe();
       } catch (_error) {}
@@ -380,11 +403,11 @@ export const runSmartPlaybackController = async ({
       searchDisplayModeOverride,
       contentKind: matchKind === 'movie' ? 'movie' : 'tv',
     }).then(() => {
-      if (safeStopped()) return;
+      if (isClosedLoopStopped()) return;
       searchCompleted = true;
       void finalizeIfComplete();
     }).catch(() => {
-      if (safeStopped()) return;
+      if (isClosedLoopStopped()) return;
       searchCompleted = true;
       void finalizeIfComplete();
     });

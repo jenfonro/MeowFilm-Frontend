@@ -487,6 +487,7 @@ import {
   inferQualityFromResolution,
   normalizeGoProxyServers,
   resolveCandidateQualityModeKeyForPlayback,
+  resolveCandidatePanFamilyForPlayback,
 } from '../../shared/playbackRuntime';
 import {
   findPlayHistoryRowForContext,
@@ -831,6 +832,17 @@ const pickRawFileNameForStats = (displayName, rawName, namingContext = {}) => {
 const buildSegmentPlaybackIdentity = (segment) => {
   const seg = segment && typeof segment === 'object' ? segment : null;
   return normalizeString(seg && seg.segmentIdentity);
+};
+
+const normalizePanProviderKey = (value) => {
+  const raw = normalizeString(value).toLowerCase();
+  if (!raw) return '';
+  if (raw === 'quark') return 'quark';
+  if (raw === 'uc') return 'uc';
+  if (raw === 'baidu') return 'baidu';
+  if (raw === '139') return '139';
+  if (raw === '189') return '189';
+  return '';
 };
 
 const getPanEntrySegments = (entry) => (
@@ -2499,11 +2511,27 @@ export default {
       this.cancelActivePlaybackFlow({ stopStream: true, invalidateDetail: true, clearPlayerState: true });
       this.$emit('back');
     },
-    buildSwitchEpisodeKey() {
+    buildSwitchEpisodeKeyByGlobal(globalEpisode) {
       const contentKey = normalizeString(this.playContentPreferenceKey);
-      const globalEpisode = Math.max(0, normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.globalEpisode));
-      if (!contentKey || globalEpisode <= 0) return '';
-      return `${contentKey}::${globalEpisode}`;
+      const targetGlobalEpisode = Math.max(0, normalizeInt(globalEpisode));
+      if (!contentKey || targetGlobalEpisode <= 0) return '';
+      return `${contentKey}::${targetGlobalEpisode}`;
+    },
+    buildSwitchEpisodeKey() {
+      const currentGlobalEpisode = Math.max(0, normalizeInt(this.currentPlaybackContext && this.currentPlaybackContext.globalEpisode));
+      return this.buildSwitchEpisodeKeyByGlobal(currentGlobalEpisode);
+    },
+    buildPrimaryEpisodeActionConstraint(globalEpisode = 0) {
+      const currentPanFamily = normalizeString(this.currentPlaybackPanFamilyLabel);
+      const currentQualityKey = normalizeString(this.currentPlaybackQualityKey);
+      const historyPanFlag = normalizeString(this.playHistoryRowForMenu && this.playHistoryRowForMenu.playFlag);
+      return {
+        mode: 'primary',
+        currentPanFamily,
+        currentQualityKey,
+        historyPanFlag,
+        globalEpisode: Math.max(0, normalizeInt(globalEpisode)),
+      };
     },
     buildSwitchCandidateIdentity(wrapper) {
       const target = wrapper && typeof wrapper === 'object' ? wrapper : null;
@@ -2517,6 +2545,18 @@ export default {
         || normalizeString(siteItem && siteItem.siteDetail)
         || normalizeString(source && source.siteDetail);
       const fileIdentity = this.buildSwitchFileIdentity(target);
+      const panProvider = normalizePanProviderKey(
+        normalizeString(candidate && candidate.provider)
+        || normalizeString(source && source.provider)
+        || normalizeString(target && target.provider),
+      );
+      const panFlag = normalizeString(candidate && candidate.panFlag)
+        || normalizeString(source && source.panFlag)
+        || normalizeString(target && target.panFlag)
+        || normalizeString(target && target.panEntry && target.panEntry.label);
+      if (panProvider && panFlag && fileIdentity) {
+        return `provider::${panProvider}::${panFlag}::${fileIdentity}`;
+      }
       if (!siteKey || !siteDetail || !fileIdentity) return '';
       return `${siteKey}::${siteDetail}::${fileIdentity}`;
     },
@@ -3053,20 +3093,78 @@ export default {
         }
       };
     },
+    isPlaybackCandidate4K(wrapper) {
+      const candidate = wrapper && wrapper.candidate && typeof wrapper.candidate === 'object' ? wrapper.candidate : null;
+      if (!candidate) return false;
+      const qualityKey = normalizeString(resolveCandidateQualityModeKeyForPlayback(candidate));
+      if (qualityKey === '4k' || qualityKey === '4k_hdr' || qualityKey === '4k_fps') return true;
+      const hay = [
+        normalizeString(candidate.displayName),
+        normalizeString(candidate.rawName),
+        normalizeString(candidate.fileName),
+        normalizeString(candidate.quality),
+      ].join(' ').toLowerCase();
+      return /(?:\b4k\b|2160p|2160|uhd)/i.test(hay);
+    },
+    isSmartPlaybackFullDetailCompleted() {
+      return this.playSearchPrimaryStatus === 'completed';
+    },
     buildSmartPlaybackActionAllowed(actionConstraint = null, extraAllowed = null) {
       const unifiedAllowed = this.buildUnifiedSmartCandidateAllowed(extraAllowed);
       return (wrapper) => {
         if (!unifiedAllowed(wrapper)) return false;
-        return isPlaybackCandidateAllowedByAction(wrapper, actionConstraint, this.runtimeSettings);
+        if (!isPlaybackCandidateAllowedByAction(wrapper, actionConstraint, this.runtimeSettings)) return false;
+        const constraint = actionConstraint && typeof actionConstraint === 'object' ? actionConstraint : null;
+        const mode = normalizeString(constraint && constraint.mode);
+        if (mode === 'pan' && !this.isSmartPlaybackFullDetailCompleted()) {
+          return this.isPlaybackCandidate4K(wrapper);
+        }
+        if (mode === 'quality' && !this.isSmartPlaybackFullDetailCompleted()) {
+          const currentPanFamily = normalizeString(constraint && constraint.currentPanFamily);
+          if (!currentPanFamily) return true;
+          const candidate = wrapper && wrapper.candidate && typeof wrapper.candidate === 'object' ? wrapper.candidate : null;
+          const family = normalizeString(resolveCandidatePanFamilyForPlayback(candidate, this.runtimeSettings));
+          return !!family && family === currentPanFamily;
+        }
+        return true;
       };
     },
     buildSmartPlaybackCompareCandidates(actionConstraint = null) {
       return (left, right) => {
         const constraint = actionConstraint && typeof actionConstraint === 'object' ? actionConstraint : null;
-        const primary = constraint && normalizeString(constraint.mode) !== 'default' && normalizeString(constraint.mode) !== 'switch'
-          ? comparePlaybackCandidatesForAction(left, right, constraint, this.currentPlaybackContext, this.runtimeSettings)
-          : comparePlaybackCandidatesByDefaultRules(left, right, this.runtimeSettings);
+        const mode = normalizeString(constraint && constraint.mode);
+        let primary = 0;
+        if (mode === 'primary') {
+          const currentPanFamily = normalizeString(constraint && constraint.currentPanFamily);
+          const currentQualityKey = normalizeString(constraint && constraint.currentQualityKey);
+          const historyPanFlag = normalizeString(constraint && constraint.historyPanFlag);
+          const score = (wrapper) => {
+            const candidate = wrapper && wrapper.candidate && typeof wrapper.candidate === 'object' ? wrapper.candidate : null;
+            if (!candidate) return 0;
+            const family = normalizeString(resolveCandidatePanFamilyForPlayback(candidate, this.runtimeSettings));
+            const qualityKey = normalizeString(resolveCandidateQualityModeKeyForPlayback(candidate));
+            const panFlag = normalizeString(candidate.panFlag)
+              || normalizeString(candidate && candidate.source && candidate.source.panFlag)
+              || normalizeString(wrapper && wrapper.panFlag);
+            const hitPan = !!currentPanFamily && !!family && family === currentPanFamily;
+            const hitQuality = !!currentQualityKey && !!qualityKey && qualityKey === currentQualityKey;
+            if (hitPan && hitQuality) return 300;
+            if (hitPan) return 200;
+            if (hitQuality) return 100;
+            if (historyPanFlag && panFlag === historyPanFlag) return 50;
+            return 0;
+          };
+          const leftScore = score(left);
+          const rightScore = score(right);
+          if (leftScore !== rightScore) primary = leftScore > rightScore ? -1 : 1;
+        } else {
+          primary = constraint && mode !== 'default' && mode !== 'switch'
+            ? comparePlaybackCandidatesForAction(left, right, constraint, this.currentPlaybackContext, this.runtimeSettings)
+            : comparePlaybackCandidatesByDefaultRules(left, right, this.runtimeSettings);
+        }
         if (primary !== 0) return primary;
+        const fallback = comparePlaybackCandidatesByDefaultRules(left, right, this.runtimeSettings);
+        if (fallback !== 0) return fallback;
         const leftLoose = !!(left && left.looseMatch);
         const rightLoose = !!(right && right.looseMatch);
         if (leftLoose !== rightLoose) return leftLoose ? 1 : -1;
@@ -3847,32 +3945,53 @@ export default {
       skipHistoryList = false,
     } = {}) {
       const stageKey = normalizeString(stage) || 'default';
-      if (this.historySmartBootstrapStageDone[stageKey]) return false;
+      const rawStageState = this.historySmartBootstrapStageDone[stageKey];
+      const stageState = rawStageState && typeof rawStageState === 'object'
+        ? rawStageState
+        : (rawStageState ? { done: true, detailDone: true } : { done: false, detailDone: false });
+      if (stageState.done && stageState.detailDone) return false;
       if (!this.isTmdbMode) {
         this.historySmartBootstrapStageDone = {
           ...this.historySmartBootstrapStageDone,
-          [stageKey]: true,
+          [stageKey]: { done: true, detailDone: true },
         };
         return false;
       }
-      this.historySmartBootstrapStageDone = {
-        ...this.historySmartBootstrapStageDone,
-        [stageKey]: true,
-      };
+
       const signature = normalizeString(mappingSignature)
         || (this.isTmdbMode && this.tmdbMovieMode ? TMDB_MOVIE_RECOGNITION_SIGNATURE : normalizeString(this.smartEpisodeMappingSignature));
-      const target = await resolveHistoryBootstrapPlaybackTargetRuntime({
+      const unifiedAllowed = this.buildSmartPlaybackActionAllowed(actionConstraint, isCandidateAllowed);
+      const compareCandidates = this.buildSmartPlaybackCompareCandidates(actionConstraint);
+      const targetEpisodeSource = normalizeString(episodeSource) || this.selectedSiteSource;
+      const targetMapping = mapping || this.smartEpisodeMapping;
+      const failedCachedKeys = new Set();
+      const forceDetailOnlyByStage = stageState.done && !stageState.detailDone;
+      let detailRequested = !!forceDetailOnlyByStage;
+      let hasHistoryContext = false;
+
+      const buildTargetKey = (target) => {
+        const siteItem = target && target.siteItem ? target.siteItem : null;
+        const panEntry = target && target.panEntry ? target.panEntry : null;
+        const segment = target && target.segment ? target.segment : null;
+        const itemId = normalizeString(siteItem && siteItem.id);
+        const panKey = normalizeString(panEntry && panEntry.key);
+        const itemIndex = normalizeInt(segment && segment.index);
+        if (!itemId || !panKey || itemIndex < 0) return '';
+        return `${itemId}::${panKey}::${itemIndex}`;
+      };
+
+      const resolveHistoryTarget = async (forceDetailOnly = false) => resolveHistoryBootstrapPlaybackTargetRuntime({
         matchOptions,
         historyContext: this.buildPlayHistoryWarmContext(),
         globalEpisode,
         wantEpisodeInSeason,
-        skipHistoryList: !!skipHistoryList,
+        skipHistoryList: forceDetailOnly || !!skipHistoryList,
         runtimeSettings: this.runtimeSettings,
-        smartEpisodeMapping: mapping || this.smartEpisodeMapping,
-        episodeSource: normalizeString(episodeSource) || this.selectedSiteSource,
+        smartEpisodeMapping: targetMapping,
+        episodeSource: targetEpisodeSource,
         allowResolutionModes: this.buildAllowedResolutionModes(),
-        isCandidateAllowed: this.buildSmartPlaybackActionAllowed(actionConstraint, isCandidateAllowed),
-        compareCandidates: this.buildSmartPlaybackCompareCandidates(actionConstraint),
+        isCandidateAllowed: unifiedAllowed,
+        compareCandidates,
         buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
         getCachedSiteResultDetail: (siteItem) => this.getCachedSiteResultDetail(siteItem),
         cacheHistoryDetail: (siteItem, payload) => {
@@ -3887,13 +4006,13 @@ export default {
             cacheMeta,
           });
           this.cacheRecognitionForSiteResult(siteItem, detail, {
-            mapping,
+            mapping: targetMapping,
             mappingSignature: signature,
           });
         },
         ensureRecognitionForSiteItem: (siteItem, detail) => {
           this.cacheRecognitionForSiteResult(siteItem, detail, {
-            mapping,
+            mapping: targetMapping,
             mappingSignature: signature,
           });
         },
@@ -3901,19 +4020,77 @@ export default {
           this.collectRecognitionCandidatesForTarget(siteItem, nextGlobal, nextLoose, {
             matchOptions: nextMatchOptions || matchOptions,
             mappingSignature: signature,
-            episodeSource: normalizeString(episodeSource) || this.selectedSiteSource,
+            episodeSource: targetEpisodeSource,
             allowResolutionModes: this.buildAllowedResolutionModes(),
           }),
         ensureSiteResultDetailCached: (siteItem, options) =>
           this.ensureSiteResultDetailCached(siteItem, options),
       }).catch(() => null);
-      if (!target) return false;
-      const ok = await this.playResolvedSiteSegment({
-        ...target,
-        globalEpisode,
-      });
-      if (ok && stageKey) this.smartPlaybackResolvedStage = stageKey;
-      return !!ok;
+
+      const tryPlayTarget = async (target) => {
+        if (!target) return false;
+        const ok = await this.playResolvedSiteSegment({
+          ...target,
+          globalEpisode,
+        });
+        if (ok && stageKey) this.smartPlaybackResolvedStage = stageKey;
+        return !!ok;
+      };
+
+      try {
+        const listTarget = forceDetailOnlyByStage ? null : await resolveHistoryTarget(false);
+        if (listTarget) hasHistoryContext = true;
+        if (listTarget && listTarget.fromHistoryPlayFlag) {
+          if (await tryPlayTarget(listTarget)) return true;
+        } else if (listTarget && listTarget.fromHistoryDetail) {
+          detailRequested = true;
+          if (await tryPlayTarget(listTarget)) return true;
+          const failedKey = buildTargetKey(listTarget);
+          if (failedKey) failedCachedKeys.add(failedKey);
+        }
+
+        detailRequested = true;
+        const detailTarget = await resolveHistoryTarget(true);
+        if (detailTarget) {
+          hasHistoryContext = true;
+          if (await tryPlayTarget(detailTarget)) return true;
+          const failedKey = buildTargetKey(detailTarget);
+          if (failedKey) failedCachedKeys.add(failedKey);
+        }
+
+        while (true) {
+          const cachedTarget = this.resolveCachedPlaybackTarget(globalEpisode, wantEpisodeInSeason, {
+            matchOptions,
+            actionConstraint,
+            isCandidateAllowed: (wrapper) => {
+              if (!unifiedAllowed(wrapper)) return false;
+              const key = `${normalizeString(wrapper && wrapper.siteItem && wrapper.siteItem.id)}::${normalizeString(wrapper && wrapper.panKey)}::${normalizeInt(wrapper && wrapper.itemIndex)}`;
+              if (!key) return true;
+              return !failedCachedKeys.has(key);
+            },
+            mapping: targetMapping,
+            mappingSignature: signature,
+            episodeSource: targetEpisodeSource,
+            includeSelectedContext: false,
+            includeBrowseContext: false,
+            includeStoreScan: true,
+          });
+          if (!cachedTarget) break;
+          const key = buildTargetKey(cachedTarget);
+          if (!key || failedCachedKeys.has(key)) break;
+          const ok = await tryPlayTarget(cachedTarget);
+          if (ok) return true;
+          failedCachedKeys.add(key);
+        }
+
+        return false;
+      } finally {
+        const detailDone = !hasHistoryContext || !!detailRequested;
+        this.historySmartBootstrapStageDone = {
+          ...this.historySmartBootstrapStageDone,
+          [stageKey]: { done: true, detailDone },
+        };
+      }
     },
     getCachedSiteResultDetail(item) {
       return getSiteResultDetailRuntime(this.siteResultDetailStore, item);
@@ -4117,7 +4294,36 @@ export default {
         allowResolutionModes,
       });
     },
-    resetSmartPlaybackRuntimeState({ stopStream = false } = {}) {
+    clearSmartPlaybackPendingState({ clearResume = true } = {}) {
+      this.smartPlaybackPendingRunSeq = 0;
+      this.smartPlaybackAttemptRunSeq = 0;
+      if (clearResume) this.smartPlaybackResume = null;
+    },
+    confirmSmartPlaybackClosedLoop(runSeq) {
+      const targetRunSeq = normalizeInt(runSeq);
+      if (targetRunSeq <= 0 || targetRunSeq !== normalizeInt(this.smartPlaybackRunSeq)) return false;
+      this.smartPlaybackConfirmedRunSeq = targetRunSeq;
+      this.clearSmartPlaybackPendingState({ clearResume: true });
+      if (typeof this.smartPlaybackStreamCleanup === 'function') {
+        try {
+          this.smartPlaybackStreamCleanup();
+        } catch (_e) {}
+      }
+      this.smartPlaybackStreamCleanup = null;
+      return true;
+    },
+    resumeSmartPlaybackIfPendingFailed() {
+      const pendingRunSeq = normalizeInt(this.smartPlaybackPendingRunSeq);
+      const confirmedRunSeq = normalizeInt(this.smartPlaybackConfirmedRunSeq);
+      if (pendingRunSeq <= 0 || pendingRunSeq !== normalizeInt(this.smartPlaybackRunSeq) || pendingRunSeq === confirmedRunSeq) {
+        return false;
+      }
+      const resume = typeof this.smartPlaybackResume === 'function' ? this.smartPlaybackResume : null;
+      this.clearSmartPlaybackPendingState({ clearResume: false });
+      if (resume) void resume();
+      return true;
+    },
+    resetSmartPlaybackRuntimeState({ stopStream = false, bumpRunSeq = true } = {}) {
       if (stopStream && typeof this.smartPlaybackStreamCleanup === 'function') {
         try {
           this.smartPlaybackStreamCleanup();
@@ -4128,7 +4334,7 @@ export default {
       this.smartPlaybackPendingRunSeq = 0;
       this.smartPlaybackConfirmedRunSeq = 0;
       this.smartPlaybackAttemptRunSeq = 0;
-      this.smartPlaybackRunSeq += 1;
+      if (bumpRunSeq) this.smartPlaybackRunSeq += 1;
     },
     async playCachedResolvedTarget(payload = {}, { stage = '' } = {}) {
       this.resetSmartPlaybackRuntimeState({ stopStream: true });
@@ -4264,10 +4470,19 @@ export default {
       const wantEpisodeInSeason = normalizeInt(item && (item.no != null ? item.no : item.text));
       if (globalEpisode <= 0) return false;
       const stage = stageConfig && typeof stageConfig === 'object' ? stageConfig : null;
+      const primaryActionConstraint = this.buildPrimaryEpisodeActionConstraint(globalEpisode);
+      const switchEpisodeKey = this.buildSwitchEpisodeKeyByGlobal(globalEpisode);
+      const sharedPrimaryAllowed = (wrapper) => {
+        const identity = this.buildSwitchCandidateIdentity(wrapper);
+        if (identity && this.getSwitchSkippedIdsForEpisode(switchEpisodeKey).includes(identity)) return false;
+        return true;
+      };
       const cachedTarget = this.resolveCachedPlaybackTarget(globalEpisode, wantEpisodeInSeason, {
         matchOptions: this.buildSmartMatchOptions({
           trigger: 'primary',
         }),
+        actionConstraint: primaryActionConstraint,
+        isCandidateAllowed: sharedPrimaryAllowed,
         mapping: stage && stage.mapping,
         mappingSignature: stage && stage.mappingSignature,
         episodeSource: stage && stage.episodeSource,
@@ -4287,6 +4502,8 @@ export default {
         matchOptions: this.buildSmartMatchOptions({
           trigger: 'primary',
         }),
+        actionConstraint: primaryActionConstraint,
+        isCandidateAllowed: sharedPrimaryAllowed,
         stage: stage && stage.stage,
         mapping: stage && stage.mapping,
         mappingSignature: stage && stage.mappingSignature,
@@ -4349,16 +4566,7 @@ export default {
         skipHistoryList,
       });
       if (historyBootstrapped) return;
-      if (typeof this.smartPlaybackStreamCleanup === 'function') {
-        try {
-          this.smartPlaybackStreamCleanup();
-        } catch (_e) {}
-      }
-      this.smartPlaybackStreamCleanup = null;
-      this.smartPlaybackResume = null;
-      this.smartPlaybackPendingRunSeq = 0;
-      this.smartPlaybackConfirmedRunSeq = 0;
-      this.smartPlaybackAttemptRunSeq = 0;
+      this.resetSmartPlaybackRuntimeState({ stopStream: true, bumpRunSeq: false });
       const runSeq = this.smartPlaybackRunSeq + 1;
       this.smartPlaybackRunSeq = runSeq;
       this.smartPlaybackStage = currentStage;
@@ -4479,10 +4687,10 @@ export default {
         if (suppressStatusUi) this.finishPlayerSwitchTransition();
         return;
       }
-      const switchEpisodeKey = action === 'switch' ? this.buildSwitchEpisodeKey() : '';
+      const switchEpisodeKey = this.buildSwitchEpisodeKeyByGlobal(globalEpisode);
       const skipHistoryList = false;
       const sharedCandidateAllowed = (wrapper) => {
-        if (action !== 'switch') return true;
+        if (action !== 'switch' && action !== 'primary') return true;
         const identity = this.buildSwitchCandidateIdentity(wrapper);
         if (!identity) return true;
         return !this.getSwitchSkippedIdsForEpisode(switchEpisodeKey).includes(identity);
@@ -4496,7 +4704,7 @@ export default {
             sharedCandidateAllowed(wrapper),
           includeSelectedContext: action !== 'switch',
           includeBrowseContext: action !== 'switch',
-          includeStoreScan: action === 'switch',
+          includeStoreScan: action === 'switch' || action === 'primary',
         },
       );
       if (cachedTarget) {
@@ -4732,14 +4940,7 @@ export default {
         });
         return;
       }
-      const pendingRunSeq = normalizeInt(this.smartPlaybackPendingRunSeq);
-      const confirmedRunSeq = normalizeInt(this.smartPlaybackConfirmedRunSeq);
-      if (pendingRunSeq > 0 && pendingRunSeq === this.smartPlaybackRunSeq && pendingRunSeq !== confirmedRunSeq) {
-        const resume = typeof this.smartPlaybackResume === 'function' ? this.smartPlaybackResume : null;
-        this.smartPlaybackPendingRunSeq = 0;
-        if (this.smartPlaybackAttemptRunSeq === pendingRunSeq) this.smartPlaybackAttemptRunSeq = 0;
-        if (resume) void resume();
-      }
+      this.resumeSmartPlaybackIfPendingFailed();
     },
     onPlayerBuffering(value) {
       this.playerBuffering = !!value;
@@ -4787,17 +4988,7 @@ export default {
       this.activePlayerControlAction = '';
       this.finishPlayerSwitchTransition();
       await this.applyPlayHistoryResume('firstframe');
-      const pendingRunSeq = normalizeInt(this.smartPlaybackPendingRunSeq);
-      if (pendingRunSeq > 0 && pendingRunSeq === this.smartPlaybackRunSeq) {
-        this.smartPlaybackConfirmedRunSeq = pendingRunSeq;
-        this.smartPlaybackAttemptRunSeq = 0;
-        if (typeof this.smartPlaybackStreamCleanup === 'function') {
-          try {
-            this.smartPlaybackStreamCleanup();
-          } catch (_e) {}
-        }
-        this.smartPlaybackStreamCleanup = null;
-      }
+      this.confirmSmartPlaybackClosedLoop(this.smartPlaybackPendingRunSeq);
     },
     onPlayerEnded() {
       if (this.autoNextInFlight || this.playLoading || normalizeInt(this.smartPlaybackPendingRunSeq) > 0) return;
