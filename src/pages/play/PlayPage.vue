@@ -87,6 +87,7 @@
                     :go-proxy-label="goProxyUiLabel"
                     :show-buffer-ring="playerPhase === 'buffering'"
                     :toast-text="playerToastText"
+                    :toast-sticky="playerToastSticky"
                     @error="onPlayerError"
                     @buffering="onPlayerBuffering"
                     @playing="onPlayerPlaying"
@@ -2015,7 +2016,12 @@ export default {
     playerToastText() {
       return normalizeString(this.playerTransientToastText);
     },
+    playerToastSticky() {
+      return !!this.playerTransientToastSticky;
+    },
     showPlayerStatusOverlay() {
+      // During action-mode search toast, never show fullscreen status overlay.
+      if (this.playerTransientToastSticky) return false;
       return this.playerUiTransitionMode !== 'switch' && this.playerPhase !== 'ready' && this.playerPhase !== 'buffering';
     },
     playerPhase() {
@@ -2401,7 +2407,10 @@ export default {
       playRequestStage: '',
       playerUiTransitionMode: '',
       playerTransientToastText: '',
+      playerTransientToastSticky: false,
       playerTransientToastTimer: 0,
+      playerActionRuntimeMessageShown: false,
+      playerActionPendingTargetKey: '',
       switchSkipByEpisodeKey: {},
       activePlayerControlAction: '',
       playerStatsSiteName: '',
@@ -2420,6 +2429,8 @@ export default {
       lastResolvedPlaybackPayload: null,
       smartPlaybackRunSeq: 0,
       smartPlaybackStage: 'idle',
+      smartPlaybackActiveChannel: '',
+      smartPlaybackChannelToken: 0,
       smartPlaybackResolvedStage: '',
       rawListMode: false,
       rawDirPath: [],
@@ -2533,7 +2544,20 @@ export default {
         globalEpisode: Math.max(0, normalizeInt(globalEpisode)),
       };
     },
-    buildSwitchCandidateIdentity(wrapper) {
+    resolveSwitchPanProviderKey(value) {
+      const raw = normalizeString(value).toLowerCase();
+      if (!raw) return '';
+      if (raw.includes('quark') || raw.includes('夸克')) return 'quark';
+      if (raw.includes('uc')) return 'uc';
+      if (raw.includes('baidu') || raw.includes('百度')) return 'baidu';
+      if (raw.includes('139') || raw.includes('移动云盘')) return '139';
+      if (raw.includes('189') || raw.includes('天翼')) return '189';
+      return '';
+    },
+    normalizeSwitchPanFlag(value) {
+      return normalizeString(value);
+    },
+    buildSwitchSkipInfo(wrapper) {
       const target = wrapper && typeof wrapper === 'object' ? wrapper : null;
       const siteItem = target && target.siteItem && typeof target.siteItem === 'object' ? target.siteItem : null;
       const candidate = target && target.candidate && typeof target.candidate === 'object' ? target.candidate : null;
@@ -2545,20 +2569,63 @@ export default {
         || normalizeString(siteItem && siteItem.siteDetail)
         || normalizeString(source && source.siteDetail);
       const fileIdentity = this.buildSwitchFileIdentity(target);
-      const panProvider = normalizePanProviderKey(
-        normalizeString(candidate && candidate.provider)
-        || normalizeString(source && source.provider)
-        || normalizeString(target && target.provider),
-      );
-      const panFlag = normalizeString(candidate && candidate.panFlag)
+      const panFlag = this.normalizeSwitchPanFlag(
+        normalizeString(candidate && candidate.panFlag)
         || normalizeString(source && source.panFlag)
         || normalizeString(target && target.panFlag)
-        || normalizeString(target && target.panEntry && target.panEntry.label);
-      if (panProvider && panFlag && fileIdentity) {
-        return `provider::${panProvider}::${panFlag}::${fileIdentity}`;
-      }
-      if (!siteKey || !siteDetail || !fileIdentity) return '';
-      return `${siteKey}::${siteDetail}::${fileIdentity}`;
+        || normalizeString(target && target.panEntry && target.panEntry.label)
+      );
+      const providerHint = normalizeString(candidate && candidate.provider)
+        || normalizeString(source && source.provider)
+        || normalizeString(target && target.provider);
+      const panProvider = this.resolveSwitchPanProviderKey(providerHint)
+        || this.resolveSwitchPanProviderKey(panFlag);
+      return {
+        siteKey,
+        siteDetail,
+        panFlag,
+        panProvider,
+        fileIdentity,
+      };
+    },
+    serializeSwitchSkipInfo(info) {
+      const item = info && typeof info === 'object' ? info : null;
+      const siteKey = normalizeString(item && item.siteKey);
+      const siteDetail = normalizeString(item && item.siteDetail);
+      const panFlag = this.normalizeSwitchPanFlag(item && item.panFlag);
+      const panProvider = normalizeString(item && item.panProvider);
+      const fileIdentity = normalizeString(item && item.fileIdentity);
+      if (!siteKey || !siteDetail || !panFlag || !fileIdentity) return '';
+      return `site=${siteKey}::detail=${siteDetail}::pan=${panFlag}::provider=${panProvider}::file=${fileIdentity}`;
+    },
+    parseSwitchSkipIdentity(identity) {
+      const raw = normalizeString(identity);
+      if (!raw) return null;
+      const out = {};
+      raw.split('::').forEach((part) => {
+        const idx = part.indexOf('=');
+        if (idx <= 0) return;
+        const key = normalizeString(part.slice(0, idx));
+        const value = normalizeString(part.slice(idx + 1));
+        if (!key) return;
+        out[key] = value;
+      });
+      const siteKey = normalizeString(out.site);
+      const siteDetail = normalizeString(out.detail);
+      const panFlag = this.normalizeSwitchPanFlag(out.pan);
+      const panProvider = normalizeString(out.provider);
+      const fileIdentity = normalizeString(out.file);
+      if (!siteKey || !siteDetail || !panFlag || !fileIdentity) return null;
+      return {
+        siteKey,
+        siteDetail,
+        panFlag,
+        panProvider,
+        fileIdentity,
+      };
+    },
+    buildSwitchCandidateIdentity(wrapper) {
+      return this.serializeSwitchSkipInfo(this.buildSwitchSkipInfo(wrapper));
     },
     buildSwitchFileIdentity(wrapper) {
       const target = wrapper && typeof wrapper === 'object' ? wrapper : null;
@@ -2609,6 +2676,28 @@ export default {
         [key]: nextIds,
       };
     },
+    shouldSkipSwitchCandidate(episodeKey, wrapper) {
+      const key = normalizeString(episodeKey);
+      if (!key) return false;
+      const candidateInfo = this.buildSwitchSkipInfo(wrapper);
+      const candidateFile = normalizeString(candidateInfo && candidateInfo.fileIdentity);
+      const candidatePanFlag = this.normalizeSwitchPanFlag(candidateInfo && candidateInfo.panFlag);
+      const candidateProvider = normalizeString(candidateInfo && candidateInfo.panProvider);
+      const candidateSiteKey = normalizeString(candidateInfo && candidateInfo.siteKey);
+      const candidateSiteDetail = normalizeString(candidateInfo && candidateInfo.siteDetail);
+      if (!candidateFile || !candidatePanFlag || !candidateSiteKey || !candidateSiteDetail) return false;
+      const skipped = this.getSwitchSkippedIdsForEpisode(key);
+      return skipped.some((identity) => {
+        const record = this.parseSwitchSkipIdentity(identity);
+        if (!record) return false;
+        if (normalizeString(record.fileIdentity) !== candidateFile) return false;
+        if (this.normalizeSwitchPanFlag(record.panFlag) !== candidatePanFlag) return false;
+        const candidateCrossSite = ['quark', 'uc', 'baidu', '139', '189'].includes(candidateProvider);
+        if (candidateCrossSite) return true;
+        return normalizeString(record.siteKey) === candidateSiteKey
+          && normalizeString(record.siteDetail) === candidateSiteDetail;
+      });
+    },
     appendSwitchSkippedCandidate(episodeKey, wrapper) {
       const key = normalizeString(episodeKey);
       const identity = this.buildSwitchCandidateIdentity(wrapper);
@@ -2625,11 +2714,13 @@ export default {
         : null;
       const siteKey = normalizeString(playback && playback.siteKey);
       const siteDetail = normalizeString(playback && playback.siteDetail);
+      const panFlag = this.normalizeSwitchPanFlag(normalizeString(playback && playback.panFlag));
       const fileIdentity = normalizeString(playback && playback.fileIdentity);
-      if (!siteKey || !siteDetail || !fileIdentity) return;
+      if (!siteKey || !siteDetail || !panFlag || !fileIdentity) return;
       this.appendSwitchSkippedCandidate(episodeKey, {
         siteKey,
         siteDetail,
+        panFlag,
         fileIdentity,
       });
     },
@@ -2651,16 +2742,21 @@ export default {
         this.playerTransientToastTimer = 0;
       }
       this.playerTransientToastText = '';
+      this.playerTransientToastSticky = false;
     },
-    showPlayerActionToast(text) {
+    showPlayerActionToast(text, { sticky = false, durationMs = 1800 } = {}) {
       const nextText = normalizeString(text);
       if (!nextText) return;
       this.clearPlayerActionToast();
       this.playerTransientToastText = nextText;
+      this.playerTransientToastSticky = !!sticky;
+      if (this.playerTransientToastSticky) return;
+      const ttl = Math.max(400, normalizeInt(durationMs) || 1800);
       this.playerTransientToastTimer = window.setTimeout(() => {
         this.playerTransientToastTimer = 0;
         this.playerTransientToastText = '';
-      }, 1800);
+        this.playerTransientToastSticky = false;
+      }, ttl);
     },
     resetPlayerReadyState() {
       this.playerMetaReady = false;
@@ -2682,12 +2778,29 @@ export default {
     },
     finishPlayerSwitchTransition() {
       this.playerUiTransitionMode = '';
+      this.playerActionPendingTargetKey = '';
+      if (this.playerTransientToastSticky) this.clearPlayerActionToast();
+    },
+    buildPlayerActionTargetKey({ globalEpisode = 0, actionKey = '', selectedValue = '' } = {}) {
+      const ep = Math.max(0, normalizeInt(globalEpisode));
+      const action = normalizeString(actionKey);
+      const value = normalizeString(selectedValue) || '*';
+      if (!ep || !action) return '';
+      return `${ep}::${action}::${value}`;
     },
     getNoMatchPlayerActionText(actionKey) {
       const action = normalizeString(actionKey);
       if (action === 'pan') return '暂无匹配网盘片源';
       if (action === 'quality') return '暂无匹配画质片源';
       return '未匹配到相关片源';
+    },
+    buildPlayerActionCandidateAllowed(action = '', globalEpisode = 0) {
+      const normalizedAction = normalizeString(action);
+      const switchEpisodeKey = this.buildSwitchEpisodeKeyByGlobal(globalEpisode);
+      return (wrapper) => {
+        if (normalizedAction !== 'switch' && normalizedAction !== 'primary') return true;
+        return !this.shouldSkipSwitchCandidate(switchEpisodeKey, wrapper);
+      };
     },
     bindPlaySearchQuerySubscription() {
       this.unbindPlaySearchQuerySubscription();
@@ -4334,6 +4447,7 @@ export default {
       this.smartPlaybackPendingRunSeq = 0;
       this.smartPlaybackConfirmedRunSeq = 0;
       this.smartPlaybackAttemptRunSeq = 0;
+      this.smartPlaybackActiveChannel = '';
       if (bumpRunSeq) this.smartPlaybackRunSeq += 1;
     },
     async playCachedResolvedTarget(payload = {}, { stage = '' } = {}) {
@@ -4473,8 +4587,7 @@ export default {
       const primaryActionConstraint = this.buildPrimaryEpisodeActionConstraint(globalEpisode);
       const switchEpisodeKey = this.buildSwitchEpisodeKeyByGlobal(globalEpisode);
       const sharedPrimaryAllowed = (wrapper) => {
-        const identity = this.buildSwitchCandidateIdentity(wrapper);
-        if (identity && this.getSwitchSkippedIdsForEpisode(switchEpisodeKey).includes(identity)) return false;
+        if (this.shouldSkipSwitchCandidate(switchEpisodeKey, wrapper)) return false;
         return true;
       };
       const cachedTarget = this.resolveCachedPlaybackTarget(globalEpisode, wantEpisodeInSeason, {
@@ -4543,8 +4656,11 @@ export default {
       mappingSignature = '',
       episodeSource = '',
       skipHistoryList = false,
+      uiStatusMode = 'default',
     } = {}) {
       const normalizedMatchOptions = this.buildSmartMatchOptions(matchOptions);
+      const actionUiOnly = normalizeString(uiStatusMode) === 'action';
+      const callbackChannel = actionUiOnly ? 'action' : 'primary';
       const matchKind = normalizeString(normalizedMatchOptions && normalizedMatchOptions.kind).toLowerCase();
       const targetGlobal = Math.max(0, normalizeInt(globalEpisode));
       const targetLoose = Math.max(0, normalizeInt(wantEpisodeInSeason));
@@ -4570,15 +4686,25 @@ export default {
       const runSeq = this.smartPlaybackRunSeq + 1;
       this.smartPlaybackRunSeq = runSeq;
       this.smartPlaybackStage = currentStage;
+      this.smartPlaybackActiveChannel = callbackChannel;
+      const callbackToken = this.smartPlaybackChannelToken + 1;
+      this.smartPlaybackChannelToken = callbackToken;
+      const isActiveSmartCallback = () => (
+        callbackToken === this.smartPlaybackChannelToken
+        && runSeq === this.smartPlaybackRunSeq
+        && normalizeString(this.smartPlaybackActiveChannel) === callbackChannel
+      );
       patchCurrentPlaybackContext({ globalEpisode: targetGlobal });
-      this.playLoading = true;
-      this.playRequestStage = 'detail';
-      this.playError = '';
-      this.playerRuntimeError = '';
-      this.playerMetaReady = false;
-      this.playerFirstFrameReady = false;
-      this.playerPlaybackStarted = false;
-      this.playerBuffering = false;
+      if (!actionUiOnly) {
+        this.playLoading = true;
+        this.playRequestStage = 'detail';
+        this.playError = '';
+        this.playerRuntimeError = '';
+        this.playerMetaReady = false;
+        this.playerFirstFrameReady = false;
+        this.playerPlaybackStarted = false;
+        this.playerBuffering = false;
+      }
       await this.ensurePlayRuntimeSettings();
       await this.ensurePlayBlockedSiteKeysLoaded();
       await this.ensurePlayBlockedMatchIndexLoaded();
@@ -4639,13 +4765,32 @@ export default {
             if (this.smartPlaybackPendingRunSeq === runSeq) this.smartPlaybackPendingRunSeq = 0;
             if (this.smartPlaybackAttemptRunSeq === runSeq) this.smartPlaybackAttemptRunSeq = 0;
           },
-          onLoadingStateChange: (value) => { this.playLoading = !!value; },
-          onErrorTextChange: (value) => { this.playError = normalizeString(value); },
+          onLoadingStateChange: (value) => {
+            if (!isActiveSmartCallback()) return;
+            if (!actionUiOnly) this.playLoading = !!value;
+          },
+          onErrorTextChange: (value) => {
+            if (!isActiveSmartCallback()) return;
+            const text = normalizeString(value);
+            if (!actionUiOnly) {
+              this.playError = text;
+              return;
+            }
+            if (text) {
+              this.playerActionRuntimeMessageShown = true;
+              this.finishPlayerSwitchTransition();
+              this.activePlayerControlAction = '';
+              this.showPlayerActionToast(text);
+            }
+          },
           onStreamCleanupChange: (fn) => { this.smartPlaybackStreamCleanup = typeof fn === 'function' ? fn : null; },
         });
       } finally {
-        this.smartPlaybackStage = 'idle';
-        if (!normalizeString(this.playerUrl) && this.playRequestStage === 'detail') {
+        if (callbackToken === this.smartPlaybackChannelToken && runSeq === this.smartPlaybackRunSeq) {
+          this.smartPlaybackStage = 'idle';
+          this.smartPlaybackActiveChannel = '';
+        }
+        if (!actionUiOnly && !normalizeString(this.playerUrl) && this.playRequestStage === 'detail') {
           this.playRequestStage = '';
         }
       }
@@ -4662,15 +4807,32 @@ export default {
       }
       const action = normalizeString(actionKey);
       const value = normalizeString(selectedValue);
+      const suppressStatusUi = action === 'switch' || action === 'pan' || action === 'quality';
+      const actionTargetKey = this.buildPlayerActionTargetKey({
+        globalEpisode,
+        actionKey: action,
+        selectedValue: value,
+      });
+      const searchingSameTarget = !!(
+        suppressStatusUi
+        && this.playerTransientToastSticky
+        && actionTargetKey
+        && normalizeString(this.playerActionPendingTargetKey) === actionTargetKey
+      );
+      if (searchingSameTarget) {
+        this.showPlayerActionToast('正在搜索片源...', { sticky: true });
+        return;
+      }
       const currentPanFamily = normalizeString(this.currentPlaybackPanFamilyLabel);
       const currentQualityKey = normalizeString(this.currentPlaybackQualityKey);
       if (action === 'pan' && value && value === currentPanFamily) return;
       if (action === 'quality' && value && value === currentQualityKey) return;
-      const suppressStatusUi = action === 'switch' || action === 'pan' || action === 'quality';
-      const beforePlayRequestSeq = this.playRequestSeq;
+      this.playerActionRuntimeMessageShown = false;
       if (suppressStatusUi) {
         this.playerUiTransitionMode = 'switch';
+        this.playerActionPendingTargetKey = actionTargetKey;
         this.clearPlayerActionToast();
+        this.showPlayerActionToast('正在搜索片源...', { sticky: true });
         this.playError = '';
         this.playerRuntimeError = '';
       }
@@ -4687,14 +4849,8 @@ export default {
         if (suppressStatusUi) this.finishPlayerSwitchTransition();
         return;
       }
-      const switchEpisodeKey = this.buildSwitchEpisodeKeyByGlobal(globalEpisode);
       const skipHistoryList = false;
-      const sharedCandidateAllowed = (wrapper) => {
-        if (action !== 'switch' && action !== 'primary') return true;
-        const identity = this.buildSwitchCandidateIdentity(wrapper);
-        if (!identity) return true;
-        return !this.getSwitchSkippedIdsForEpisode(switchEpisodeKey).includes(identity);
-      };
+      const sharedCandidateAllowed = this.buildPlayerActionCandidateAllowed(action, globalEpisode);
       const cachedTarget = this.resolveCachedPlaybackTarget(
         globalEpisode,
         this.getWantEpisodeInSeasonByGlobal(globalEpisode),
@@ -4708,21 +4864,12 @@ export default {
         },
       );
       if (cachedTarget) {
-        await this.playCachedResolvedTarget({
+        const cachedOk = await this.playCachedResolvedTarget({
           ...cachedTarget,
           globalEpisode,
         });
-        if (suppressStatusUi && !normalizeString(this.playerUrl)) {
-          this.finishPlayerSwitchTransition();
-          this.activePlayerControlAction = '';
-          if (normalizeString(this.playError)) {
-            this.showPlayerActionToast(this.playError);
-            this.playError = '';
-          } else {
-            this.showPlayerActionToast('匹配成功但播放启动失败');
-          }
-        }
-        return;
+        if (cachedOk) return;
+        // Cached target failed: keep action flow alive and continue through full controller loop.
       }
       await this.runSmartPlaybackWithConstraints({
         globalEpisode,
@@ -4734,21 +4881,12 @@ export default {
         actionConstraint,
         isCandidateAllowed: sharedCandidateAllowed,
         skipHistoryList,
+        uiStatusMode: suppressStatusUi ? 'action' : 'default',
       });
       if (!suppressStatusUi) return;
-      if (normalizeString(this.playerUrl)) return;
-      this.finishPlayerSwitchTransition();
-      this.activePlayerControlAction = '';
-      if (normalizeString(this.playError)) {
-        this.showPlayerActionToast(this.playError);
-        this.playError = '';
-        return;
-      }
-      if (this.playRequestSeq > beforePlayRequestSeq) {
-        this.showPlayerActionToast('匹配成功但播放启动失败');
-        return;
-      }
-      this.showPlayerActionToast(this.getNoMatchPlayerActionText(action));
+      // No extra success/failure probing here.
+      // Action-mode finalize is driven by controller callbacks and player events.
+      if (this.playerActionRuntimeMessageShown) return;
     },
     async markCurrentPlaybackSourceWrong() {
       const keyword = normalizeString(this.playSearchQueryOriginal || this.playSearchQuery || this.displayTitle);

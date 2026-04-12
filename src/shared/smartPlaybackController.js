@@ -74,6 +74,19 @@ export const runSmartPlaybackController = async ({
   let queuedRetry = false;
   let currentPendingCandidateKey = '';
   let unsubscribe = () => {};
+  let controllerFinished = false;
+  let resolveControllerDone = null;
+  const controllerDone = new Promise((resolve) => {
+    resolveControllerDone = resolve;
+  });
+  const finishController = (reason = '') => {
+    if (controllerFinished) return;
+    controllerFinished = true;
+    try {
+      unsubscribe();
+    } catch (_error) {}
+    if (typeof resolveControllerDone === 'function') resolveControllerDone(reason || 'done');
+  };
 
   const safeStopped = () => (typeof isRunStopped === 'function' ? !!isRunStopped() : false);
   const safeBuildSiteItems = (snapshot) =>
@@ -204,6 +217,7 @@ export const runSmartPlaybackController = async ({
         continue;
       }
       acquirePendingPlaybackLock(candidateKey);
+      finishController('playback_pending');
       if (typeof setResume === 'function') {
         setResume(async () => {
           if (isClosedLoopStopped()) return;
@@ -238,11 +252,29 @@ export const runSmartPlaybackController = async ({
   const finalizeIfComplete = async () => {
     if (finalized || safeStopped()) return;
     if (!searchCompleted || activeThreads > 0) return;
+
+    // If resolve/play is currently in-flight (or blocked by pending lock),
+    // do not finalize to no_match yet. Wait for the closed-loop to settle.
+    if (shouldBlockResolveRequests()) {
+      queuedRetry = true;
+      return;
+    }
+
     finalized = true;
-    if (await requestResolvePlayback()) return;
+    const resolved = await requestResolvePlayback();
+    if (resolved) return;
     if (safeStopped()) return;
+
+    // requestResolvePlayback may return false when a retry gets queued by flow state
+    // transitions in the same tick. In that case, do not emit no_match prematurely.
+    if (queuedRetry || playAttemptRunning || flowState.pendingPlaybackLocked || currentPendingCandidateKey) {
+      finalized = false;
+      return;
+    }
+
     if (typeof onLoadingStateChange === 'function') onLoadingStateChange(false);
     if (typeof onErrorTextChange === 'function') onErrorTextChange('暂无可匹配片源');
+    finishController('no_match');
   };
 
   const flowState = {
@@ -385,6 +417,7 @@ export const runSmartPlaybackController = async ({
       try {
         unsubscribe();
       } catch (_error) {}
+      finishController('cleanup');
     });
   }
 
@@ -411,7 +444,10 @@ export const runSmartPlaybackController = async ({
       searchCompleted = true;
       void finalizeIfComplete();
     });
-    return;
   }
   if (safeStopped() && typeof onConfirmedStop === 'function') onConfirmedStop();
+  if (safeStopped()) {
+    finishController('stopped');
+  }
+  await controllerDone;
 };

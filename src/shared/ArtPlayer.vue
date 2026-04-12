@@ -7,7 +7,7 @@
     <div ref="container" class="artplayer-root" />
 
     <teleport :to="teleportTarget || 'body'" :disabled="!teleportTarget">
-      <div v-if="toastVisible && toastText" class="yt-toast" aria-live="polite">
+      <div v-if="toastVisible && toastText" class="yt-toast" :class="{ 'yt-toast--sticky': toastSticky }" aria-live="polite">
         {{ toastText }}
       </div>
       <div v-show="showBufferRing" class="m-buffer-mask" aria-hidden="true"></div>
@@ -415,6 +415,7 @@
 		extraMenus: { type: Array, default: () => [] },
 		extraActions: { type: Array, default: () => [] },
 		toastText: { type: String, default: '' },
+		toastSticky: { type: Boolean, default: false },
     portraitMode: { type: Boolean, default: false },
     portraitTopText: { type: String, default: '' },
 	});
@@ -723,19 +724,23 @@ watch(
 );
 
 const toastText = computed(() => (props.toastText || '').trim());
+const toastSticky = computed(() => !!props.toastSticky);
 const toastVisible = ref(false);
 let toastTimer = 0;
 watch(
-  () => toastText.value,
+  () => [toastText.value, toastSticky.value ? '1' : '0'].join('||'),
   (v) => {
     if (toastTimer) window.clearTimeout(toastTimer);
     toastTimer = 0;
-    const text = (v || '').trim();
+    const [textRaw, stickyFlag] = String(v || '').split('||');
+    const text = (textRaw || '').trim();
+    const sticky = stickyFlag === '1';
     if (!text) {
       toastVisible.value = false;
       return;
     }
     toastVisible.value = true;
+    if (sticky) return;
     toastTimer = window.setTimeout(() => {
       toastTimer = 0;
       toastVisible.value = false;
@@ -2364,6 +2369,11 @@ const play = async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   z-index: 160;
+}
+
+.yt-toast--sticky {
+  background: rgba(19, 24, 34, 0.94);
+  border-color: rgba(120, 185, 255, 0.42);
 }
 
 :deep(.art-video-player) {
