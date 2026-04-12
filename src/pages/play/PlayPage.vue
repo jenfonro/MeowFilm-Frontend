@@ -489,6 +489,7 @@ import {
   normalizeGoProxyServers,
   resolveCandidateQualityModeKeyForPlayback,
   resolveCandidatePanFamilyForPlayback,
+  resolvePanFamilyLabelForUi,
 } from '../../shared/playbackRuntime';
 import {
   findPlayHistoryRowForContext,
@@ -834,6 +835,8 @@ const buildSegmentPlaybackIdentity = (segment) => {
   const seg = segment && typeof segment === 'object' ? segment : null;
   return normalizeString(seg && seg.segmentIdentity);
 };
+
+const SWITCH_CROSS_SITE_PROVIDERS = new Set(['quark', 'uc', 'baidu', '139', '189']);
 
 const getPanEntrySegments = (entry) => (
   Array.isArray(entry && entry.episodeSegments)
@@ -2542,8 +2545,17 @@ export default {
       if (raw.includes('189') || raw.includes('天翼')) return '189';
       return '';
     },
+    resolveSwitchPanFamilyLabel(value) {
+      const raw = normalizeString(value);
+      if (!raw) return '';
+      const runtime = this.runtimeSettings && typeof this.runtimeSettings === 'object' ? this.runtimeSettings : null;
+      const mapped = resolvePanFamilyLabelForUi(raw, runtime);
+      return normalizeString(mapped) || raw;
+    },
     normalizeSwitchPanFlag(value) {
-      return normalizeString(value);
+      const family = this.resolveSwitchPanFamilyLabel(value);
+      const provider = this.resolveSwitchPanProviderKey(family);
+      return provider || family;
     },
     buildSwitchSkipInfo(wrapper) {
       const target = wrapper && typeof wrapper === 'object' ? wrapper : null;
@@ -2567,7 +2579,7 @@ export default {
         || normalizeString(source && source.provider)
         || normalizeString(target && target.provider);
       const panProvider = this.resolveSwitchPanProviderKey(providerHint)
-        || this.resolveSwitchPanProviderKey(panFlag);
+        || this.resolveSwitchPanProviderKey(this.resolveSwitchPanFamilyLabel(panFlag));
       return {
         siteKey,
         siteDetail,
@@ -2591,6 +2603,15 @@ export default {
         panProvider,
         fileIdentity,
       };
+    },
+    isSameSwitchSkipRecord(left, right) {
+      const l = this.normalizeSwitchSkipRecord(left);
+      const r = this.normalizeSwitchSkipRecord(right);
+      if (!l || !r) return false;
+      return normalizeString(l.siteKey) === normalizeString(r.siteKey)
+        && normalizeString(l.siteDetail) === normalizeString(r.siteDetail)
+        && this.normalizeSwitchPanFlag(l.panFlag) === this.normalizeSwitchPanFlag(r.panFlag)
+        && normalizeString(l.fileIdentity) === normalizeString(r.fileIdentity);
     },
     buildSwitchFileIdentity(wrapper) {
       const target = wrapper && typeof wrapper === 'object' ? wrapper : null;
@@ -2645,7 +2666,30 @@ export default {
         [key]: nextRecords,
       };
     },
-    shouldSkipSwitchCandidate(episodeKey, wrapper) {
+    buildSwitchSkipIndexForEpisode(episodeKey) {
+      const key = normalizeString(episodeKey);
+      const crossSiteSet = new Set();
+      const strictSiteSet = new Set();
+      if (!key) return { crossSiteSet, strictSiteSet };
+      const records = this.getSwitchSkippedRecordsForEpisode(key);
+      records.forEach((record) => {
+        const file = normalizeString(record && record.fileIdentity);
+        const panFlag = this.normalizeSwitchPanFlag(record && record.panFlag);
+        const siteKey = normalizeString(record && record.siteKey);
+        const siteDetail = normalizeString(record && record.siteDetail);
+        const panProvider = normalizeString(record && record.panProvider)
+          || this.resolveSwitchPanProviderKey(this.resolveSwitchPanFamilyLabel(panFlag));
+        if (!file || !panFlag || !siteKey || !siteDetail) return;
+        const cross = SWITCH_CROSS_SITE_PROVIDERS.has(panProvider);
+        if (cross) {
+          crossSiteSet.add(`${panFlag}::${file}`);
+          return;
+        }
+        strictSiteSet.add(`${siteKey}::${siteDetail}::${panFlag}::${file}`);
+      });
+      return { crossSiteSet, strictSiteSet };
+    },
+    shouldSkipSwitchCandidate(episodeKey, wrapper, prebuiltIndex = null) {
       const key = normalizeString(episodeKey);
       if (!key) return false;
       const candidateInfo = this.buildSwitchSkipInfo(wrapper);
@@ -2655,34 +2699,31 @@ export default {
       const candidateSiteKey = normalizeString(candidateInfo && candidateInfo.siteKey);
       const candidateSiteDetail = normalizeString(candidateInfo && candidateInfo.siteDetail);
       if (!candidateFile || !candidatePanFlag || !candidateSiteKey || !candidateSiteDetail) return false;
-      const skipped = this.getSwitchSkippedRecordsForEpisode(key);
-      return skipped.some((record) => {
-        if (!record) return false;
-        if (normalizeString(record.fileIdentity) !== candidateFile) return false;
-        if (this.normalizeSwitchPanFlag(record.panFlag) !== candidatePanFlag) return false;
-        const candidateCrossSite = ['quark', 'uc', 'baidu', '139', '189'].includes(candidateProvider);
-        if (candidateCrossSite) return true;
-        return normalizeString(record.siteKey) === candidateSiteKey
-          && normalizeString(record.siteDetail) === candidateSiteDetail;
-      });
+      const index = prebuiltIndex && typeof prebuiltIndex === 'object'
+        ? prebuiltIndex
+        : this.buildSwitchSkipIndexForEpisode(key);
+      const candidateCrossSite = SWITCH_CROSS_SITE_PROVIDERS.has(candidateProvider);
+      if (candidateCrossSite) {
+        return !!(index.crossSiteSet && index.crossSiteSet.has(`${candidatePanFlag}::${candidateFile}`));
+      }
+      return !!(index.strictSiteSet && index.strictSiteSet.has(`${candidateSiteKey}::${candidateSiteDetail}::${candidatePanFlag}::${candidateFile}`));
     },
     appendSwitchSkippedCandidate(episodeKey, wrapper) {
       const key = normalizeString(episodeKey);
       const record = this.normalizeSwitchSkipRecord(this.buildSwitchSkipInfo(wrapper));
-      if (!key || !record) return;
+      if (!key || !record) return false;
       const current = this.getSwitchSkippedRecordsForEpisode(key);
-      const exists = current.some((item) => (
-        normalizeString(item.siteKey) === normalizeString(record.siteKey)
-        && normalizeString(item.siteDetail) === normalizeString(record.siteDetail)
-        && this.normalizeSwitchPanFlag(item.panFlag) === this.normalizeSwitchPanFlag(record.panFlag)
-        && normalizeString(item.fileIdentity) === normalizeString(record.fileIdentity)
-      ));
-      if (exists) return;
+      const exists = current.some((item) => this.isSameSwitchSkipRecord(item, record));
+      if (exists) return true;
       this.setSwitchSkippedRecordsForEpisode(key, current.concat(record));
+      return true;
     },
-    recordCurrentPlaybackIntoSwitchSkipBucket() {
-      const episodeKey = this.buildSwitchEpisodeKey();
-      if (!episodeKey) return;
+    recordCurrentPlaybackIntoSwitchSkipBucket(globalEpisodeOverride = 0) {
+      const globalEpisode = Math.max(0, normalizeInt(globalEpisodeOverride));
+      const episodeKey = globalEpisode > 0
+        ? this.buildSwitchEpisodeKeyByGlobal(globalEpisode)
+        : this.buildSwitchEpisodeKey();
+      if (!episodeKey) return false;
       const playback = this.currentPlaybackContext && typeof this.currentPlaybackContext === 'object'
         ? this.currentPlaybackContext
         : null;
@@ -2690,8 +2731,8 @@ export default {
       const siteDetail = normalizeString(playback && playback.siteDetail);
       const panFlag = this.normalizeSwitchPanFlag(normalizeString(playback && playback.panFlag));
       const fileIdentity = normalizeString(playback && playback.fileIdentity);
-      if (!siteKey || !siteDetail || !panFlag || !fileIdentity) return;
-      this.appendSwitchSkippedCandidate(episodeKey, {
+      if (!siteKey || !siteDetail || !panFlag || !fileIdentity) return false;
+      return this.appendSwitchSkippedCandidate(episodeKey, {
         siteKey,
         siteDetail,
         panFlag,
@@ -2732,6 +2773,46 @@ export default {
         this.playerTransientToastSticky = false;
       }, ttl);
     },
+    keepPlayerActionSearchingToast() {
+      this.showPlayerActionToast('正在搜索片源...', { sticky: true });
+    },
+    startPlayerActionSearchFlow(actionTargetKey = '') {
+      this.playerUiTransitionMode = 'switch';
+      this.playerActionPendingTargetKey = normalizeString(actionTargetKey);
+      this.clearPlayerActionToast();
+      this.keepPlayerActionSearchingToast();
+      this.playError = '';
+      this.playerRuntimeError = '';
+    },
+    shouldIgnorePlayerControlAction({ action = '', value = '', suppressStatusUi = false, actionTargetKey = '' } = {}) {
+      const searchingSameTarget = !!(
+        suppressStatusUi
+        && this.playerTransientToastSticky
+        && actionTargetKey
+        && normalizeString(this.playerActionPendingTargetKey) === actionTargetKey
+      );
+      if (searchingSameTarget) {
+        this.keepPlayerActionSearchingToast();
+        return true;
+      }
+      const currentPanFamily = normalizeString(this.currentPlaybackPanFamilyLabel);
+      const currentQualityKey = normalizeString(this.currentPlaybackQualityKey);
+      if (action === 'pan' && value && value === currentPanFamily) return true;
+      if (action === 'quality' && value && value === currentQualityKey) return true;
+      return false;
+    },
+    finalizePlayerReadyState({ markFirstFrame = false } = {}) {
+      this.playLoading = false;
+      this.playError = '';
+      this.playerRuntimeError = '';
+      this.playerPlaybackStarted = true;
+      if (markFirstFrame) {
+        this.playerBuffering = false;
+        this.playerFirstFrameReady = true;
+        this.playRequestStage = '';
+      }
+      this.closePlayerActionFlow();
+    },
     resetPlayerReadyState() {
       this.playerMetaReady = false;
       this.playerFirstFrameReady = false;
@@ -2750,14 +2831,11 @@ export default {
       this.lastGoProxyCandidate = null;
       this.resetPlayerReadyState();
     },
-    finishPlayerSwitchTransition() {
+    closePlayerActionFlow({ toast = '', sticky = false, durationMs = 1800, clearErrors = false } = {}) {
+      this.activePlayerControlAction = '';
       this.playerUiTransitionMode = '';
       this.playerActionPendingTargetKey = '';
       if (this.playerTransientToastSticky) this.clearPlayerActionToast();
-    },
-    closePlayerActionFlow({ toast = '', sticky = false, durationMs = 1800, clearErrors = false } = {}) {
-      this.activePlayerControlAction = '';
-      this.finishPlayerSwitchTransition();
       if (clearErrors) {
         this.playError = '';
         this.playerRuntimeError = '';
@@ -2781,9 +2859,11 @@ export default {
     buildPlayerActionCandidateAllowed(action = '', globalEpisode = 0) {
       const normalizedAction = normalizeString(action);
       const switchEpisodeKey = this.buildSwitchEpisodeKeyByGlobal(globalEpisode);
+      const skipIndex = this.buildSwitchSkipIndexForEpisode(switchEpisodeKey);
       return (wrapper) => {
         if (normalizedAction !== 'switch' && normalizedAction !== 'primary') return true;
-        return !this.shouldSkipSwitchCandidate(switchEpisodeKey, wrapper);
+        const blocked = this.shouldSkipSwitchCandidate(switchEpisodeKey, wrapper, skipIndex);
+        return !blocked;
       };
     },
     bindPlaySearchQuerySubscription() {
@@ -4570,8 +4650,9 @@ export default {
       const stage = stageConfig && typeof stageConfig === 'object' ? stageConfig : null;
       const primaryActionConstraint = this.buildPrimaryEpisodeActionConstraint(globalEpisode);
       const switchEpisodeKey = this.buildSwitchEpisodeKeyByGlobal(globalEpisode);
+      const primarySkipIndex = this.buildSwitchSkipIndexForEpisode(switchEpisodeKey);
       const sharedPrimaryAllowed = (wrapper) => {
-        if (this.shouldSkipSwitchCandidate(switchEpisodeKey, wrapper)) return false;
+        if (this.shouldSkipSwitchCandidate(switchEpisodeKey, wrapper, primarySkipIndex)) return false;
         return true;
       };
       const cachedTarget = this.resolveCachedPlaybackTarget(globalEpisode, wantEpisodeInSeason, {
@@ -4629,6 +4710,92 @@ export default {
         : null;
       return Math.max(0, normalizeInt(tmdbValue && tmdbValue.episode));
     },
+    activateSmartPlaybackChannel(runSeq, callbackChannel) {
+      this.smartPlaybackRunSeq = runSeq;
+      this.smartPlaybackActiveChannel = callbackChannel;
+      const callbackToken = this.smartPlaybackChannelToken + 1;
+      this.smartPlaybackChannelToken = callbackToken;
+      return callbackToken;
+    },
+    isSmartPlaybackCallbackActive(callbackToken, runSeq, callbackChannel) {
+      return callbackToken === this.smartPlaybackChannelToken
+        && runSeq === this.smartPlaybackRunSeq
+        && normalizeString(this.smartPlaybackActiveChannel) === normalizeString(callbackChannel);
+    },
+    buildSmartPlaybackControllerCallbacks({
+      runSeq,
+      actionUiOnly,
+      callbackChannel,
+      callbackToken,
+      targetSignature,
+      targetEpisodeSource,
+      normalizedMatchOptions,
+      targetMapping,
+      unifiedAllowed,
+    } = {}) {
+      const isActiveSmartCallback = () => this.isSmartPlaybackCallbackActive(callbackToken, runSeq, callbackChannel);
+      return {
+        isRunStopped: () => runSeq !== this.smartPlaybackRunSeq || this.smartPlaybackConfirmedRunSeq === runSeq,
+        isCandidateAllowed: unifiedAllowed,
+        buildSiteItemsFromSnapshot: (snapshot) => this.buildSiteSourceResultItemsFromSnapshot(snapshot),
+        collectRecognitionCandidatesForTarget: (siteItem, payload) =>
+          this.collectRecognitionCandidatesForTarget(
+            siteItem,
+            payload && payload.globalEpisode,
+            payload && payload.wantEpisodeInSeason,
+            {
+              matchOptions: payload && payload.matchOptions ? payload.matchOptions : normalizedMatchOptions,
+              mappingSignature: targetSignature,
+              episodeSource: targetEpisodeSource,
+              allowResolutionModes: this.buildAllowedResolutionModes(),
+            },
+          ),
+        getCachedSiteResultDetail: (siteItem) => this.getCachedSiteResultDetail(siteItem),
+        ensureSiteResultDetailCached: (siteItem, options) =>
+          this.ensureSiteResultDetailCached(siteItem, {
+            onUpdate: (nextDetail) => {
+              const payload = nextDetail && typeof nextDetail === 'object' ? nextDetail : null;
+              if (!payload) return;
+              this.cacheRecognitionForSiteResult(siteItem, payload, {
+                mapping: targetMapping,
+                mappingSignature: targetSignature,
+              });
+              if (options && typeof options.onUpdate === 'function') options.onUpdate(payload);
+            },
+          }),
+        buildPanSourcesFromDetail: (detail) => this.buildPanSourcesFromDetail(detail),
+        buildPanSegment: (panEntry, index) => this.buildPanSegment(panEntry, index),
+        buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
+        playResolvedSiteSegment: (payload) => this.playResolvedSiteSegment(payload),
+        getSearchState: (query, scope) => ({
+          snapshot: getSearchSessionLaneSnapshot(query, scope, 'site'),
+          status: getSearchSessionLaneStatus(query, scope, 'site'),
+        }),
+        setAttemptRunSeq: (value) => { this.smartPlaybackAttemptRunSeq = normalizeInt(value); },
+        setPendingRunSeq: (value) => { this.smartPlaybackPendingRunSeq = normalizeInt(value); },
+        setResume: (fn) => { this.smartPlaybackResume = typeof fn === 'function' ? fn : null; },
+        clearPendingAttempt: () => {
+          if (this.smartPlaybackPendingRunSeq === runSeq) this.smartPlaybackPendingRunSeq = 0;
+          if (this.smartPlaybackAttemptRunSeq === runSeq) this.smartPlaybackAttemptRunSeq = 0;
+        },
+        onLoadingStateChange: (value) => {
+          if (!isActiveSmartCallback()) return;
+          if (!actionUiOnly) this.playLoading = !!value;
+        },
+        onErrorTextChange: (value) => {
+          if (!isActiveSmartCallback()) return;
+          const text = normalizeString(value);
+          if (!actionUiOnly) {
+            this.playError = text;
+            return;
+          }
+          if (text) {
+            this.closePlayerActionFlow({ toast: text });
+          }
+        },
+        onStreamCleanupChange: (fn) => { this.smartPlaybackStreamCleanup = typeof fn === 'function' ? fn : null; },
+      };
+    },
     async runSmartPlaybackWithConstraints({
       globalEpisode,
       wantEpisodeInSeason = 0,
@@ -4668,16 +4835,8 @@ export default {
       if (historyBootstrapped) return;
       this.resetSmartPlaybackRuntimeState({ stopStream: true, bumpRunSeq: false });
       const runSeq = this.smartPlaybackRunSeq + 1;
-      this.smartPlaybackRunSeq = runSeq;
       this.smartPlaybackStage = currentStage;
-      this.smartPlaybackActiveChannel = callbackChannel;
-      const callbackToken = this.smartPlaybackChannelToken + 1;
-      this.smartPlaybackChannelToken = callbackToken;
-      const isActiveSmartCallback = () => (
-        callbackToken === this.smartPlaybackChannelToken
-        && runSeq === this.smartPlaybackRunSeq
-        && normalizeString(this.smartPlaybackActiveChannel) === callbackChannel
-      );
+      const callbackToken = this.activateSmartPlaybackChannel(runSeq, callbackChannel);
       patchCurrentPlaybackContext({ globalEpisode: targetGlobal });
       if (!actionUiOnly) {
         this.playLoading = true;
@@ -4706,68 +4865,20 @@ export default {
           currentContext: this.currentPlaybackContext,
           globalEpisode: targetGlobal,
           wantEpisodeInSeason: targetLoose,
-          isRunStopped: () => runSeq !== this.smartPlaybackRunSeq || this.smartPlaybackConfirmedRunSeq === runSeq,
-          isCandidateAllowed: unifiedAllowed,
-          buildSiteItemsFromSnapshot: (snapshot) => this.buildSiteSourceResultItemsFromSnapshot(snapshot),
-          collectRecognitionCandidatesForTarget: (siteItem, payload) =>
-            this.collectRecognitionCandidatesForTarget(
-              siteItem,
-              payload && payload.globalEpisode,
-              payload && payload.wantEpisodeInSeason,
-              {
-                matchOptions: payload && payload.matchOptions ? payload.matchOptions : normalizedMatchOptions,
-                mappingSignature: targetSignature,
-                episodeSource: targetEpisodeSource,
-                allowResolutionModes: this.buildAllowedResolutionModes(),
-              },
-            ),
-          getCachedSiteResultDetail: (siteItem) => this.getCachedSiteResultDetail(siteItem),
-          ensureSiteResultDetailCached: (siteItem, options) =>
-            this.ensureSiteResultDetailCached(siteItem, {
-              onUpdate: (nextDetail) => {
-                const payload = nextDetail && typeof nextDetail === 'object' ? nextDetail : null;
-                if (!payload) return;
-                this.cacheRecognitionForSiteResult(siteItem, payload, {
-                  mapping: targetMapping,
-                  mappingSignature: targetSignature,
-                });
-                if (options && typeof options.onUpdate === 'function') options.onUpdate(payload);
-              },
-            }),
-          buildPanSourcesFromDetail: (detail) => this.buildPanSourcesFromDetail(detail),
-          buildPanSegment: (panEntry, index) => this.buildPanSegment(panEntry, index),
-          buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
-          playResolvedSiteSegment: (payload) => this.playResolvedSiteSegment(payload),
-          getSearchState: (query, scope) => ({
-            snapshot: getSearchSessionLaneSnapshot(query, scope, 'site'),
-            status: getSearchSessionLaneStatus(query, scope, 'site'),
+          ...this.buildSmartPlaybackControllerCallbacks({
+            runSeq,
+            actionUiOnly,
+            callbackChannel,
+            callbackToken,
+            targetSignature,
+            targetEpisodeSource,
+            normalizedMatchOptions,
+            targetMapping,
+            unifiedAllowed,
           }),
-          setAttemptRunSeq: (value) => { this.smartPlaybackAttemptRunSeq = normalizeInt(value); },
-          setPendingRunSeq: (value) => { this.smartPlaybackPendingRunSeq = normalizeInt(value); },
-          setResume: (fn) => { this.smartPlaybackResume = typeof fn === 'function' ? fn : null; },
-          clearPendingAttempt: () => {
-            if (this.smartPlaybackPendingRunSeq === runSeq) this.smartPlaybackPendingRunSeq = 0;
-            if (this.smartPlaybackAttemptRunSeq === runSeq) this.smartPlaybackAttemptRunSeq = 0;
-          },
-          onLoadingStateChange: (value) => {
-            if (!isActiveSmartCallback()) return;
-            if (!actionUiOnly) this.playLoading = !!value;
-          },
-          onErrorTextChange: (value) => {
-            if (!isActiveSmartCallback()) return;
-            const text = normalizeString(value);
-            if (!actionUiOnly) {
-              this.playError = text;
-              return;
-            }
-            if (text) {
-              this.closePlayerActionFlow({ toast: text });
-            }
-          },
-          onStreamCleanupChange: (fn) => { this.smartPlaybackStreamCleanup = typeof fn === 'function' ? fn : null; },
         });
       } finally {
-        if (callbackToken === this.smartPlaybackChannelToken && runSeq === this.smartPlaybackRunSeq) {
+        if (this.isSmartPlaybackCallbackActive(callbackToken, runSeq, callbackChannel)) {
           this.smartPlaybackStage = 'idle';
           this.smartPlaybackActiveChannel = '';
         }
@@ -4789,36 +4900,25 @@ export default {
       const action = normalizeString(actionKey);
       const value = normalizeString(selectedValue);
       const suppressStatusUi = action === 'switch' || action === 'pan' || action === 'quality';
+      if (action === 'switch') {
+        this.recordCurrentPlaybackIntoSwitchSkipBucket(globalEpisode);
+      }
       const actionTargetKey = this.buildPlayerActionTargetKey({
         globalEpisode,
         actionKey: action,
         selectedValue: value,
       });
-      const searchingSameTarget = !!(
-        suppressStatusUi
-        && this.playerTransientToastSticky
-        && actionTargetKey
-        && normalizeString(this.playerActionPendingTargetKey) === actionTargetKey
-      );
-      if (searchingSameTarget) {
-        this.showPlayerActionToast('正在搜索片源...', { sticky: true });
-        return;
-      }
-      const currentPanFamily = normalizeString(this.currentPlaybackPanFamilyLabel);
-      const currentQualityKey = normalizeString(this.currentPlaybackQualityKey);
-      if (action === 'pan' && value && value === currentPanFamily) return;
-      if (action === 'quality' && value && value === currentQualityKey) return;
+      if (this.shouldIgnorePlayerControlAction({
+        action,
+        value,
+        suppressStatusUi,
+        actionTargetKey,
+      })) return;
       if (suppressStatusUi) {
-        this.playerUiTransitionMode = 'switch';
-        this.playerActionPendingTargetKey = actionTargetKey;
-        this.clearPlayerActionToast();
-        this.showPlayerActionToast('正在搜索片源...', { sticky: true });
-        this.playError = '';
-        this.playerRuntimeError = '';
+        this.startPlayerActionSearchFlow(actionTargetKey);
       }
       if (action === 'switch') {
         this.activePlayerControlAction = 'switch';
-        this.recordCurrentPlaybackIntoSwitchSkipBucket();
       }
       const actionConstraint = buildSmartPlaybackActionConstraint({
         actionKey: action,
@@ -4826,7 +4926,7 @@ export default {
         currentContext: this.currentPlaybackContext,
       });
       if (!actionConstraint) {
-        if (suppressStatusUi) this.finishPlayerSwitchTransition();
+        if (suppressStatusUi) this.closePlayerActionFlow();
         return;
       }
       const skipHistoryList = false;
@@ -5086,20 +5186,10 @@ export default {
       await this.switchEpisodeByDelta(deltaRaw, { showBoundaryToast: true });
     },
     onPlayerPlaying() {
-      this.playLoading = false;
-      this.playError = '';
-      this.playerRuntimeError = '';
-      this.playerPlaybackStarted = true;
-      this.closePlayerActionFlow();
+      this.finalizePlayerReadyState();
     },
     async onPlayerFirstFrame() {
-      this.playLoading = false;
-      this.playError = '';
-      this.playerRuntimeError = '';
-      this.playerBuffering = false;
-      this.playerFirstFrameReady = true;
-      this.playRequestStage = '';
-      this.closePlayerActionFlow();
+      this.finalizePlayerReadyState({ markFirstFrame: true });
       await this.applyPlayHistoryResume('firstframe');
       this.confirmSmartPlaybackClosedLoop(this.smartPlaybackPendingRunSeq);
     },

@@ -69,7 +69,7 @@ export const runSmartPlaybackController = async ({
   const pendingSiteQueue = [];
   let activeThreads = 0;
   let searchCompleted = false;
-  let finalized = false;
+  let flowPhase = 'running'; // running | finalizing | done
   let playAttemptRunning = false;
   let queuedRetry = false;
   let currentPendingCandidateKey = '';
@@ -82,6 +82,7 @@ export const runSmartPlaybackController = async ({
   const finishController = (reason = '') => {
     if (controllerFinished) return;
     controllerFinished = true;
+    flowPhase = 'done';
     try {
       unsubscribe();
     } catch (_error) {}
@@ -250,7 +251,7 @@ export const runSmartPlaybackController = async ({
   };
 
   const finalizeIfComplete = async () => {
-    if (finalized || safeStopped()) return;
+    if (flowPhase !== 'running' || safeStopped()) return;
     if (!searchCompleted || activeThreads > 0) return;
 
     // If resolve/play is currently in-flight (or blocked by pending lock),
@@ -260,15 +261,15 @@ export const runSmartPlaybackController = async ({
       return;
     }
 
-    finalized = true;
+    flowPhase = 'finalizing';
     const resolved = await requestResolvePlayback();
-    if (resolved) return;
+    if (resolved || flowPhase === 'done') return;
     if (safeStopped()) return;
 
     // requestResolvePlayback may return false when a retry gets queued by flow state
     // transitions in the same tick. In that case, do not emit no_match prematurely.
     if (queuedRetry || playAttemptRunning || flowState.pendingPlaybackLocked || currentPendingCandidateKey) {
-      finalized = false;
+      flowPhase = 'running';
       return;
     }
 
