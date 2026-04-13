@@ -290,6 +290,14 @@
                     </div>
                   </div>
                   <div class="ui-select-row__actions">
+                    <button
+                      v-if="selectedSiteResultItem && projectionSourceOptions.length > 1 && !rawListMode"
+                      type="button"
+                      class="ui-control-btn"
+                      @click="toggleProjectionSource"
+                    >
+                      {{ selectedProjectionSource === '豆瓣' ? 'TMDB' : '豆瓣' }}
+                    </button>
                     <button v-if="!effectiveForceRawListMode" type="button" class="ui-control-btn" @click="toggleRawList">
                       {{ rawListMode ? '返回选集' : '原始列表' }}
                     </button>
@@ -1281,7 +1289,10 @@ export default {
     },
     projectionSourceOptions() {
       if (!this.selectedSiteResultItem || !this.isTmdbMode) return [];
-      return buildProjectedSiteEpisodeItems(this.playbackRecognitionData, 'TMDB').length ? ['TMDB'] : [];
+      const options = [];
+      if (buildProjectedSiteEpisodeItems(this.playbackRecognitionData, 'TMDB').length) options.push('TMDB');
+      if (buildProjectedSiteEpisodeItems(this.playbackRecognitionData, '豆瓣').length) options.push('豆瓣');
+      return options;
     },
     forceRawListMode() {
       return this.contentKind === 'movie';
@@ -1347,13 +1358,14 @@ export default {
       }
       return !!(this.playHistoryRowForMenu && this.playHistoryRowForMenu.preOrder);
     },
-    isProjectedSiteTMDBSource() {
-      return !!this.selectedSiteResultItem && this.selectedProjectionSource === 'TMDB' && this.isTmdbMode;
+    isProjectedSiteEpisodeSource() {
+      if (!this.selectedSiteResultItem || !this.isTmdbMode) return false;
+      const source = normalizeString(this.selectedProjectionSource);
+      return source === 'TMDB' || source === '豆瓣';
     },
     projectedSiteEpisodeItems() {
-      if (!this.selectedSiteResultItem) return [];
-      if (!this.isProjectedSiteTMDBSource) return [];
-      return buildProjectedSiteEpisodeItems(this.playbackRecognitionData, 'TMDB');
+      if (!this.selectedSiteResultItem || !this.isProjectedSiteEpisodeSource) return [];
+      return buildProjectedSiteEpisodeItems(this.playbackRecognitionData, this.selectedProjectionSource);
     },
     tmdbMovieCandidateItems() {
       if (this.selectedSiteResultItem || !this.isTmdbMode || !this.tmdbMovieMode) return [];
@@ -1376,7 +1388,7 @@ export default {
       });
     },
     projectedSeasonRows() {
-      if (this.isProjectedSiteTMDBSource) return this.projectedTMDBSeasonRows;
+      if (this.selectedSiteResultItem) return this.projectedTMDBSeasonRows;
       return [];
     },
     tmdbMovieMode() {
@@ -1472,7 +1484,7 @@ export default {
       return this.doubanBaseSeasonRows;
     },
     projectedTMDBSeasonRows() {
-      if (!this.isProjectedSiteTMDBSource || !this.projectedSiteEpisodeItems.length) return [];
+      if (!this.selectedSiteResultItem || !this.projectedSiteEpisodeItems.length) return [];
       const rows = new Map();
       this.projectedSiteEpisodeItems.forEach((item) => {
         const season = normalizeInt(item && item.season);
@@ -1775,10 +1787,14 @@ export default {
       if (!this.siteResultDetailData) return 'loading';
       if (!this.currentPanSourceEntry) return 'status';
       if (this.selectedSitePanState.loading) return 'loading';
-      if (this.selectedSitePanState.hasProjectedEpisodes) return 'episodes';
-      if (this.selectedSitePanState.hasSegments && this.rawListMode) return 'raw';
-      if (this.selectedSiteEpisodeStatusText) return 'status';
-      return 'episodes';
+      const hasEpisodes = !!this.selectedSitePanState.hasProjectedEpisodes;
+      const hasRaw = !!this.selectedSitePanState.hasSegments;
+      if (this.rawListMode) {
+        return hasRaw ? 'raw' : 'status';
+      }
+      if (hasEpisodes) return 'episodes';
+      if (hasRaw) return 'raw';
+      return 'status';
     },
     siteResultEpisodeStatusText() {
       if (this.showTmdbMovieCandidateList) {
@@ -1808,7 +1824,7 @@ export default {
       if (!this.isTmdbMode && !this.selectedSiteResultItem && this.contentKind === 'series' && !this.episodeButtons.length) {
         return '暂无数据';
       }
-      if (this.isProjectedSiteTMDBSource && !this.projectedEpisodeButtons.length) {
+      if (this.isProjectedSiteEpisodeSource && !this.projectedEpisodeButtons.length) {
         return '暂无数据';
       }
       return '';
@@ -2995,6 +3011,18 @@ export default {
       if (option === '豆瓣') {
         await this.ensureTVMetaLoaded();
       }
+      this.$nextTick(() => this.syncPlaybackDisplayFocus());
+    },
+    toggleProjectionSource() {
+      if (!this.selectedSiteResultItem || !this.isTmdbMode) return;
+      const options = this.projectionSourceOptions;
+      if (!Array.isArray(options) || options.length <= 1) return;
+      const current = normalizeString(this.selectedProjectionSource);
+      const idx = options.findIndex((item) => item === current);
+      const next = options[(idx + 1 + options.length) % options.length] || options[0];
+      this.selectedProjectionSource = normalizeString(next) || 'TMDB';
+      this.selectedViewSeasonNumber = 0;
+      this.selectedViewRangeStart = 0;
       this.$nextTick(() => this.syncPlaybackDisplayFocus());
     },
     async triggerSiteSourceSearchMore() {

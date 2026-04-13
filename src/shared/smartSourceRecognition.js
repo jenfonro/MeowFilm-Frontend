@@ -672,7 +672,8 @@ export const buildPlaybackRecognitionData = ({
       const parentSeason = pickUniqueFolderSeason(folderStats, segment.parentPath);
       if (currentSeason > 0) {
         season = currentSeason;
-      } else if (currentQuality === '4K' && parentSeason > 0) {
+      } else if (currentQuality && parentSeason > 0) {
+        // 质量目录（4K/1080P/720P...）都应视为可忽略的中间层，不应仅限 4K
         season = parentSeason;
       }
       if (!quality) {
@@ -784,7 +785,8 @@ export const buildDirectSiteEpisodeItems = (entry, runtimeSettings) => {
       const parentSeason = pickUniqueFolderSeason(folderStats, segment.parentPath);
       if (currentSeason > 0) {
         season = currentSeason;
-      } else if (currentQuality === '4K' && parentSeason > 0) {
+      } else if (currentQuality && parentSeason > 0) {
+        // 质量目录（4K/1080P/720P...）都应视为可忽略的中间层，不应仅限 4K
         season = parentSeason;
       }
       if (!quality) {
