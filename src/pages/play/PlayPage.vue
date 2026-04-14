@@ -4287,7 +4287,6 @@ export default {
       const forceDetailOnlyByStage = stageState.done && !stageState.detailDone;
       let detailRequested = !!forceDetailOnlyByStage;
       let hasHistoryContext = false;
-      let historyListPlayed = false;
 
       const buildTargetKey = (target) => {
         const siteItem = target && target.siteItem ? target.siteItem : null;
@@ -4361,10 +4360,7 @@ export default {
         const listTarget = forceDetailOnlyByStage ? null : await resolveHistoryTarget(false);
         if (listTarget) hasHistoryContext = true;
         if (listTarget && listTarget.fromHistoryPlayFlag) {
-          if (await tryPlayTarget(listTarget)) {
-            historyListPlayed = true;
-            return true;
-          }
+          if (await tryPlayTarget(listTarget)) return true;
         } else if (listTarget && listTarget.fromHistoryDetail) {
           detailRequested = true;
           if (await tryPlayTarget(listTarget)) return true;
@@ -4408,7 +4404,7 @@ export default {
 
         return false;
       } finally {
-        const detailDone = historyListPlayed || !hasHistoryContext || !!detailRequested;
+        const detailDone = !hasHistoryContext || !!detailRequested;
         this.historySmartBootstrapStageDone = {
           ...this.historySmartBootstrapStageDone,
           [stageKey]: { done: true, detailDone },
