@@ -173,10 +173,29 @@ const extractNormalizedSeasonEpisode = (text, compiledRules, cleanRules) => {
 const extractQualityMark = (text) => {
   const raw = normalizeString(text).toLowerCase();
   if (!raw) return '';
+  if (/(?:4320p|8k)/i.test(raw)) return '8K';
   if (/(?:2160p|4k|uhd)/i.test(raw)) return '4K';
   if (/(?:1080p|1080i|fhd)/i.test(raw)) return '1080P';
   if (/(?:720p|hd)/i.test(raw)) return '720P';
   return '';
+};
+
+const parseDisplayMetaQuality = (displayName) => {
+  let rest = normalizeString(displayName);
+  let quality = '';
+  while (rest.startsWith('@')) {
+    const matched = rest.match(/^@([^@/\\]+)/);
+    if (!matched || !matched[1]) break;
+    const token = normalizeString(matched[1]).toUpperCase();
+    if (!quality) {
+      if (token === '8K' || token === '4320P') quality = '8K';
+      else if (token === '4K' || token === '2160P') quality = '4K';
+      else if (token === '1080P') quality = '1080P';
+      else if (token === '720P') quality = '720P';
+    }
+    rest = normalizeString(rest.slice(matched[0].length));
+  }
+  return quality;
 };
 
 const matchesAnyMagicRule = (text, rules) => {
@@ -228,16 +247,18 @@ const extractEpisodeCandidateTextsFromSegment = (segment, compiledEpisodeRules) 
   const rawNames = [normalizeString(segment && segment.rawName)].filter(Boolean);
   const currentDir = normalizeString(segment && segment.currentDir);
   const parentDir = normalizeString(segment && segment.parentDir);
-  const rawLooksUseful = rawNames.some((item) => isInformativeEpisodeText(item, compiledEpisodeRules));
   const out = [];
   const push = (value) => {
     const text = normalizeString(value);
     if (!text) return;
     if (!out.includes(text)) out.push(text);
   };
+
+  // 提取优先级：文件名 -> 展示名 -> raw 路径层
   if (fileName) push(fileName);
-  if (!rawLooksUseful && !fileName && displayName) push(displayName);
+  if (displayName && (!fileName || displayName !== fileName)) push(displayName);
   rawNames.forEach((item) => push(item));
+
   const fileHasSeason = !!extractSeasonHintFromText(fileName);
   if (!fileHasSeason && currentDir) {
     const currentSeasonMarker = extractSeasonHintFromText(currentDir);
@@ -253,9 +274,6 @@ const extractEpisodeCandidateTextsFromSegment = (segment, compiledEpisodeRules) 
         }
       }
     }
-  }
-  if (displayName && rawLooksUseful) {
-    if (!fileName || displayName !== fileName) push(displayName);
   }
   return out;
 };
@@ -379,6 +397,24 @@ const buildSeasonCountLookup = (rows, field) => {
     if (season > 0 && count > 0) out.set(season, count);
   });
   return out;
+};
+
+const getFallbackBoundary = ({ primaryRows, primaryCounts, primaryMultiSeason, baselineSingleSeason }) => {
+  const rows = Array.isArray(primaryRows) ? primaryRows : [];
+  const counts = primaryCounts instanceof Map ? primaryCounts : new Map();
+  if (primaryMultiSeason && baselineSingleSeason) {
+    const sorted = rows
+      .map((row) => ({
+        season: normalizeInt(row && (row.season != null ? row.season : row.season_number)),
+        count: normalizeInt(row && (row.episodes != null ? row.episodes : (row.episodeCount != null ? row.episodeCount : row.episode_count))),
+      }))
+      .filter((row) => row.season > 0 && row.count > 0)
+      .sort((a, b) => a.season - b.season);
+    if (sorted.length > 1) {
+      return sorted.slice(0, -1).reduce((sum, row) => sum + row.count, 0);
+    }
+  }
+  return normalizeInt(counts.get(1));
 };
 
 const getTMDBSeasonRows = (detail) => (
@@ -511,7 +547,7 @@ const buildSeasonMarkedMappings = ({
   doubanMeta,
   tmdbMultiSeason,
   doubanMultiSeason,
-  sourceEpisodeNos,
+  sourceDirMaxEpisode,
 }) => {
   const tmdbSeasonRows = getTMDBSeasonRows(tmdbDetail);
   const doubanSeasonRows = getDoubanSeasonRows(doubanMeta);
@@ -534,7 +570,52 @@ const buildSeasonMarkedMappings = ({
     doubanCounts,
   });
   if (strictDouban.length) return strictDouban;
-  return [];
+
+  const singleBaselineRows = (!tmdbMultiSeason && doubanMultiSeason)
+    ? tmdbSeasonRows
+    : ((tmdbMultiSeason && !doubanMultiSeason) ? doubanSeasonRows : []);
+  const fallbackBoundary = getFallbackBoundary({
+    primaryRows: tmdbSeasonRows,
+    primaryCounts: tmdbCounts,
+    primaryMultiSeason: tmdbMultiSeason,
+    baselineSingleSeason: singleBaselineRows.length === 1,
+  });
+  const sourceHasBeyondFirstSeason = fallbackBoundary > 0 && normalizeInt(sourceDirMaxEpisode) > fallbackBoundary;
+  return resolveDegradedSingleBaseline({
+    episodeNo,
+    seasonNo,
+    tmdbDetail,
+    singleBaselineRows,
+    firstSeasonCount: fallbackBoundary,
+    sourceHasBeyondFirstSeason,
+    reason: 'season-marked-fallback',
+  });
+};
+
+const resolveDegradedSingleBaseline = ({
+  episodeNo,
+  seasonNo,
+  tmdbDetail,
+  singleBaselineRows,
+  firstSeasonCount,
+  sourceHasBeyondFirstSeason,
+  reason,
+}) => {
+  const e = normalizeInt(episodeNo);
+  if (e <= 0 || !Array.isArray(singleBaselineRows) || singleBaselineRows.length !== 1) return [];
+  const baselineSE = tmdbSeasonEpisodeOfGlobal({ seasons: singleBaselineRows }, e);
+  if (normalizeInt(baselineSE && baselineSE.season) !== 1 || normalizeInt(baselineSE && baselineSE.episode) !== e) return [];
+  if (!sourceHasBeyondFirstSeason) return [];
+  return buildMappingCandidate({
+    from: 'assist',
+    global: e,
+    tmdbDetail,
+    resolutionMode: 'degraded-single-baseline',
+  }).map((item) => ({
+    ...item,
+    degradedReason: normalizeString(reason),
+    extractedSeason: normalizeInt(seasonNo),
+  }));
 };
 
 const buildEpisodeOnlyMappings = ({
@@ -543,7 +624,7 @@ const buildEpisodeOnlyMappings = ({
   doubanMeta,
   tmdbMultiSeason,
   doubanMultiSeason,
-  sourceEpisodeNos,
+  sourceDirMaxEpisode,
 }) => {
   const strictTMDB = resolveEpisodeOnlyStrictTMDB({
     episodeNo,
@@ -558,7 +639,30 @@ const buildEpisodeOnlyMappings = ({
     doubanMultiSeason,
   });
   if (strictDouban.length) return strictDouban;
-  return [];
+
+  const tmdbRows = getTMDBSeasonRows(tmdbDetail);
+  const doubanRows = getDoubanSeasonRows(doubanMeta);
+  const singleBaselineRows = (!tmdbMultiSeason && doubanMultiSeason)
+    ? tmdbRows
+    : ((tmdbMultiSeason && !doubanMultiSeason) ? doubanRows : []);
+  const tmdbCounts = buildSeasonCountLookup(tmdbRows, ['episodes', 'episodeCount', 'episode_count']);
+  const fallbackBoundary = getFallbackBoundary({
+    primaryRows: tmdbRows,
+    primaryCounts: tmdbCounts,
+    primaryMultiSeason: tmdbMultiSeason,
+    baselineSingleSeason: singleBaselineRows.length === 1,
+  });
+  const sourceHasBeyondFirstSeason = fallbackBoundary > 0 && normalizeInt(sourceDirMaxEpisode) > fallbackBoundary;
+  const firstSeasonCount = fallbackBoundary;
+  return resolveDegradedSingleBaseline({
+    episodeNo,
+    seasonNo: 0,
+    tmdbDetail,
+    singleBaselineRows,
+    firstSeasonCount,
+    sourceHasBeyondFirstSeason,
+    reason: 'episode-only-fallback',
+  });
 };
 
 const buildCandidateMappings = ({
@@ -568,7 +672,7 @@ const buildCandidateMappings = ({
   doubanMeta,
   tmdbMultiSeason,
   doubanMultiSeason,
-  sourceEpisodeNos,
+  sourceDirMaxEpisode,
 }) => {
   const seasonNo = normalizeInt(season);
   const episodeNo = normalizeInt(episode);
@@ -580,7 +684,7 @@ const buildCandidateMappings = ({
       doubanMeta,
       tmdbMultiSeason,
       doubanMultiSeason,
-      sourceEpisodeNos,
+      sourceDirMaxEpisode,
     });
   }
   return buildSeasonMarkedMappings({
@@ -590,7 +694,7 @@ const buildCandidateMappings = ({
     doubanMeta,
     tmdbMultiSeason,
     doubanMultiSeason,
-    sourceEpisodeNos,
+    sourceDirMaxEpisode,
   });
 };
 
@@ -646,7 +750,18 @@ export const buildPlaybackRecognitionData = ({
   const doubanMultiSeason = !!(smartEpisodeMapping && Array.isArray(smartEpisodeMapping.doubanSeasons) && smartEpisodeMapping.doubanSeasons.length > 1);
   const panMatch = resolvePanMatch(entry.label, panTokens, panMappings);
   const items = [];
-  const sourceEpisodeNos = [];
+  const dirEpisodeMax = new Map();
+  segments.forEach((segment) => {
+    const fileParsed = extractNormalizedSeasonEpisode(segment && segment.fileName, compiledRules, cleanRules);
+    const displayParsed = !fileParsed.episode
+      ? extractNormalizedSeasonEpisode(segment && segment.displayName, compiledRules, cleanRules)
+      : { season: 0, episode: 0 };
+    const episodeNo = normalizeInt((fileParsed && fileParsed.episode) || (displayParsed && displayParsed.episode));
+    if (episodeNo <= 0) return;
+    const dirKey = normalizeString(segment && segment.currentPath);
+    const prev = normalizeInt(dirEpisodeMax.get(dirKey));
+    if (episodeNo > prev) dirEpisodeMax.set(dirKey, episodeNo);
+  });
 
   segments.forEach((segment) => {
     const fileParsed = extractNormalizedSeasonEpisode(segment.fileName, compiledRules, cleanRules);
@@ -662,10 +777,9 @@ export const buildPlaybackRecognitionData = ({
       season = displayParsed.season;
       episode = displayParsed.episode;
     }
-    if (episode > 0) sourceEpisodeNos.push(episode);
+    const sourceDirMaxEpisode = normalizeInt(dirEpisodeMax.get(segment.currentPath));
 
-    const isPanMockList = !!normalizeString(entry.provider);
-    if (isPanMockList && episode > 0 && season <= 0) {
+    if (episode > 0 && season <= 0) {
       const currentQuality = pickUniqueFolderQuality(folderStats, segment.currentPath);
       const currentSeason = pickUniqueFolderSeason(folderStats, segment.currentPath);
       const parentQuality = pickUniqueFolderQuality(folderStats, segment.parentPath);
@@ -673,17 +787,18 @@ export const buildPlaybackRecognitionData = ({
       if (currentSeason > 0) {
         season = currentSeason;
       } else if (currentQuality && parentSeason > 0) {
-        // 质量目录（4K/1080P/720P...）都应视为可忽略的中间层，不应仅限 4K
         season = parentSeason;
       }
       if (!quality) {
-        if (currentQuality) quality = currentQuality;
+        const displayMetaQuality = parseDisplayMetaQuality(segment.displayName);
+        if (displayMetaQuality) quality = displayMetaQuality;
+        else if (currentQuality) quality = currentQuality;
         else if (currentSeason > 0 && parentQuality) quality = parentQuality;
       }
     }
 
     if (!quality) {
-      quality = extractQualityMark(segment.displayName);
+      quality = parseDisplayMetaQuality(segment.displayName) || extractQualityMark(segment.displayName);
     }
 
     const mappings = buildCandidateMappings({
@@ -693,7 +808,7 @@ export const buildPlaybackRecognitionData = ({
       doubanMeta,
       tmdbMultiSeason,
       doubanMultiSeason,
-      sourceEpisodeNos,
+      sourceDirMaxEpisode,
     });
     mappings.forEach((mapping, candidateIndex) => {
       const resolutionMode = normalizeString(mapping && mapping.resolutionMode);
@@ -777,8 +892,7 @@ export const buildDirectSiteEpisodeItems = (entry, runtimeSettings) => {
       episode = displayParsed.episode;
     }
 
-    const isPanMockList = !!normalizeString(target.provider);
-    if (isPanMockList && episode > 0 && season <= 0) {
+    if (episode > 0 && season <= 0) {
       const currentQuality = pickUniqueFolderQuality(folderStats, segment.currentPath);
       const currentSeason = pickUniqueFolderSeason(folderStats, segment.currentPath);
       const parentQuality = pickUniqueFolderQuality(folderStats, segment.parentPath);
@@ -786,16 +900,17 @@ export const buildDirectSiteEpisodeItems = (entry, runtimeSettings) => {
       if (currentSeason > 0) {
         season = currentSeason;
       } else if (currentQuality && parentSeason > 0) {
-        // 质量目录（4K/1080P/720P...）都应视为可忽略的中间层，不应仅限 4K
         season = parentSeason;
       }
       if (!quality) {
-        if (currentQuality) quality = currentQuality;
+        const displayMetaQuality = parseDisplayMetaQuality(segment.displayName);
+        if (displayMetaQuality) quality = displayMetaQuality;
+        else if (currentQuality) quality = currentQuality;
         else if (currentSeason > 0 && parentQuality) quality = parentQuality;
       }
     }
 
-    if (!quality) quality = extractQualityMark(segment.displayName);
+    if (!quality) quality = parseDisplayMetaQuality(segment.displayName) || extractQualityMark(segment.displayName);
     if (episode <= 0) return;
 
     out.push({
