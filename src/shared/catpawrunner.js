@@ -209,13 +209,16 @@ const splitEpisodeSegments = (value) =>
 const buildJoinedEpisodeSegments = (segments) =>
   (Array.isArray(segments) ? segments.map(normalizeString).filter(Boolean) : []).join('#');
 
-const normalizeSourceEntry = (item, index = 0) => {
+export const normalizeSourceEntry = (item, index = 0) => {
   const source = item && typeof item === 'object' ? item : {};
   const label = normalizeString(source.label);
   if (!label) return null;
+  const fallbackSourceValue = normalizeString(source.sourceValue)
+    || normalizeString(source.baseUrl)
+    || normalizeString(source.url);
   const episodeSegments = Array.isArray(source.episodeSegments)
     ? source.episodeSegments.map(normalizeString).filter(Boolean)
-    : splitEpisodeSegments(source.url);
+    : splitEpisodeSegments(fallbackSourceValue);
   const sourceValue = normalizeString(source.sourceValue)
     || normalizeString(source.baseUrl)
     || buildJoinedEpisodeSegments(episodeSegments);
@@ -235,6 +238,7 @@ const normalizeSourceEntry = (item, index = 0) => {
 const detailCache = new Map();
 const resolvedDetailCache = new Map();
 const panListCache = new Map();
+const panListResultByProviderFlag = new Map();
 
 const notifyResolvedDetailListeners = (cacheKey, data) => {
   const cached = resolvedDetailCache.get(cacheKey);
@@ -344,6 +348,27 @@ const callPanList = async (provider, body, { signal } = {}) => {
   return data && typeof data === 'object' ? data : null;
 };
 
+export const getPanListCachedByProviderFlag = ({ provider, playFlag, passcode = '' } = {}) => {
+  const key = normalizeString(provider).toLowerCase();
+  const flag = normalizePanMockFlag(playFlag);
+  const pass = normalizeString(passcode);
+  if (!key || !flag) return null;
+  const cacheKey = `${key}::${flag}::${pass}`;
+  const data = panListResultByProviderFlag.get(cacheKey);
+  return data && typeof data === 'object' ? data : null;
+};
+
+export const setPanListCachedByProviderFlag = ({ provider, playFlag, passcode = '', data } = {}) => {
+  const key = normalizeString(provider).toLowerCase();
+  const flag = normalizePanMockFlag(playFlag);
+  const pass = normalizeString(passcode);
+  if (!key || !flag) return;
+  const payload = data && typeof data === 'object' ? data : null;
+  if (!payload) return;
+  const cacheKey = `${key}::${flag}::${pass}`;
+  panListResultByProviderFlag.set(cacheKey, payload);
+};
+
 export const requestPanListByProviderFlag = async ({ provider, playFlag, passcode = '', signal } = {}) => {
   const key = normalizeString(provider).toLowerCase();
   const flag = normalizePanMockFlag(playFlag);
@@ -369,9 +394,15 @@ export const requestPanListByProviderFlag = async ({ provider, playFlag, passcod
     if (cached && cached.status === 'resolved') return cached.data;
     if (cached && cached.status === 'pending') return cached.promise;
   }
+  const stickyCached = getPanListCachedByProviderFlag({ provider: key, playFlag: flag, passcode: pass });
+  if (stickyCached) {
+    panListCache.set(cacheKey, { status: 'resolved', data: stickyCached });
+    return stickyCached;
+  }
 
   const promise = callPanList(key, body, { signal: null }).then((data) => {
     panListCache.set(cacheKey, { status: 'resolved', data });
+    setPanListCachedByProviderFlag({ provider: key, playFlag: flag, passcode: pass, data });
     return data;
   }).catch((error) => {
     panListCache.delete(cacheKey);
@@ -496,18 +527,28 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
       });
       if (!provider) continue;
       let requestBody = null;
+      let requestFlag = label;
+      let requestPasscode = urlSeg || '';
       if (provider === '189') {
         const { shareCode, accessCode } = extractTianyiShareCodeAndAccessCode(label, urlSeg);
         if (!shareCode) continue;
-        requestBody = { flag: `天意-${shareCode}`, shareCode, accessCode: accessCode || '' };
+        requestFlag = `天意-${shareCode}`;
+        requestPasscode = accessCode || '';
+        requestBody = { flag: requestFlag, shareCode, accessCode: requestPasscode };
       } else if (provider === 'baidu') {
-        requestBody = { flag: label, pwd: urlSeg || '' };
+        requestBody = { flag: label, pwd: requestPasscode };
       } else if (provider === '139') {
-        requestBody = { flag: label, passcode: urlSeg || '' };
+        requestBody = { flag: label, passcode: requestPasscode };
       } else {
-        requestBody = { flag: label, passcode: urlSeg || '' };
+        requestBody = { flag: label, passcode: requestPasscode };
       }
-      reqMap.set(`${provider}::${label}`, { provider, label, requestBody });
+      reqMap.set(`${provider}::${label}`, {
+        provider,
+        label,
+        playFlag: requestFlag,
+        passcode: requestPasscode,
+        requestBody,
+      });
     }
   }
 
@@ -516,10 +557,10 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
   emitUpdate(false);
 
   await Promise.allSettled(
-    Array.from(reqMap.values()).map(async ({ provider, label, requestBody }) => {
+    Array.from(reqMap.values()).map(async ({ provider, label, playFlag, passcode, requestBody }) => {
       const resolveKey = `${provider}::${label}`;
       try {
-        const data = await callPanList(provider, requestBody, { signal });
+        const data = await requestPanListByProviderFlag({ provider, playFlag, passcode, signal });
         const vod = extractPanListVodPlayUrl(data);
         if (vod) {
           sourceEntries.forEach((item) => {
@@ -530,7 +571,7 @@ const resolvePanMockPlaySources = async (raw, playFrom, playUrl, { onUpdate, sig
           });
           if (provider === '189') {
             const flag = normalizeString(requestBody && requestBody.flag);
-            const accessCode = normalizeString(requestBody && requestBody.accessCode);
+            const accessCode = normalizeString(passcode);
             const match = /^天意-([A-Za-z0-9]{6,64})$/.exec(flag);
             const shareId = match && match[1] ? normalizeString(match[1]) : '';
             if (shareId && accessCode) {

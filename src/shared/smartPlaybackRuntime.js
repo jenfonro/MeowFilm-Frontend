@@ -5,6 +5,8 @@ import {
   extractPanListVodPlayUrl,
   extractRawNamesFromEpisodeUrl,
   fetchCatResolvedDetailCached,
+  normalizeSourceEntry,
+  setPanListCachedByProviderFlag,
   requestPanListByProviderFlag,
 } from './catpawrunner';
 import { panMockProviderFromFlag } from '../utils/matchCore';
@@ -62,9 +64,11 @@ const getDisplayDirPath = (value) => {
 const normalizeSourceSegments = (entry) => {
   const source = entry && typeof entry === 'object' ? entry : null;
   if (!source) return [];
-  return Array.isArray(source.episodeSegments)
-    ? source.episodeSegments.map(normalizeString).filter(Boolean)
-    : [];
+  const normalized = typeof normalizeSourceEntry === 'function' ? normalizeSourceEntry(source, 0) : null;
+  if (normalized && Array.isArray(normalized.episodeSegments)) {
+    return normalized.episodeSegments.map(normalizeString).filter(Boolean);
+  }
+  return [];
 };
 
 export const buildPanSourcesFromDetail = (detail) => {
@@ -73,19 +77,13 @@ export const buildPanSourcesFromDetail = (detail) => {
   const directSources = Array.isArray(target.sources) ? target.sources : [];
   return directSources
     .map((item, index) => {
-      const label = normalizeString(item && item.label);
-      if (!label) return null;
-      const key = normalizeString(item && item.key) || `source:${index}:${label}`;
+      const normalized = typeof normalizeSourceEntry === 'function' ? normalizeSourceEntry(item, index) : null;
+      if (!normalized) return null;
       return {
-        key,
-        label,
-        provider: normalizeString(item && item.provider).toLowerCase(),
-        sourceKind: normalizeString(item && item.sourceKind) || (normalizeString(item && item.provider) ? 'panmock' : 'normal'),
-        groupIndex: Number.isFinite(Number(item && item.groupIndex)) ? Math.trunc(Number(item.groupIndex)) : index,
-        sourceValue: normalizeString(item && item.sourceValue),
-        episodeSegments: normalizeSourceSegments(item),
-        error: normalizeString(item && item.error),
-        loading: item && item.loading === true,
+        ...normalized,
+        episodeSegments: Array.isArray(normalized.episodeSegments)
+          ? normalized.episodeSegments.map(normalizeString).filter(Boolean)
+          : [],
       };
     })
     .filter(Boolean);
@@ -568,6 +566,7 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
   allowResolutionModes = null,
   isCandidateAllowed,
   buildSelectionKey,
+  getCachedSiteResultDetail,
   cacheHistoryDetail,
   collectCandidates,
   compareCandidates,
@@ -581,22 +580,57 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
     ? allowResolutionModes.map((value) => normalizeString(value)).filter(Boolean)
     : [];
   const hasResolutionModeFilter = allowedResolutionModes.length > 0;
-  if (!row || !playFlag || (matchKind === 'episode' && targetGlobal <= 0) || !playFlag.includes('-')) return null;
+  if (!row || !playFlag || (matchKind === 'episode' && targetGlobal <= 0) || !playFlag.includes('-')) {
+    return null;
+  }
   const provider = normalizeString(panMockProviderFromFlag(playFlag)).toLowerCase();
-  if (!provider) return null;
-  const listData = await requestPanListByProviderFlag({ provider, playFlag }).catch(() => null);
-  const vod = extractPanListVodPlayUrl(listData);
-  if (!vod) return null;
+  if (!provider) {
+    return null;
+  }
   const siteItem = buildHistorySitePlaybackItem(row);
   if (!siteItem) return null;
-  const panEntry = {
-    key: `history:${playFlag}`,
-    label: playFlag,
-    provider,
-    url: vod,
-    error: '',
-    loading: false,
-  };
+
+  let panEntry = null;
+  if (typeof getCachedSiteResultDetail === 'function') {
+    const cachedDetail = getCachedSiteResultDetail(siteItem);
+    const cachedSources = buildPanSourcesFromDetail(cachedDetail);
+    panEntry = cachedSources.find((entry) => normalizeString(entry && entry.label) === playFlag) || null;
+    if (panEntry && typeof cacheHistoryDetail === 'function') {
+      try {
+        cacheHistoryDetail(siteItem, {
+          detail: cachedDetail,
+          cacheMeta: {
+            entryKind: 'history-list-cache-hit',
+            resolutionComplete: !!(cachedDetail && cachedDetail.resolutionComplete === true),
+          },
+        });
+      } catch (_error) {}
+    }
+  }
+
+  if (!panEntry) {
+    const listData = await requestPanListByProviderFlag({ provider, playFlag }).catch(() => null);
+    const vod = extractPanListVodPlayUrl(listData);
+    if (!vod) {
+      return null;
+    }
+    if (typeof setPanListCachedByProviderFlag === 'function' && listData && typeof listData === 'object') {
+      setPanListCachedByProviderFlag({ provider, playFlag, data: listData });
+    }
+    const listLikeDetail = {
+      sources: [{
+        key: `history:${playFlag}`,
+        label: playFlag,
+        provider,
+        sourceKind: 'panmock',
+        sourceValue: vod,
+        error: '',
+        loading: false,
+      }],
+    };
+    panEntry = buildPanSourcesFromDetail(listLikeDetail)[0] || null;
+    if (!panEntry) return null;
+  }
   if (typeof cacheHistoryDetail === 'function') {
     try {
       cacheHistoryDetail(siteItem, {
@@ -620,7 +654,7 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
     if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) return false;
     return true;
   });
-  return buildPlaybackTargetFromPanCandidates({
+  const target = buildPlaybackTargetFromPanCandidates({
     siteItem,
     panEntry,
     candidates: filteredCandidates,
@@ -629,6 +663,7 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
     compareCandidates,
     fromHistoryPlayFlag: true,
   });
+  return target;
 };
 
 const buildPlaybackTargetFromPanCandidates = ({
@@ -740,6 +775,7 @@ export const resolveHistoryBootstrapPlaybackTarget = async ({
       allowResolutionModes,
       isCandidateAllowed,
       buildSelectionKey,
+      getCachedSiteResultDetail,
       cacheHistoryDetail,
       collectCandidates,
       compareCandidates,
