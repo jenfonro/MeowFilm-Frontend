@@ -569,6 +569,7 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
   isCandidateAllowed,
   buildSelectionKey,
   cacheHistoryDetail,
+  collectCandidates,
   compareCandidates,
 } = {}) => {
   const row = historyRow && typeof historyRow === 'object' ? historyRow : null;
@@ -610,60 +611,57 @@ export const resolveHistoryPlayFlagPlaybackTarget = async ({
       });
     } catch (_error) {}
   }
-  const recognition = buildPlaybackRecognitionData({
-    entry: panEntry,
-    siteResultItem: siteItem,
-    runtimeSettings,
-    smartEpisodeMapping,
+  const candidates = typeof collectCandidates === 'function'
+    ? collectCandidates(siteItem, targetGlobal, targetLoose, matchOptions)
+    : [];
+  const filteredCandidates = (Array.isArray(candidates) ? candidates : []).filter((wrapper) => {
+    const candidate = wrapper && wrapper.candidate && typeof wrapper.candidate === 'object' ? wrapper.candidate : null;
+    const resolutionMode = normalizeString(candidate && candidate.resolutionMode);
+    if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) return false;
+    return true;
   });
-  const sourceMode = normalizeString(episodeSource) === '豆瓣' ? 'douban' : 'tmdb';
-  const list = Array.isArray(recognition && recognition.items) ? recognition.items : [];
-  const matches = [];
-  for (let i = 0; i < list.length; i += 1) {
-      const candidate = list[i];
-      let looseMatch = false;
-      if (matchKind === 'movie') {
-        if (normalizeString(candidate && candidate.matchKind) !== 'movie' || !(candidate && candidate.movieMatched)) continue;
-      } else {
-        const resolutionMode = normalizeString(candidate && candidate.resolutionMode);
-        if (hasResolutionModeFilter && (!resolutionMode || !allowedResolutionModes.includes(resolutionMode))) continue;
-        const mapping = candidate && candidate.mapping && typeof candidate.mapping === 'object' ? candidate.mapping : null;
-        if (!mapping) continue;
-        const strictMatch = normalizeInt(mapping.global) === targetGlobal;
-        const looseAllowed = !strictMatch
-          && targetLoose > 0
-          && (normalizeString(mapping.from) === 'global' || normalizeString(mapping.from) === 'single');
-        looseMatch = !strictMatch
-          && targetLoose > 0
-          && looseAllowed
-          && normalizeInt(mapping && mapping[sourceMode] && mapping[sourceMode].episode) === targetLoose;
-        if (!strictMatch && !looseMatch) continue;
-      }
-      const wrapper = {
-        siteItem,
-        panKey: panEntry.key,
-        itemIndex: normalizeInt(candidate && candidate.itemIndex),
-        looseMatch,
-        candidate,
-      };
-      if (typeof isCandidateAllowed === 'function') {
-        try {
-          if (!isCandidateAllowed(wrapper)) continue;
-        } catch (_error) {}
-      }
-      matches.push(wrapper);
-  }
-  const picked = pickTargetCandidate({ candidates: matches, isCandidateAllowed: null, compareCandidates });
-  if (!picked) return null;
-  const segment = buildPanSegment(panEntry, picked.itemIndex);
-  if (!segment || !normalizeString(segment.episodeUrl)) return null;
-  return {
+  return buildPlaybackTargetFromPanCandidates({
     siteItem,
     panEntry,
+    candidates: filteredCandidates,
+    buildSelectionKey,
+    isCandidateAllowed,
+    compareCandidates,
+    fromHistoryPlayFlag: true,
+  });
+};
+
+const buildPlaybackTargetFromPanCandidates = ({
+  siteItem,
+  panEntry,
+  candidates,
+  buildSelectionKey,
+  isCandidateAllowed,
+  compareCandidates,
+  fromHistoryPlayFlag = false,
+  fromHistoryDetail = false,
+} = {}) => {
+  const item = siteItem && typeof siteItem === 'object' ? siteItem : null;
+  const pan = panEntry && typeof panEntry === 'object' ? panEntry : null;
+  const panKey = normalizeString(pan && pan.key);
+  if (!item || !pan || !panKey || !normalizeSourceSegments(pan).length) return null;
+  const picked = pickTargetCandidate({
+    candidates: Array.isArray(candidates) ? candidates : [],
+    panKey,
+    isCandidateAllowed,
+    compareCandidates,
+  });
+  if (!picked) return null;
+  const segment = buildPanSegment(pan, picked.itemIndex);
+  if (!segment || !normalizeString(segment.episodeUrl)) return null;
+  return {
+    siteItem: item,
+    panEntry: pan,
     segment,
     candidate: picked && picked.candidate ? picked.candidate : null,
-    selectionKey: typeof buildSelectionKey === 'function' ? buildSelectionKey(panEntry.key, segment.index) : '',
-    fromHistoryPlayFlag: true,
+    selectionKey: typeof buildSelectionKey === 'function' ? buildSelectionKey(panKey, segment.index) : '',
+    fromHistoryPlayFlag: !!fromHistoryPlayFlag,
+    fromHistoryDetail: !!fromHistoryDetail,
   };
 };
 
@@ -689,21 +687,16 @@ const findHistoryDetailPlaybackTarget = ({
     : [];
   const panSources = buildPanSourcesFromDetail(payload);
   for (let i = 0; i < panSources.length; i += 1) {
-    const panEntry = panSources[i];
-    const panKey = normalizeString(panEntry && panEntry.key);
-    if (!panKey || !normalizeSourceSegments(panEntry).length) continue;
-    const picked = pickTargetCandidate({ candidates, panKey, isCandidateAllowed, compareCandidates });
-    if (!picked) continue;
-    const segment = buildPanSegment(panEntry, picked.itemIndex);
-    if (!segment || !normalizeString(segment.episodeUrl)) continue;
-    return {
+    const target = buildPlaybackTargetFromPanCandidates({
       siteItem: item,
-      panEntry,
-      segment,
-      candidate: picked && picked.candidate ? picked.candidate : null,
-      selectionKey: typeof buildSelectionKey === 'function' ? buildSelectionKey(panKey, segment.index) : '',
+      panEntry: panSources[i],
+      candidates,
+      buildSelectionKey,
+      isCandidateAllowed,
+      compareCandidates,
       fromHistoryDetail: true,
-    };
+    });
+    if (target) return target;
   }
   return null;
 };
@@ -748,9 +741,13 @@ export const resolveHistoryBootstrapPlaybackTarget = async ({
       isCandidateAllowed,
       buildSelectionKey,
       cacheHistoryDetail,
+      collectCandidates,
       compareCandidates,
     });
+    // Strictly separate history-list and history-detail chains:
+    // first pass only resolves list target; detail is handled by the caller's next stage.
     if (listHit) return listHit;
+    return null;
   }
   const tryResolveFromDetail = (detail) => {
     const payload = detail && typeof detail === 'object' ? detail : null;
@@ -774,8 +771,13 @@ export const resolveHistoryBootstrapPlaybackTarget = async ({
   };
   if (typeof getCachedSiteResultDetail === 'function') {
     const cached = getCachedSiteResultDetail(siteItem);
-    const cachedHit = tryResolveFromDetail(cached);
-    if (cachedHit) return cachedHit;
+    // In history-detail stage, only reuse fully-resolved detail cache.
+    // Do not consume history-list partial cache (resolutionComplete=false),
+    // otherwise detail chain may be skipped and order semantics drift.
+    if (cached && cached.resolutionComplete === true) {
+      const cachedHit = tryResolveFromDetail(cached);
+      if (cachedHit) return cachedHit;
+    }
   }
   if (typeof ensureSiteResultDetailCached !== 'function') return null;
   return new Promise((resolve) => {

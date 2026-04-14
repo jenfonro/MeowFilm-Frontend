@@ -4973,6 +4973,30 @@ export default {
       const targetSignature = normalizeString(mappingSignature)
         || (matchKind === 'movie' ? TMDB_MOVIE_RECOGNITION_SIGNATURE : buildEpisodeMappingSignature(targetMapping));
       const targetEpisodeSource = normalizeString(episodeSource) || this.selectedSiteSource;
+
+      // Phase 1 (frontend strict serial): reuse cached candidates first.
+      const cachedTarget = this.resolveCachedPlaybackTarget(targetGlobal, targetLoose, {
+        matchOptions: normalizedMatchOptions,
+        actionConstraint,
+        isCandidateAllowed: unifiedAllowed,
+        mapping: targetMapping,
+        mappingSignature: targetSignature,
+        episodeSource: targetEpisodeSource,
+        includeSelectedContext: true,
+        includeBrowseContext: true,
+        includeStoreScan: true,
+      });
+      if (cachedTarget) {
+        const cachedOk = await this.playCachedResolvedTarget({
+          ...cachedTarget,
+          globalEpisode: targetGlobal,
+        }, {
+          stage: currentStage,
+        });
+        if (cachedOk) return;
+      }
+
+      // Phase 2/3: history list chain -> history detail chain.
       const historyBootstrapped = await this.tryHistorySmartBootstrap(targetGlobal, targetLoose, {
         matchOptions: normalizedMatchOptions,
         actionConstraint,
