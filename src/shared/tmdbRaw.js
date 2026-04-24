@@ -80,16 +80,20 @@ export const getTMDBOrdinarySeasons = (detail) => {
     .sort((left, right) => left.season - right.season);
 };
 
-export const getTMDBNextEpisodeToAir = (detail) => {
+const getTMDBEpisodeToAir = (detail, key) => {
   const target = detail && typeof detail === 'object' ? detail : null;
-  const next = target && typeof target.next_episode_to_air === 'object' ? target.next_episode_to_air : null;
-  if (!next) return null;
+  const episode = target && typeof target[key] === 'object' ? target[key] : null;
+  if (!episode) return null;
   return {
-    seasonNumber: normalizeInt(next.season_number),
-    episodeNumber: normalizeInt(next.episode_number),
-    airDate: normalizeString(next.air_date),
+    seasonNumber: normalizeInt(episode.season_number),
+    episodeNumber: normalizeInt(episode.episode_number),
+    airDate: normalizeString(episode.air_date),
   };
 };
+
+export const getTMDBNextEpisodeToAir = (detail) => getTMDBEpisodeToAir(detail, 'next_episode_to_air');
+
+export const getTMDBLastEpisodeToAir = (detail) => getTMDBEpisodeToAir(detail, 'last_episode_to_air');
 
 export const getTMDBStatus = (detail) => normalizeString(detail && detail.status);
 

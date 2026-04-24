@@ -561,6 +561,7 @@ import {
   buildTMDBDetailTextBadge,
   getTMDBBackdropPath,
   getTMDBDetailTitle,
+  getTMDBLastEpisodeToAir,
   getTMDBNextEpisodeToAir,
   getTMDBOrdinarySeasons,
   getTMDBPosterPath,
@@ -1287,12 +1288,34 @@ export default {
       if (!this.tmdbBaseSeasonRows.length || !this.doubanBaseSeasonRows.length) return false;
       return this.tmdbBaseSeasonRows.length !== this.doubanBaseSeasonRows.length;
     },
+    projectionTMDBSeasonCount() {
+      if (!this.isTmdbMode || this.tmdbMovieMode) return 0;
+      return (Array.isArray(this.detailDoubanData && this.detailDoubanData.tmdbSeasons)
+        ? this.detailDoubanData.tmdbSeasons
+        : [])
+        .map((item) => normalizeInt(item && item.season))
+        .filter((season) => season > 0)
+        .length;
+    },
+    projectionDoubanSeasonCount() {
+      if (!this.isTmdbMode || this.tmdbMovieMode) return 0;
+      return (Array.isArray(this.detailDoubanData && this.detailDoubanData.doubanSeasons)
+        ? this.detailDoubanData.doubanSeasons
+        : [])
+        .map((item) => normalizeInt(item && item.season))
+        .filter((season) => season > 0)
+        .length;
+    },
+    projectionSourceSwitchable() {
+      if (!this.selectedSiteResultItem || !this.isTmdbMode || this.tmdbMovieMode) return false;
+      const tmdbCount = normalizeInt(this.projectionTMDBSeasonCount);
+      const doubanCount = normalizeInt(this.projectionDoubanSeasonCount);
+      return tmdbCount !== doubanCount;
+    },
     projectionSourceOptions() {
       if (!this.selectedSiteResultItem || !this.isTmdbMode) return [];
-      const options = [];
-      if (buildProjectedSiteEpisodeItems(this.playbackRecognitionData, 'TMDB').length) options.push('TMDB');
-      if (buildProjectedSiteEpisodeItems(this.playbackRecognitionData, '豆瓣').length) options.push('豆瓣');
-      return options;
+      if (!this.projectionSourceSwitchable) return ['TMDB'];
+      return ['TMDB', '豆瓣'];
     },
     forceRawListMode() {
       return this.contentKind === 'movie';
@@ -1342,7 +1365,22 @@ export default {
     },
     showPreOrderButton() {
       if (!this.isTmdbMode || this.tmdbMovieMode || this.selectedSiteResultItem) return false;
-      return this.selectedSiteSource === 'TMDB' || this.selectedSiteSource === '豆瓣';
+      if (!(this.selectedSiteSource === 'TMDB' || this.selectedSiteSource === '豆瓣')) return false;
+      const detail = this.detailTMDBData && typeof this.detailTMDBData === 'object' ? this.detailTMDBData : null;
+      if (!detail) return false;
+      const seasons = getTMDBOrdinarySeasons(detail);
+      if (!Array.isArray(seasons) || !seasons.length) return false;
+      const latestSeason = seasons[seasons.length - 1] || null;
+      const latestSeasonNo = normalizeInt(latestSeason && latestSeason.season);
+      const latestSeasonEpisodes = normalizeInt(latestSeason && latestSeason.episodes);
+      if (latestSeasonNo <= 0 || latestSeasonEpisodes <= 0) return false;
+      const last = getTMDBLastEpisodeToAir(detail);
+      const lastSeasonNo = normalizeInt(last && last.seasonNumber);
+      const lastEpisodeNo = normalizeInt(last && last.episodeNumber);
+      if (lastSeasonNo <= 0) return false;
+      if (latestSeasonNo > lastSeasonNo) return true;
+      if (latestSeasonNo < lastSeasonNo) return false;
+      return latestSeasonEpisodes > Math.max(0, lastEpisodeNo);
     },
     preOrderActive() {
       const active = playHistorySessionState.activeContext && typeof playHistorySessionState.activeContext === 'object'
@@ -2995,15 +3033,13 @@ export default {
       }
       const hadSelectedSiteResult = !!this.selectedSiteResultItem;
       this.selectedSiteSource = option;
-      this.applyEpisodeViewModePreference();
-      this.selectedViewSeasonNumber = 0;
-      this.selectedViewRangeStart = 0;
       this.siteSourceOpen = false;
       this.selectedSearchResultId = '';
       this.selectedPanSource = '';
       this.siteResultDetailData = null;
       this.siteResultDetailLoading = false;
       this.siteResultDetailError = '';
+      this.applyEpisodeViewModePreference();
       if (hadSelectedSiteResult && this.isTmdbMode) {
         this.$nextTick(() => this.syncPlaybackDisplayFocus());
         return;
@@ -3015,11 +3051,8 @@ export default {
     },
     toggleProjectionSource() {
       if (!this.selectedSiteResultItem || !this.isTmdbMode) return;
-      const options = this.projectionSourceOptions;
-      if (!Array.isArray(options) || options.length <= 1) return;
       const current = normalizeString(this.selectedProjectionSource);
-      const idx = options.findIndex((item) => item === current);
-      const next = options[(idx + 1 + options.length) % options.length] || options[0];
+      const next = current === '豆瓣' ? 'TMDB' : '豆瓣';
       this.selectedProjectionSource = normalizeString(next) || 'TMDB';
       this.selectedViewSeasonNumber = 0;
       this.selectedViewRangeStart = 0;
@@ -3057,8 +3090,6 @@ export default {
       this.selectedPanSource = '';
       this.selectedSiteEpisodeSelectionKey = '';
       this.applyEpisodeViewModePreference();
-      this.selectedViewSeasonNumber = 0;
-      this.selectedViewRangeStart = 0;
       this.siteSourceOpen = false;
       this.loadSelectedSiteResultDetail(item);
       patchLastBrowsePlaybackContext({

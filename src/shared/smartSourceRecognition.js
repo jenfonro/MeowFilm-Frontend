@@ -472,6 +472,7 @@ const resolveSeasonMarkedStrictTMDB = ({
   seasonNo,
   episodeNo,
   tmdbDetail,
+  doubanMeta,
   tmdbCounts,
 }) => {
   const tmdbGlobal = resolveStrictTMDBGlobal({ seasonNo, episodeNo, tmdbDetail, tmdbCounts });
@@ -480,6 +481,7 @@ const resolveSeasonMarkedStrictTMDB = ({
     from: 'tmdb',
     global: tmdbGlobal,
     tmdbDetail,
+    doubanMeta,
     tmdb: { season: seasonNo, episode: episodeNo },
     resolutionMode: 'strict-tmdb',
   });
@@ -507,6 +509,7 @@ const resolveSeasonMarkedStrictDouban = ({
 const resolveEpisodeOnlyStrictTMDB = ({
   episodeNo,
   tmdbDetail,
+  doubanMeta,
   tmdbMultiSeason,
 }) => {
   if (tmdbMultiSeason || episodeNo <= 0) return [];
@@ -516,6 +519,7 @@ const resolveEpisodeOnlyStrictTMDB = ({
     from: 'tmdb',
     global: episodeNo,
     tmdbDetail,
+    doubanMeta,
     tmdb,
     resolutionMode: 'strict-tmdb',
   });
@@ -558,6 +562,7 @@ const buildSeasonMarkedMappings = ({
     seasonNo,
     episodeNo,
     tmdbDetail,
+    doubanMeta,
     tmdbCounts,
   });
   if (strictTMDB.length) return strictTMDB;
@@ -585,8 +590,8 @@ const buildSeasonMarkedMappings = ({
     episodeNo,
     seasonNo,
     tmdbDetail,
+    doubanMeta,
     singleBaselineRows,
-    firstSeasonCount: fallbackBoundary,
     sourceHasBeyondFirstSeason,
     reason: 'season-marked-fallback',
   });
@@ -596,8 +601,8 @@ const resolveDegradedSingleBaseline = ({
   episodeNo,
   seasonNo,
   tmdbDetail,
+  doubanMeta,
   singleBaselineRows,
-  firstSeasonCount,
   sourceHasBeyondFirstSeason,
   reason,
 }) => {
@@ -610,6 +615,7 @@ const resolveDegradedSingleBaseline = ({
     from: 'assist',
     global: e,
     tmdbDetail,
+    doubanMeta,
     resolutionMode: 'degraded-single-baseline',
   }).map((item) => ({
     ...item,
@@ -629,6 +635,7 @@ const buildEpisodeOnlyMappings = ({
   const strictTMDB = resolveEpisodeOnlyStrictTMDB({
     episodeNo,
     tmdbDetail,
+    doubanMeta,
     tmdbMultiSeason,
   });
   if (strictTMDB.length) return strictTMDB;
@@ -653,13 +660,12 @@ const buildEpisodeOnlyMappings = ({
     baselineSingleSeason: singleBaselineRows.length === 1,
   });
   const sourceHasBeyondFirstSeason = fallbackBoundary > 0 && normalizeInt(sourceDirMaxEpisode) > fallbackBoundary;
-  const firstSeasonCount = fallbackBoundary;
   return resolveDegradedSingleBaseline({
     episodeNo,
     seasonNo: 0,
     tmdbDetail,
+    doubanMeta,
     singleBaselineRows,
-    firstSeasonCount,
     sourceHasBeyondFirstSeason,
     reason: 'episode-only-fallback',
   });
