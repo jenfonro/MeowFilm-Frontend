@@ -255,8 +255,11 @@ export async function fetchThirdpartySettings() {
 }
 
 export async function saveThirdpartySettings(payload) {
+  const sections = Array.isArray(payload?.thirdPartyClientHomeSections)
+    ? payload.thirdPartyClientHomeSections
+    : (Array.isArray(payload?.embyHomeSections) ? payload.embyHomeSections : []);
   return postForm('/dashboard/thirdparty/save', {
-    embyHomeSectionsJson: JSON.stringify(Array.isArray(payload?.embyHomeSections) ? payload.embyHomeSections : [])
+    thirdPartyClientHomeSectionsJson: JSON.stringify(sections)
   });
 }
 
@@ -1670,7 +1673,9 @@ export function normalizeDashboardBackupSchema(rawBackup, options = {}) {
       smartPanAliasMappings: normalizeSmartPanAliasMappings(root.smart?.smartPanAliasMappings)
     },
     thirdParty: {
-      embyHomeSections: normalizeThirdPartySections(thirdPartyRoot.embyHomeSections)
+      thirdPartyClientHomeSections: normalizeThirdPartySections(
+        thirdPartyRoot.thirdPartyClientHomeSections || thirdPartyRoot.embyHomeSections
+      )
     },
     pan: {
       loginSettings: normalizePanLoginSettings(root.pan?.loginSettings)

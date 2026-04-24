@@ -5919,7 +5919,10 @@ async function loadThirdpartyPanel() {
   try {
     await loadThirdPartyHomeSites();
     const data = await fetchThirdpartySettings();
-    applyThirdPartyHomeSections(Array.isArray(data && data.embyHomeSections) ? data.embyHomeSections : []);
+    const sections = Array.isArray(data && data.thirdPartyClientHomeSections)
+      ? data.thirdPartyClientHomeSections
+      : (Array.isArray(data && data.embyHomeSections) ? data.embyHomeSections : []);
+    applyThirdPartyHomeSections(sections);
     const siteKeys = Array.from(
       new Set(
         thirdPartyHomeSections.value
@@ -5950,7 +5953,7 @@ async function saveThirdpartyPanel() {
   thirdPartySaving.value = true;
   closeThirdPartyDropdown();
   try {
-    await saveThirdpartySettings({ embyHomeSections: normalized });
+    await saveThirdpartySettings({ thirdPartyClientHomeSections: normalized });
     applyThirdPartyHomeSections(normalized);
     notifySuccess('保存成功');
   } catch (err) {
