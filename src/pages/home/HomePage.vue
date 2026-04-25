@@ -55,55 +55,17 @@
               </div>
             </div>
             <div :ref="ensureRowRefSetter(section.key)" class="home-scroll__row">
-              <div
+              <MediaCard
                 v-for="item in section.items"
                 :key="item.id"
-                class="media-card media-card--rail"
-                role="link"
-                tabindex="0"
-                @click.capture="openHomeCard(section, item, $event)"
-                @contextmenu.prevent="section.key === 'history' ? openHistoryContextMenu($event, item) : null"
-                @keydown.enter.prevent="openHomeCard(section, item)"
-                @keydown.space.prevent="openHomeCard(section, item)"
-              >
-                <div
-                  class="media-card__poster"
-                  :class="{ 'media-card__poster--placeholder': !item.poster }"
-                >
-                  <div class="media-card__hoverGradient"></div>
-                  <div class="media-card__hoverPlay">
-                    <div class="media-card__hoverPlayIcon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-                    </div>
-                  </div>
-                  <a
-                    v-if="item.detailUrl"
-                    class="media-card__linkBadge"
-                    :href="item.detailUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="打开豆瓣详情页"
-                    @click.stop
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                    </svg>
-                  </a>
-                  <img
-                    v-if="item.poster"
-                    :src="displayPosterFor(item.poster)"
-                    :alt="item.title || section.title"
-                    loading="lazy"
-                  >
-                  <span v-if="item.scoreBadge" class="media-card__scoreBadge">{{ item.scoreBadge }}</span>
-                  <span v-else-if="item.textBadge" class="media-card__badge">{{ item.textBadge }}</span>
-                </div>
-                <div class="media-card__title">{{ item.title }}</div>
-                <div v-if="item.siteLabel" class="media-card__site">
-                  <div class="media-card__siteLabel">{{ item.siteLabel }}</div>
-                </div>
-              </div>
+                card-class="media-card media-card--rail"
+                :item="item"
+                :poster-src="displayPosterFor(item.poster)"
+                :title-fallback="section.title"
+                link-aria-label="打开豆瓣详情页"
+                @activate="openHomeCard(section, item, $event)"
+                @contextmenu="section.key === 'history' ? openHistoryContextMenu($event, item) : null"
+              />
             </div>
             <div
               class="home-scroll__control home-scroll__control--right"
@@ -175,7 +137,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import '../../shared/contextMenu.css';
 import { requestCatSpider } from '../../shared/catpawrunner';
 import { buildDoubanDataUrl as buildSharedDoubanDataUrl } from '../../shared/bootstrap';
+import { buildContextMenuClosedState, buildContextMenuOpenState, buildContextMenuStyle } from '../../shared/contextMenuState';
 import { normalizeImageUrl, rewriteDoubanImageUrl as rewriteSharedDoubanImageUrl } from '../../shared/doubanImage';
+import MediaCard from '../../shared/MediaCard.vue';
 import { buildHomeCacheKey, ensureHomeCacheEntry, getHomeCacheEntry, resolveCachedHomeSections, setHomeCacheEntry } from '../../shared/homeRuntime';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { deletePlayHistoryItem, ensurePlayHistoryItems, playHistoryListState } from '../../shared/playHistoryRuntime';
@@ -202,13 +166,7 @@ const historyItems = computed(() => {
 });
 const historyLoading = computed(() => !!playHistoryListState.loading);
 const historyError = computed(() => playHistoryListState.error || '');
-const historyContextMenu = ref({
-  open: false,
-  x: 0,
-  y: 0,
-  busy: false,
-  item: null,
-});
+const historyContextMenu = ref(buildContextMenuClosedState());
 const historyTmdbBadgeMap = ref({});
 const rowElements = Object.create(null);
 const rowRefSetters = Object.create(null);
@@ -296,19 +254,10 @@ const homeSections = computed(() => {
   return historySection ? [historySection, ...sourceSections] : sourceSections;
 });
 
-const historyContextMenuStyle = computed(() => ({
-  left: `${Math.max(8, Number(historyContextMenu.value.x) || 0)}px`,
-  top: `${Math.max(8, Number(historyContextMenu.value.y) || 0)}px`,
-}));
+const historyContextMenuStyle = computed(() => buildContextMenuStyle(historyContextMenu.value));
 
 const closeHistoryContextMenu = () => {
-  historyContextMenu.value = {
-    open: false,
-    x: 0,
-    y: 0,
-    busy: false,
-    item: null,
-  };
+  historyContextMenu.value = buildContextMenuClosedState();
 };
 
 const openHistoryContextMenu = (event, item) => {
@@ -324,13 +273,10 @@ const openHistoryContextMenu = (event, item) => {
     closeHistoryContextMenu();
     return;
   }
-  historyContextMenu.value = {
-    open: true,
-    x: event && typeof event.clientX === 'number' ? event.clientX : 0,
-    y: event && typeof event.clientY === 'number' ? event.clientY : 0,
-    busy: false,
+  historyContextMenu.value = buildContextMenuOpenState({
+    event,
     item: currentItem,
-  };
+  });
 };
 
 const deleteHistoryContextMenuItem = async () => {

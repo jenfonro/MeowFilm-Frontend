@@ -80,35 +80,15 @@
               :key="item.id"
               class="search-results__item"
             >
-              <div
-                class="media-card"
-                role="link"
-                tabindex="0"
-                @click="openItem(item)"
-                @contextmenu.prevent="openMatchBlockMenu($event, item)"
-                @keydown.enter.prevent="openItem(item)"
-                @keydown.space.prevent="openItem(item)"
-              >
-                <div class="media-card__poster" :class="{ 'media-card__poster--placeholder': !item.poster }">
-                  <div class="media-card__hoverGradient"></div>
-                  <div class="media-card__hoverPlay">
-                    <div class="media-card__hoverPlayIcon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-                    </div>
-                  </div>
-                  <img
-                    v-if="item.poster"
-                    :src="displayPosterFor(item)"
-                    :alt="item.title"
-                    loading="lazy"
-                  >
-                  <span v-if="item.textBadge" class="media-card__badge">{{ item.textBadge }}</span>
-                </div>
-                <div class="media-card__title">{{ item.title }}</div>
-                <div v-if="item.siteLabel" class="media-card__site">
-                  <div class="media-card__siteLabel">{{ item.siteLabel }}</div>
-                </div>
-              </div>
+              <MediaCard
+                :item="item"
+                :poster-src="displayPosterFor(item)"
+                :show-link-badge="false"
+                :show-score-badge="false"
+                card-class="media-card"
+                @activate="openItem(item)"
+                @contextmenu="openMatchBlockMenu($event, item)"
+              />
             </div>
           </div>
         </section>
@@ -155,6 +135,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import '../../shared/contextMenu.css';
+import { buildContextMenuClosedState, buildContextMenuOpenState, buildContextMenuStyle } from '../../shared/contextMenuState';
+import MediaCard from '../../shared/MediaCard.vue';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { useSearchSession } from '../../shared/searchSession';
 import {
@@ -202,14 +184,7 @@ const {
 } = useSearchSession();
 
 const matchBlockedIndex = ref({});
-const matchBlockMenu = ref({
-  open: false,
-  x: 0,
-  y: 0,
-  busy: false,
-  blocked: false,
-  item: null,
-});
+const matchBlockMenu = ref(buildContextMenuClosedState({ blocked: false }));
 
 const displayPosterFor = (item) => rewriteDisplayPosterUrl(item && item.poster, runtimeConfig.value || {});
 
@@ -218,23 +193,13 @@ const matchBlockMenuLabel = computed(() => {
   return matchBlockMenu.value.blocked ? '取消匹配禁用' : '加入匹配禁用';
 });
 
-const matchBlockMenuStyle = computed(() => ({
-  left: `${Math.max(8, Number(matchBlockMenu.value.x) || 0)}px`,
-  top: `${Math.max(8, Number(matchBlockMenu.value.y) || 0)}px`,
-}));
+const matchBlockMenuStyle = computed(() => buildContextMenuStyle(matchBlockMenu.value));
 
 const getAggregateRules = () =>
   runtimeConfig.value && Array.isArray(runtimeConfig.value.aggregateRules) ? runtimeConfig.value.aggregateRules : [];
 
 const closeMatchBlockMenu = () => {
-  matchBlockMenu.value = {
-    open: false,
-    x: 0,
-    y: 0,
-    busy: false,
-    blocked: false,
-    item: null,
-  };
+  matchBlockMenu.value = buildContextMenuClosedState({ blocked: false });
 };
 
 const loadMatchBlockedIndex = async () => {
@@ -305,14 +270,11 @@ const openMatchBlockMenu = async (event, item) => {
     closeMatchBlockMenu();
     return;
   }
-  matchBlockMenu.value = {
-    open: true,
-    x: event && typeof event.clientX === 'number' ? event.clientX : 0,
-    y: event && typeof event.clientY === 'number' ? event.clientY : 0,
-    busy: false,
-    blocked: isItemMatchBlocked(current),
+  matchBlockMenu.value = buildContextMenuOpenState({
+    event,
     item: current,
-  };
+    extra: { blocked: isItemMatchBlocked(current) },
+  });
 };
 
 const toggleMatchBlockMenuItem = async () => {

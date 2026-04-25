@@ -2,19 +2,7 @@ import { reactive } from 'vue';
 import { normalizecatpawrunnerApiBase, requestCatPlay } from './catpawrunner';
 import { extractTianyiShareCodeAndAccessCode } from '../utils/matchCore';
 import { normalizeInt, normalizeString } from './normalize';
-const normalizeHttpBase = (value) => {
-  const raw = normalizeString(value);
-  if (!raw) return '';
-  try {
-    const url = new URL(raw);
-    if (!/^https?:$/i.test(url.protocol)) return '';
-    url.hash = '';
-    url.search = '';
-    return url.toString().replace(/\/+$/, '');
-  } catch (_error) {
-    return '';
-  }
-};
+import { normalizeHttpBase } from './urlText';
 
 export const playbackSessionState = reactive({
   currentContext: {

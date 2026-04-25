@@ -259,89 +259,20 @@
     </div>
   </div>
 
-  <div id="adminPage" class="index-admin">
-    <div class="index-admin__wrap">
-      <aside class="index-admin__sidebar">
-        <div class="index-admin__sidebar-title">管理面板</div>
-        <nav class="index-admin__nav">
-          <a data-admin="site" class="index-admin__nav-item" href="#">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"></path><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
-            <span>站点配置</span>
-          </a>
-          <a data-admin="user" class="index-admin__nav-item" href="#">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-            <span>用户管理</span>
-          </a>
-          <a data-admin="video" class="index-admin__nav-item" href="#">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M7 3v18"></path><path d="M3 7.5h4"></path><path d="M3 12h18"></path><path d="M3 16.5h4"></path><path d="M17 3v18"></path><path d="M17 7.5h4"></path><path d="M17 16.5h4"></path></svg>
-            <span>视频源管理</span>
-          </a>
-        </nav>
-      </aside>
-      <div class="index-admin__content">
-        <div class="index-admin__topbar">
-          <div class="index-admin__topbar-title">站点配置</div>
-          <button id="adminBackBtn" class="index-admin__back">返回首页</button>
-        </div>
-        <div class="index-admin__panel">
-          <section id="adminSite" class="index-admin__section">
-            <h3 class="index-admin__section-title">站点信息</h3>
-            <div class="index-admin__form">
-              <div>
-                <label class="index-admin__label">站点名称</label>
-                <input class="index-admin__input" :placeholder="bootstrap.siteName" />
-              </div>
-              <div>
-                <label class="index-admin__label">站点公告</label>
-                <textarea rows="3" class="index-admin__textarea" placeholder="本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性负责。"></textarea>
-              </div>
-              <div>
-                <label class="index-admin__label">豆瓣数据代理</label>
-                <select class="index-admin__select">
-                  <option>豆瓣 API By CMLiussss（腾讯云）</option>
-                  <option>官方直连</option>
-                  <option>自定义代理</option>
-                </select>
-                <p class="index-admin__hint">选择获取豆瓣数据的方式</p>
-              </div>
-              <div>
-                <label class="index-admin__label">豆瓣图片代理</label>
-                <select class="index-admin__select">
-                  <option>豆瓣 CDN By CMLiussss（腾讯云）</option>
-                  <option>官方直连</option>
-                  <option>自定义代理</option>
-                </select>
-                <p class="index-admin__hint">选择获取豆瓣图片的方式</p>
-              </div>
-              <div>
-                <label class="index-admin__label">搜索接口可拉取最大页数</label>
-                <input class="index-admin__input" placeholder="5" />
-              </div>
-            </div>
-          </section>
-          <section id="adminUser" class="index-admin__section">
-            <div class="index-admin__placeholder">用户管理内容占位</div>
-          </section>
-          <section id="adminVideo" class="index-admin__section">
-            <div class="index-admin__placeholder">视频源管理内容占位</div>
-          </section>
-        </div>
-      </div>
-    </div>
-  </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppSidebar from '../../shared/AppSidebar.vue';
-import HomePage from '../home/HomePage.vue';
-import PlayPage from '../play/PlayPage.vue';
-import SearchPage from '../search/SearchPage.vue';
-import CategoryPage from '../category/CategoryPage.vue';
-import LoginPage from '../login/LoginPage.vue';
 import { clearCurrentPlaybackContext } from '../../shared/playbackRuntime';
 import { clearActivePlayHistoryContext, flushHistoryProgressBestEffort } from '../../shared/playHistoryRuntime';
 import { normalizeInt, normalizeString } from '../../shared/normalize';
+
+const HomePage = defineAsyncComponent(() => import('../home/HomePage.vue'));
+const PlayPage = defineAsyncComponent(() => import('../play/PlayPage.vue'));
+const SearchPage = defineAsyncComponent(() => import('../search/SearchPage.vue'));
+const CategoryPage = defineAsyncComponent(() => import('../category/CategoryPage.vue'));
+const LoginPage = defineAsyncComponent(() => import('../login/LoginPage.vue'));
 
 const props = defineProps({ bootstrap: { type: Object, required: true } });
 const bootstrap = props.bootstrap;
@@ -1275,121 +1206,6 @@ onBeforeUnmount(() => {
 .index-bottom-nav__icon.is-active,
 .index-bottom-nav__label.is-active {
   color: #16a34a;
-}
-
-.index-admin {
-  display: none;
-  width: 100%;
-  min-height: 100vh;
-  background: #f8fafc;
-}
-
-.index-admin__wrap {
-  display: flex;
-  min-height: 100vh;
-}
-
-.index-admin__sidebar {
-  width: 16rem;
-  background: rgba(255, 255, 255, 0.7);
-  border-right: 1px solid rgba(226, 232, 240, 0.8);
-  padding: 24px 16px;
-}
-
-.index-admin__sidebar-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 16px;
-  color: #0f172a;
-}
-
-.index-admin__nav {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.index-admin__nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  text-decoration: none;
-  color: #334155;
-}
-
-.index-admin__content {
-  flex: 1 1 auto;
-}
-
-.index-admin__topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
-  background: rgba(255, 255, 255, 0.8);
-}
-
-.index-admin__topbar-title {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.index-admin__back {
-  border: none;
-  border-radius: 10px;
-  padding: 6px 12px;
-  background: rgba(226, 232, 240, 0.8);
-  color: #334155;
-}
-
-.index-admin__panel {
-  padding: 24px;
-}
-
-.index-admin__section {
-  margin-bottom: 24px;
-}
-
-.index-admin__section-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-
-.index-admin__form {
-  display: grid;
-  gap: 16px;
-}
-
-.index-admin__label {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.index-admin__input,
-.index-admin__textarea,
-.index-admin__select {
-  width: 100%;
-  border-radius: 10px;
-  border: 1px solid rgba(203, 213, 225, 0.9);
-  padding: 10px 12px;
-  font-size: 0.9rem;
-}
-
-.index-admin__hint {
-  font-size: 0.75rem;
-  color: #94a3b8;
-  margin-top: 6px;
-}
-
-.index-admin__placeholder {
-  font-size: 0.85rem;
-  color: #94a3b8;
 }
 
 @media (max-width: 767.98px) {

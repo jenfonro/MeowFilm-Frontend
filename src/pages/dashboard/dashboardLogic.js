@@ -1,17 +1,12 @@
+import { requestJsonResponse } from '../../shared/requestJson';
+import { normalizeHttpBase as sharedNormalizeHttpBase } from '../../shared/urlText';
+
 const jsonHeaders = {
   Accept: 'application/json'
 };
 
-async function readJson(resp) {
-  try {
-    return await resp.json();
-  } catch (_e) {
-    return null;
-  }
-}
-
 export async function requestJson(url, options = {}) {
-  const resp = await fetch(url, {
+  return requestJsonResponse(url, {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
@@ -19,8 +14,6 @@ export async function requestJson(url, options = {}) {
     },
     ...options
   });
-  const data = await readJson(resp);
-  return { resp, data };
 }
 
 export async function probeGoProxyVersion(base, timeoutMs = 4000) {
@@ -75,11 +68,10 @@ export async function probeRelayVersion(base, secret, timeoutMs = 4000) {
 }
 
 export async function getSuccessJson(url) {
-  const resp = await fetch(url, {
+  const { resp, data } = await requestJsonResponse(url, {
     credentials: 'include',
     headers: jsonHeaders
   });
-  const data = await readJson(resp);
   if (!resp.ok || !data || data.success !== true) {
     throw new Error((data && (data.message || data.error)) || `HTTP ${resp.status}`);
   }
@@ -91,7 +83,7 @@ export async function postForm(url, fields) {
   Object.entries(fields || {}).forEach(([key, value]) => {
     body.set(key, value == null ? '' : String(value));
   });
-  const resp = await fetch(url, {
+  const { resp, data } = await requestJsonResponse(url, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -100,7 +92,6 @@ export async function postForm(url, fields) {
     },
     body
   });
-  const data = await readJson(resp);
   if (!resp.ok || !data || data.success !== true) {
     throw new Error((data && (data.message || data.error)) || `HTTP ${resp.status}`);
   }
@@ -108,7 +99,7 @@ export async function postForm(url, fields) {
 }
 
 export async function postJson(url, payload) {
-  const resp = await fetch(url, {
+  const { resp, data } = await requestJsonResponse(url, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -117,7 +108,6 @@ export async function postJson(url, payload) {
     },
     body: JSON.stringify(payload == null ? {} : payload)
   });
-  const data = await readJson(resp);
   if (!resp.ok || !data || data.success !== true) {
     throw new Error((data && (data.message || data.error)) || `HTTP ${resp.status}`);
   }
@@ -296,19 +286,7 @@ export async function fetchPanSettings(key = '') {
   return getSuccessJson(`/dashboard/pan/settings${suffix}`);
 }
 
-export function normalizeHttpBase(value) {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  if (!raw) return '';
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
-    url.hash = '';
-    url.search = '';
-    return String(url.toString()).replace(/\/+$/, '');
-  } catch (_e) {
-    return '';
-  }
-}
+export const normalizeHttpBase = (value) => sharedNormalizeHttpBase(value);
 
 export async function savePanLoginSettings(payload) {
   return postForm('/dashboard/pan/settings', payload);
@@ -1622,87 +1600,91 @@ function normalizeSmartSourceRuleRows(value) {
   }));
 }
 
-export function normalizeDashboardBackupSchema(rawBackup, options = {}) {
+export function normalizeDashboardBackupSchema(rawBackup) {
   const root = asObject(rawBackup);
-  const appConfig = asObject(root.appConfig);
-  const siteSettings = asObject(options.siteSettings);
-  const legacyRelayServers = asArray(options.relayServers);
-  const thirdPartyRoot = Object.keys(asObject(root.thirdParty)).length ? asObject(root.thirdParty) : asObject(root.thirdparty);
-  const siteRoot = Object.keys(asObject(root.site)).length ? asObject(root.site) : appConfig;
-  const relayRoot = Object.keys(asObject(root.relay)).length ? asObject(root.relay) : appConfig;
+  const siteRoot = asObject(root.site);
+  const metadataRoot = asObject(root.metadata);
+  const magicRoot = asObject(root.magic);
+  const smartRoot = asObject(root.smart);
+  const thirdPartyRoot = asObject(root.thirdParty);
+  const panRoot = asObject(root.pan);
+  const catpawrunnerRoot = asObject(root.catpawrunner);
+  const goProxyRoot = asObject(root.goProxy);
+  const relayRoot = asObject(root.relay);
+  const videoSourceRoot = asObject(root.videoSource);
 
   return {
     format: DASHBOARD_BACKUP_FORMAT,
     version: normalizeInteger(root.version, DASHBOARD_BACKUP_VERSION) || DASHBOARD_BACKUP_VERSION,
     exportedAt: normalizeInteger(root.exportedAt, Math.trunc(Date.now() / 1000)),
     site: {
-      siteName: normalizeString(siteRoot.siteName || siteRoot.SiteName, ''),
-      searchDisplayMode: normalizeString(siteRoot.searchDisplayMode || siteRoot.SearchDisplayMode, 'sites') || 'sites',
-      netdiskProxyEnabled: normalizeBoolean(siteRoot.netdiskProxyEnabled ?? siteRoot.NetdiskProxyEnabled, false),
-      netdiskProxyUrl: normalizeString(siteRoot.netdiskProxyUrl || siteRoot.netdiskProxyURL || siteRoot.NetdiskProxyURL, '')
+      siteName: normalizeString(siteRoot.siteName, ''),
+      searchDisplayMode: normalizeString(siteRoot.searchDisplayMode, 'sites') || 'sites',
+      netdiskProxyEnabled: normalizeBoolean(siteRoot.netdiskProxyEnabled, false),
+      netdiskProxyUrl: normalizeString(siteRoot.netdiskProxyUrl, '')
     },
     metadata: {
-      doubanDataProxy: normalizeString(root.metadata?.doubanDataProxy || appConfig.doubanDataProxy || appConfig.DoubanDataProxy, 'server-proxy') || 'server-proxy',
-      doubanDataCustom: normalizeString(root.metadata?.doubanDataCustom || appConfig.doubanDataCustom || appConfig.DoubanDataCustom, ''),
-      doubanImgProxy: normalizeString(root.metadata?.doubanImgProxy || appConfig.doubanImgProxy || appConfig.DoubanImgProxy, 'server-proxy') || 'server-proxy',
-      doubanImgCustom: normalizeString(root.metadata?.doubanImgCustom || appConfig.doubanImgCustom || appConfig.DoubanImgCustom, ''),
-      doubanSearchCookie: normalizeString(root.metadata?.doubanSearchCookie || appConfig.doubanSearchCookie || appConfig.DoubanSearchCookie, ''),
-      tmdbApiToken: normalizeString(root.metadata?.tmdbApiToken || appConfig.tmdbApiToken || appConfig.TMDBAPIToken, ''),
-      tmdbDataProxyBase: normalizeHttpBase(root.metadata?.tmdbDataProxyBase || appConfig.tmdbDataProxyBase || appConfig.TMDBAPIBase || ''),
-      tmdbImageProxyBase: normalizeHttpBase(root.metadata?.tmdbImageProxyBase || appConfig.tmdbImageProxyBase || appConfig.TMDBImgBase || ''),
-      language: normalizeString(root.metadata?.language || appConfig.language || appConfig.TMDBLanguage, 'zh-CN') || 'zh-CN',
-      region: normalizeString(root.metadata?.region || appConfig.region || appConfig.TMDBRegion, 'CN') || 'CN',
-      includeAdult: normalizeBoolean(root.metadata?.includeAdult ?? appConfig.includeAdult ?? appConfig.TMDBIncludeAdult, false)
+      doubanDataProxy: normalizeString(metadataRoot.doubanDataProxy, 'server-proxy') || 'server-proxy',
+      doubanDataCustom: normalizeString(metadataRoot.doubanDataCustom, ''),
+      doubanImgProxy: normalizeString(metadataRoot.doubanImgProxy, 'server-proxy') || 'server-proxy',
+      doubanImgCustom: normalizeString(metadataRoot.doubanImgCustom, ''),
+      doubanSearchCookie: normalizeString(metadataRoot.doubanSearchCookie, ''),
+      tmdbApiToken: normalizeString(metadataRoot.tmdbApiToken, ''),
+      tmdbDataProxyBase: normalizeHttpBase(metadataRoot.tmdbDataProxyBase || ''),
+      tmdbImageProxyBase: normalizeHttpBase(metadataRoot.tmdbImageProxyBase || ''),
+      language: normalizeString(metadataRoot.language, 'zh-CN') || 'zh-CN',
+      region: normalizeString(metadataRoot.region, 'CN') || 'CN',
+      includeAdult: normalizeBoolean(metadataRoot.includeAdult, false)
     },
     magic: {
-      episodeRules: normalizeStringArray(root.magic?.episodeRules),
-      episodeCleanRegexRules: normalizeStringArray(root.magic?.episodeCleanRegexRules),
-      movieRules: normalizeStringArray(root.magic?.movieRules),
-      aggregateRegexRules: normalizeStringArray(root.magic?.aggregateRegexRules)
+      episodeRules: normalizeStringArray(magicRoot.episodeRules),
+      episodeCleanRegexRules: normalizeStringArray(magicRoot.episodeCleanRegexRules),
+      movieRules: normalizeStringArray(magicRoot.movieRules),
+      aggregateRegexRules: normalizeStringArray(magicRoot.aggregateRegexRules)
     },
     smart: {
       smartSourceRuleRows: normalizeSmartSourceRuleRows(
-        root.smart?.smartSourceRuleRows
+        smartRoot.smartSourceRuleRows
       ),
       siteCleanKeywords: normalizeString(
-        root.smart?.siteCleanKeywords || appConfig.siteCleanKeywords || appConfig.smartSiteCleanKeywords || appConfig.SmartSiteCleanKeywords,
+        smartRoot.siteCleanKeywords,
         ''
       ),
-      smartSourcePriorityTokens: normalizeStringArray(root.smart?.smartSourcePriorityTokens),
-      smartPanMatchTokens: normalizeStringArray(root.smart?.smartPanMatchTokens),
-      smartPanAliasMappings: normalizeSmartPanAliasMappings(root.smart?.smartPanAliasMappings)
+      smartSourcePriorityTokens: normalizeStringArray(smartRoot.smartSourcePriorityTokens),
+      smartPanMatchTokens: normalizeStringArray(smartRoot.smartPanMatchTokens),
+      smartPanAliasMappings: normalizeSmartPanAliasMappings(smartRoot.smartPanAliasMappings)
     },
     thirdParty: {
       thirdPartyClientHomeSections: normalizeThirdPartySections(
-        thirdPartyRoot.thirdPartyClientHomeSections || thirdPartyRoot.embyHomeSections
+        thirdPartyRoot.thirdPartyClientHomeSections
       )
     },
     pan: {
-      loginSettings: normalizePanLoginSettings(root.pan?.loginSettings)
+      loginSettings: normalizePanLoginSettings(panRoot.loginSettings)
     },
     catpawrunner: {
-      active: normalizeString(root.catpawrunner?.active || siteSettings.CatpawrunnerActive || siteSettings.catpawrunnerActive || appConfig.CatpawrunnerActive, ''),
-      servers: normalizeCatpawrunnerServers(root.catpawrunner?.servers),
-      pans: normalizeCatpawrunnerPans(root.catpawrunner?.pans)
+      active: normalizeString(catpawrunnerRoot.active, ''),
+      servers: normalizeCatpawrunnerServers(catpawrunnerRoot.servers),
+      pans: normalizeCatpawrunnerPans(catpawrunnerRoot.pans)
     },
     goProxy: {
-      enabled: normalizeBoolean(root.goProxy?.enabled ?? siteSettings.goProxyEnabled ?? appConfig.GoProxyEnabled, false),
-      autoSelect: normalizeBoolean(root.goProxy?.autoSelect ?? siteSettings.goProxyAutoSelect ?? appConfig.GoProxyAutoSelect, false),
-      servers: normalizeGoProxyServers(root.goProxy?.servers)
+      enabled: normalizeBoolean(goProxyRoot.enabled, false),
+      autoSelect: normalizeBoolean(goProxyRoot.autoSelect, false),
+      servers: normalizeGoProxyServers(goProxyRoot.servers)
     },
     relay: {
-      enabled: normalizeBoolean(relayRoot.enabled ?? siteSettings.relayEnabled ?? appConfig.RelayEnabled, false),
-      auth: normalizeString(relayRoot.auth || siteSettings.auth || appConfig.auth || appConfig.RelayAuthToken, ''),
-      servers: normalizeRelayServers(root.relay?.servers || legacyRelayServers)
+      enabled: normalizeBoolean(relayRoot.enabled, false),
+      auth: normalizeString(relayRoot.auth, ''),
+      servers: normalizeRelayServers(relayRoot.servers)
     },
     videoSource: {
       searchCoverSite: normalizeString(
-        root.videoSource?.searchCoverSite || appConfig.videoSourceSearchCoverSite || appConfig.VideoSourceSearchCoverSite,
+        videoSourceRoot.searchCoverSite,
         ''
       ),
-      sites: normalizeVideoSourceSites(root.videoSource?.sites),
-      states: normalizeVideoSourceStates(root.videoSource?.states),
-      order: normalizeStringArray(root.videoSource?.order)
+      sites: normalizeVideoSourceSites(videoSourceRoot.sites),
+      states: normalizeVideoSourceStates(videoSourceRoot.states),
+      order: normalizeStringArray(videoSourceRoot.order)
     }
   };
 }

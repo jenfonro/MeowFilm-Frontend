@@ -41,54 +41,16 @@
         class="category-grid"
         :class="{ 'category-grid--empty': !items.length }"
       >
-        <div
+        <MediaCard
           v-for="item in items"
           :key="item.id"
-          class="media-card"
-          role="link"
-          tabindex="0"
-          @click.capture="openCard(item, $event)"
-          @keydown.enter.prevent="openCard(item)"
-          @keydown.space.prevent="openCard(item)"
-        >
-          <div
-            class="media-card__poster"
-            :class="{ 'media-card__poster--placeholder': !item.poster }"
-          >
-            <div class="media-card__hoverGradient"></div>
-            <div class="media-card__hoverPlay">
-              <div class="media-card__hoverPlayIcon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-              </div>
-            </div>
-            <a
-              v-if="item.detailUrl"
-              class="media-card__linkBadge"
-              :href="item.detailUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="打开详情页"
-              @click.stop
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-              </svg>
-            </a>
-            <img
-              v-if="item.poster"
-              :src="displayPosterFor(item.poster)"
-              :alt="item.title || currentCategory.label"
-              loading="lazy"
-            >
-            <span v-if="item.scoreBadge" class="media-card__scoreBadge">{{ item.scoreBadge }}</span>
-            <span v-else-if="item.textBadge" class="media-card__badge">{{ item.textBadge }}</span>
-          </div>
-          <div class="media-card__title">{{ item.title }}</div>
-          <div v-if="item.siteLabel" class="media-card__site">
-            <div class="media-card__siteLabel">{{ item.siteLabel }}</div>
-          </div>
-        </div>
+          :item="item"
+          :poster-src="displayPosterFor(item.poster)"
+          :title-fallback="currentCategory.label"
+          card-class="media-card"
+          link-aria-label="打开详情页"
+          @activate="openCard(item, $event)"
+        />
 
         <div v-if="!items.length && !loading" class="category-empty">
           {{ emptyText }}
@@ -120,6 +82,7 @@ import {
   setCategoryCacheEntry,
 } from '../../shared/categoryRuntime';
 import { rewriteDoubanImageUrl } from '../../shared/doubanImage';
+import MediaCard from '../../shared/MediaCard.vue';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { requestCatSpider } from '../../shared/catpawrunner';
 import { normalizeInt } from '../../shared/normalize';
