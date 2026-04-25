@@ -162,6 +162,7 @@ import {
   deleteSmartMatchBlockItem,
   fetchBlockedMatchIndex,
 } from '../../shared/searchRuntime';
+import { normalizeString } from '../../shared/normalize';
 
 const props = defineProps({
   bootstrap: { type: Object, default: () => ({}) },
@@ -209,8 +210,6 @@ const matchBlockMenu = ref({
   blocked: false,
   item: null,
 });
-
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 const displayPosterFor = (item) => rewriteDisplayPosterUrl(item && item.poster, runtimeConfig.value || {});
 

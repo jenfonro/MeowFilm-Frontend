@@ -122,13 +122,10 @@ import {
 import { rewriteDoubanImageUrl } from '../../shared/doubanImage';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { requestCatSpider } from '../../shared/catpawrunner';
+import { normalizeInt } from '../../shared/normalize';
 
 const PAGE_SIZE = 24;
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
 
 const props = defineProps({
   bootstrap: { type: Object, default: () => ({}) },

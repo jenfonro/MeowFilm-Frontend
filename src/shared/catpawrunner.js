@@ -1,4 +1,5 @@
 import { extractTianyiShareCodeAndAccessCode, normalizePanMockFlag, panMockProviderFromFlag } from '../utils/matchCore';
+import { normalizeString } from './normalize';
 
 export function normalizecatpawrunnerApiBase(inputUrl) {
   const raw = typeof inputUrl === 'string' ? inputUrl.trim() : '';
@@ -199,7 +200,6 @@ export async function requestCatPlay({ apiBase, username, payload, query, header
   return data;
 }
 
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 const splitEpisodeSegments = (value) =>
   normalizeString(value)
     .split('#')

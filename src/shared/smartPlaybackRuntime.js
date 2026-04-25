@@ -10,12 +10,8 @@ import {
   requestPanListByProviderFlag,
 } from './catpawrunner';
 import { panMockProviderFromFlag } from '../utils/matchCore';
-
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
+import { normalizeInt, normalizeString } from './normalize';
+import { getRawDirPath, getRawFileName, splitRawPathSegments } from './pathText';
 
 export const buildHistorySitePlaybackItem = (row) => {
   const item = row && typeof row === 'object' ? row : null;
@@ -35,30 +31,6 @@ export const buildHistorySitePlaybackItem = (row) => {
     groupKey: '',
     _history: true,
   };
-};
-
-const splitRawPathSegments = (value) =>
-  normalizeString(value)
-    .replace(/\\/g, '/')
-    .split('/')
-    .map(normalizeString)
-    .filter(Boolean);
-
-const getRawFileName = (value) => {
-  const parts = splitRawPathSegments(value);
-  return parts.length ? parts[parts.length - 1] : normalizeString(value);
-};
-
-const getRawDirPath = (value) => {
-  const parts = splitRawPathSegments(value);
-  if (parts.length <= 1) return '';
-  return `/${parts.slice(0, -1).join('/')}`;
-};
-
-const getDisplayDirPath = (value) => {
-  const parts = splitRawPathSegments(value);
-  if (parts.length <= 1) return '';
-  return `/${parts.slice(0, -1).join('/')}`;
 };
 
 const normalizeSourceSegments = (entry) => {
@@ -107,7 +79,7 @@ export const buildPanSegment = (entry, index) => {
     displayName: label,
     episodeUrl,
     rawName,
-    pathName: getRawDirPath(rawName) || getDisplayDirPath(label),
+    pathName: getRawDirPath(rawName) || getRawDirPath(label),
     fileName: getRawFileName(rawName),
   };
 };

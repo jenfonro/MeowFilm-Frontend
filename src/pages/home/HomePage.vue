@@ -181,11 +181,7 @@ import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { deletePlayHistoryItem, ensurePlayHistoryItems, playHistoryListState } from '../../shared/playHistoryRuntime';
 import { fetchTMDBDetailCached } from '../../shared/tmdbRuntime';
 import { buildTMDBDetailTextBadge } from '../../shared/tmdbRaw';
-
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
+import { normalizeInt } from '../../shared/normalize';
 
 const props = defineProps({
   bootstrap: { type: Object, default: () => ({}) },

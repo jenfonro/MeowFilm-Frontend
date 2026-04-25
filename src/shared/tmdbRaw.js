@@ -1,9 +1,5 @@
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+import { normalizeInt, normalizeString } from './normalize';
 
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
 const normalizePositiveInteger = (value) => (
   typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0
 );

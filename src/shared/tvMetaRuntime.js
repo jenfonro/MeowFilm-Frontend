@@ -1,21 +1,6 @@
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
-const normalizeTMDBID = (value) => (
-  typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0
-);
-
-const requestJson = async (url, options = {}) => {
-  const resp = await fetch(url, options);
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok) {
-    const message = data && (data.error || data.message) ? String(data.error || data.message) : `HTTP ${resp.status}`;
-    throw new Error(message);
-  }
-  return data;
-};
+import { normalizeInt, normalizeString } from './normalize';
+import { requestJson } from './requestJson';
+import { normalizeTMDBID } from './tmdbRaw';
 
 const buildTVMetaURL = ({ tmdbId } = {}) => {
   const id = Math.max(0, normalizeTMDBID(tmdbId));

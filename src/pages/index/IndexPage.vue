@@ -341,6 +341,7 @@ import CategoryPage from '../category/CategoryPage.vue';
 import LoginPage from '../login/LoginPage.vue';
 import { clearCurrentPlaybackContext } from '../../shared/playbackRuntime';
 import { clearActivePlayHistoryContext, flushHistoryProgressBestEffort } from '../../shared/playHistoryRuntime';
+import { normalizeInt, normalizeString } from '../../shared/normalize';
 
 const props = defineProps({ bootstrap: { type: Object, required: true } });
 const bootstrap = props.bootstrap;
@@ -352,11 +353,6 @@ const backendCommit =
 const frontendCommit =
   (typeof window !== 'undefined' && window.__MEOWFILM_FRONTEND_COMMIT__) || appVersion;
 const THEME_STORAGE_KEY = 'meowfilm_theme';
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
 
 const isPlayView = ref(false);
 const mobileHeaderEl = ref(null);

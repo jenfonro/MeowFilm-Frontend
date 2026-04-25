@@ -6,24 +6,8 @@ import {
   tmdbSeasonEpisodeOfGlobal,
 } from './smartEpisodeMapping';
 import { normalizeSeasonEpisodeMarkers, parseChineseNumeralToInt } from './episodeMarkerNormalize';
-
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
-
-const splitRawPathSegments = (value) =>
-  normalizeString(value)
-    .replace(/\\/g, '/')
-    .split('/')
-    .map(normalizeString)
-    .filter(Boolean);
-
-const getRawFileName = (value) => {
-  const parts = splitRawPathSegments(value);
-  return parts.length ? parts[parts.length - 1] : normalizeString(value);
-};
+import { normalizeInt, normalizeString } from './normalize';
+import { getRawFileName, splitRawPathSegments } from './pathText';
 
 const normalizePatternInput = (value) => {
   const raw = normalizeString(value);

@@ -1,8 +1,4 @@
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
+import { normalizeInt, normalizeString } from './normalize';
 
 const categoryCacheStore = Object.create(null);
 

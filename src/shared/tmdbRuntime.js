@@ -1,17 +1,6 @@
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeTMDBID = (value) => (
-  typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : 0
-);
-
-const requestJson = async (url, options = {}) => {
-  const resp = await fetch(url, options);
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok) {
-    const message = data && (data.error || data.message) ? String(data.error || data.message) : `HTTP ${resp.status}`;
-    throw new Error(message);
-  }
-  return data;
-};
+import { normalizeString } from './normalize';
+import { requestJson } from './requestJson';
+import { normalizeTMDBID } from './tmdbRaw';
 
 const buildTMDBDetailURL = ({ type, id } = {}) => {
   const tmdbType = normalizeString(type).toLowerCase();

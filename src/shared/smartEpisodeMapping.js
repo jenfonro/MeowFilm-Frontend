@@ -1,7 +1,4 @@
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
+import { normalizeInt } from './normalize';
 
 const normalizeSeasonRows = (rows, { seasonKeys = [], episodeKeys = [] } = {}) => (
   (Array.isArray(rows) ? rows : [])

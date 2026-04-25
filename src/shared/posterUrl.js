@@ -1,7 +1,6 @@
 import { normalizeImageUrl, rewriteDoubanImageUrl } from './doubanImage';
 import { normalizeTMDBImageProxyBase, rewriteTMDBImageUrl } from './tmdbImage';
-
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+import { normalizeString } from './normalize';
 
 export function normalizePosterProxySettings(settings = {}) {
   const source = settings && typeof settings === 'object' ? settings : {};

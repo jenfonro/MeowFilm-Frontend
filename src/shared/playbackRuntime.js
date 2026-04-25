@@ -1,12 +1,7 @@
 import { reactive } from 'vue';
 import { normalizecatpawrunnerApiBase, requestCatPlay } from './catpawrunner';
 import { extractTianyiShareCodeAndAccessCode } from '../utils/matchCore';
-
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
+import { normalizeInt, normalizeString } from './normalize';
 const normalizeHttpBase = (value) => {
   const raw = normalizeString(value);
   if (!raw) return '';

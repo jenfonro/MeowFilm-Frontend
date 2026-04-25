@@ -1,15 +1,6 @@
 import { reactive } from 'vue';
 import { apiDeleteJson, apiGetJson, apiInvalidateCache, apiPostJson, buildQuery } from './apiClient';
-
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
-const normalizeInt64 = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
+import { normalizeInt, normalizeString } from './normalize';
 const toTicks = (seconds) => {
   const value = Number(seconds);
   if (!Number.isFinite(value) || value <= 0) return 0;
@@ -186,7 +177,7 @@ const sameEpisodeHistoryTarget = (row, context) => {
 
 const updateHistoryListState = ({ items, at = Date.now(), dirty = false, error = '' } = {}) => {
   playHistoryListState.items = cloneHistoryRows(items);
-  playHistoryListState.at = Math.max(0, normalizeInt64(at)) || Date.now();
+  playHistoryListState.at = Math.max(0, normalizeInt(at)) || Date.now();
   playHistoryListState.dirty = !!dirty;
   playHistoryListState.error = normalizeString(error);
   return playHistoryListState.items;
@@ -196,7 +187,7 @@ export const seedPlayHistoryItems = (items, { at = Date.now(), dirty = false } =
   const nextItems = cloneHistoryRows(items);
   if (!nextItems.length) return playHistoryListState.items;
   historyListState.requestedLimit = Math.max(historyListState.requestedLimit, nextItems.length);
-  if (!playHistoryListState.items.length || Math.max(0, normalizeInt64(at)) >= Math.max(0, normalizeInt64(playHistoryListState.at))) {
+  if (!playHistoryListState.items.length || Math.max(0, normalizeInt(at)) >= Math.max(0, normalizeInt(playHistoryListState.at))) {
     updateHistoryListState({ items: nextItems, at, dirty, error: '' });
   }
   return playHistoryListState.items;
@@ -436,7 +427,7 @@ export const preparePlayHistoryContext = async (payload = {}) => {
     : null;
   const overrideIdentity = normalizeString(override && override.identity);
   const overrideSeconds = Math.max(0, normalizeInt(override && override.seconds));
-  const overrideAt = Math.max(0, normalizeInt64(override && override.at));
+  const overrideAt = Math.max(0, normalizeInt(override && override.at));
   if (
     overrideIdentity
     && overrideIdentity === nextContext.identity
@@ -556,7 +547,7 @@ export const onPlayerHistoryPlaybackStart = async (_reason = '') => {
   if (!identity || !plan || plan.frozen || seconds <= 0 || normalizeString(plan.identity) !== identity) return 0;
   const now = Date.now();
   if (plan.applied) return 0;
-  if (normalizeString(plan.tryKey) === identity && now - Math.max(0, normalizeInt64(plan.tryAt)) < 800) return 0;
+  if (normalizeString(plan.tryKey) === identity && now - Math.max(0, normalizeInt(plan.tryAt)) < 800) return 0;
   plan.tryKey = identity;
   plan.tryAt = now;
   plan.applied = true;

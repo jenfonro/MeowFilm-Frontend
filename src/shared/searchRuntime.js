@@ -12,12 +12,12 @@ import {
   normalizeTMDBID,
   normalizeTMDBMediaType,
 } from './tmdbRaw';
+import { normalizeString } from './normalize';
+import { requestJson } from './requestJson';
 
 const SEARCH_HISTORY_ENDPOINT = '/api/searchhistory';
 const USER_SITES_ENDPOINT = '/api/user/sites';
 const SMART_MATCHBLOCK_ITEMS_ENDPOINT = '/api/smart/matchblock/items';
-
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
 
 const buildTMDBDataURL = (path, params = {}) => {
   const rel = normalizeString(path).replace(/^\/+/, '');
@@ -30,16 +30,6 @@ const buildTMDBDataURL = (path, params = {}) => {
   });
   const url = `/api/tmdb/${rel}`;
   return searchParams.toString() ? `${url}?${searchParams.toString()}` : url;
-};
-
-const requestJson = async (url, options = {}) => {
-  const resp = await fetch(url, options);
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok) {
-    const message = data && (data.error || data.message) ? String(data.error || data.message) : `HTTP ${resp.status}`;
-    throw new Error(message);
-  }
-  return data;
 };
 
 export const buildTrailingDigitsFallbackQuery = (query) => {

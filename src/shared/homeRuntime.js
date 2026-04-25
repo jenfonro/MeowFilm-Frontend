@@ -1,4 +1,4 @@
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
+import { normalizeString } from './normalize';
 
 const homeCacheStore = Object.create(null);
 

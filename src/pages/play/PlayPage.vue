@@ -568,6 +568,7 @@ import {
   getTMDBStatus,
   getTMDBYear,
 } from '../../shared/tmdbRaw';
+import { normalizeInt, normalizeString } from '../../shared/normalize';
 import { scoreEpisodeDisplayName } from '../../utils/matchCore';
 
 const THIRD_PARTY_PLAYERS = [
@@ -607,11 +608,6 @@ const withSiteSourceDisplayLabels = (items) => {
   });
 };
 
-const normalizeString = (value) => (typeof value === 'string' ? value.trim() : '');
-const normalizeInt = (value) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? Math.trunc(num) : 0;
-};
 const stripMarkupText = (value) =>
   String(value || '')
     .replace(/\[a=[^\]]*\/\]([\s\S]*?)\[\/a\]/gi, '$1')
