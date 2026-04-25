@@ -1280,7 +1280,10 @@ export default {
       return this.siteDetailPanSources;
     },
     currentPanSourceLabel() {
-      const current = this.currentPanSourceOptions.find((item) => item.key === this.selectedPanSource) || this.currentPanSourceOptions[0] || null;
+      const selectedKey = normalizeString(this.selectedPanSource);
+      const current = selectedKey
+        ? (this.currentPanSourceOptions.find((item) => item.key === selectedKey) || null)
+        : (this.currentPanSourceOptions[0] || null);
       return current ? current.label : '暂无数据';
     },
     showDoubanPrimarySourceOption() {
@@ -1316,6 +1319,12 @@ export default {
       if (!this.selectedSiteResultItem || !this.isTmdbMode) return [];
       if (!this.projectionSourceSwitchable) return ['TMDB'];
       return ['TMDB', '豆瓣'];
+    },
+    projectionCurrentSeasonCount() {
+      if (!this.selectedSiteResultItem || !this.isTmdbMode || this.tmdbMovieMode) return 0;
+      return normalizeString(this.selectedProjectionSource) === '豆瓣'
+        ? normalizeInt(this.projectionDoubanSeasonCount)
+        : normalizeInt(this.projectionTMDBSeasonCount);
     },
     forceRawListMode() {
       return this.contentKind === 'movie';
@@ -1543,7 +1552,8 @@ export default {
     },
     episodeSeasonOptions() {
       if (this.selectedSiteResultItem) {
-        if (this.episodeSeasonRows.length <= 1) return [];
+        if (this.projectionCurrentSeasonCount <= 1) return [];
+        if (!this.episodeSeasonRows.length) return [];
       } else if (this.episodeSeasonRows.length <= 1) {
         return [];
       }
@@ -1811,7 +1821,7 @@ export default {
       if (this.siteResultDetailError) return this.siteResultDetailError;
       if (!this.siteResultDetailData) return '';
       if (!this.currentPanSourceOptions.length) return '暂无数据';
-      if (!this.currentPanSourceEntry) return '暂无数据';
+      if (!this.currentPanSourceEntry) return this.siteResultDetailResolutionIncomplete ? '' : '暂无数据';
       if (this.selectedSitePanState.loading) return '';
       if (this.selectedSitePanState.error) return this.selectedSitePanState.error;
       if (this.selectedSitePanState.hasProjectedEpisodes) return '';
@@ -1823,7 +1833,7 @@ export default {
     selectedSiteEpisodePanelState() {
       if (!this.selectedSiteResultItem) return 'episodes';
       if (!this.siteResultDetailData) return 'loading';
-      if (!this.currentPanSourceEntry) return 'status';
+      if (!this.currentPanSourceEntry) return this.siteResultDetailResolutionIncomplete ? 'loading' : 'status';
       if (this.selectedSitePanState.loading) return 'loading';
       const hasEpisodes = !!this.selectedSitePanState.hasProjectedEpisodes;
       const hasRaw = !!this.selectedSitePanState.hasSegments;
@@ -1831,7 +1841,6 @@ export default {
         return hasRaw ? 'raw' : 'status';
       }
       if (hasEpisodes) return 'episodes';
-      if (hasRaw) return 'raw';
       return 'status';
     },
     siteResultEpisodeStatusText() {
@@ -1906,7 +1915,11 @@ export default {
     },
     currentPanSourceEntry() {
       if (!this.siteDetailPanSources.length) return null;
-      return this.siteDetailPanSources.find((item) => item.key === this.selectedPanSource) || this.siteDetailPanSources[0] || null;
+      const selectedKey = normalizeString(this.selectedPanSource);
+      if (selectedKey) {
+        return this.siteDetailPanSources.find((item) => item.key === selectedKey) || null;
+      }
+      return this.siteDetailPanSources[0] || null;
     },
     rawDirModeEnabled() {
       const entry = this.currentPanSourceEntry;
@@ -3051,8 +3064,11 @@ export default {
     },
     toggleProjectionSource() {
       if (!this.selectedSiteResultItem || !this.isTmdbMode) return;
+      const options = this.projectionSourceOptions;
+      if (!Array.isArray(options) || options.length <= 1) return;
       const current = normalizeString(this.selectedProjectionSource);
-      const next = current === '豆瓣' ? 'TMDB' : '豆瓣';
+      const idx = options.findIndex((item) => item === current);
+      const next = options[(idx + 1 + options.length) % options.length] || options[0];
       this.selectedProjectionSource = normalizeString(next) || 'TMDB';
       this.selectedViewSeasonNumber = 0;
       this.selectedViewRangeStart = 0;
@@ -4514,8 +4530,7 @@ export default {
         this.detailRemark = '';
       }
       const panSources = this.buildPanSourcesFromDetail(nextDetail);
-      const selectedExists = panSources.some((entry) => normalizeString(entry && entry.key) === normalizeString(this.selectedPanSource));
-      if (!selectedExists) {
+      if (!normalizeString(this.selectedPanSource)) {
         this.selectedPanSource = panSources[0] ? panSources[0].key : '';
       }
       const projectionOptions = this.projectionSourceOptions;
