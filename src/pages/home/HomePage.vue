@@ -64,7 +64,7 @@
                 :title-fallback="section.title"
                 link-aria-label="打开豆瓣详情页"
                 @activate="openHomeCard(section, item, $event)"
-                @contextmenu="section.key === 'history' ? openHistoryContextMenu($event, item) : null"
+                @contextmenu="openHomeContextMenu($event, section, item)"
               />
             </div>
             <div
@@ -96,39 +96,29 @@
         </div>
       </section>
     </div>
-    <div
-      v-if="historyContextMenu.open"
-      class="search-matchblock-menu"
-      :style="historyContextMenuStyle"
-      @click.stop
-    >
-      <button
-        type="button"
-        class="search-matchblock-menu__action search-matchblock-menu__action--danger"
-        :disabled="historyContextMenu.busy"
-        @click="deleteHistoryContextMenuItem"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M3 6h18"></path>
-          <path d="M8 6V4h8v2"></path>
-          <path d="M19 6l-1 14H6L5 6"></path>
-          <path d="M10 11v6"></path>
-          <path d="M14 11v6"></path>
-        </svg>
-        <span>{{ historyContextMenu.busy ? '删除中...' : '删除' }}</span>
-      </button>
-    </div>
+    <CardActionContextMenu
+      :menu="cardContextMenu"
+      :show-recognize="cardContextMenu.kind === 'site'"
+      :show-match-block="cardContextMenu.kind === 'site'"
+      :show-delete="cardContextMenu.kind === 'history'"
+      :match-block-label="cardMatchBlockMenuLabel"
+      :match-block-danger="!cardContextMenu.blocked"
+      :match-block-disabled="cardMatchBlockMenuDisabled"
+      :delete-label="cardDeleteMenuLabel"
+      :delete-disabled="cardDeleteMenuDisabled"
+      @recognize="openHomeRecognizeDialogFromMenu"
+      @toggle-match-block="toggleHomeMatchBlockMenuItem"
+      @delete="deleteCardContextMenuItem"
+    />
+    <TMDBRecognizeDialog
+      v-model="homeRecognizeDialogOpen"
+      :keyword="homeRecognizeDialogKeyword"
+      :bootstrap="props.bootstrap"
+      :confirm-busy="homeRecognizeDialogSaving"
+      :disable-confirm="!canSubmitHomeRecognizeDialog || homeRecognizeDialogSaving"
+      :auto-close-on-select="false"
+      @select="submitManualRecognizeDialog"
+    />
   </main>
 </template>
 
@@ -137,15 +127,20 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import '../../shared/contextMenu.css';
 import { requestCatSpider } from '../../shared/catpawrunner';
 import { buildDoubanDataUrl as buildSharedDoubanDataUrl } from '../../shared/bootstrap';
-import { buildContextMenuClosedState, buildContextMenuOpenState, buildContextMenuStyle } from '../../shared/contextMenuState';
+import { buildContextMenuClosedState, buildContextMenuOpenState } from '../../shared/contextMenuState';
 import { normalizeImageUrl, rewriteDoubanImageUrl as rewriteSharedDoubanImageUrl } from '../../shared/doubanImage';
+import CardActionContextMenu from '../../shared/CardActionContextMenu.vue';
 import MediaCard from '../../shared/MediaCard.vue';
+import TMDBRecognizeDialog from '../../shared/TMDBRecognizeDialog.vue';
 import { buildHomeCacheKey, ensureHomeCacheEntry, getHomeCacheEntry, resolveCachedHomeSections, setHomeCacheEntry } from '../../shared/homeRuntime';
+import { useManualRecognizeDialog } from '../../shared/useManualRecognizeDialog';
+import { useMatchBlockedIndex } from '../../shared/useMatchBlockedIndex';
+import { useSiteActionContextMenu } from '../../shared/useSiteActionContextMenu';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { deletePlayHistoryItem, ensurePlayHistoryItems, playHistoryListState } from '../../shared/playHistoryRuntime';
 import { fetchTMDBDetailCached } from '../../shared/tmdbRuntime';
 import { buildTMDBDetailTextBadge } from '../../shared/tmdbRaw';
-import { normalizeInt } from '../../shared/normalize';
+import { normalizeInt, normalizeString } from '../../shared/normalize';
 
 const props = defineProps({
   bootstrap: { type: Object, default: () => ({}) },
@@ -166,7 +161,15 @@ const historyItems = computed(() => {
 });
 const historyLoading = computed(() => !!playHistoryListState.loading);
 const historyError = computed(() => playHistoryListState.error || '');
-const historyContextMenu = ref(buildContextMenuClosedState());
+const cardContextMenu = ref(buildContextMenuClosedState({ kind: '', blocked: false }));
+const {
+  dialogOpen: homeRecognizeDialogOpen,
+  dialogKeyword: homeRecognizeDialogKeyword,
+  dialogSaving: homeRecognizeDialogSaving,
+  canSubmitDialog: canSubmitHomeRecognizeDialog,
+  openManualRecognizeDialog,
+  submitManualRecognizeDialog,
+} = useManualRecognizeDialog();
 const historyTmdbBadgeMap = ref({});
 const rowElements = Object.create(null);
 const rowRefSetters = Object.create(null);
@@ -253,39 +256,135 @@ const homeSections = computed(() => {
   const sourceSections = sourceSectionStates.value;
   return historySection ? [historySection, ...sourceSections] : sourceSections;
 });
+const cardDeleteMenuLabel = computed(() => {
+  if (cardContextMenu.value.kind !== 'history') return '删除';
+  return cardContextMenu.value.busy ? '删除中...' : '删除';
+});
+const cardDeleteMenuDisabled = computed(() => {
+  if (cardContextMenu.value.kind !== 'history') return true;
+  return !!cardContextMenu.value.busy;
+});
 
-const historyContextMenuStyle = computed(() => buildContextMenuStyle(historyContextMenu.value));
-
-const closeHistoryContextMenu = () => {
-  historyContextMenu.value = buildContextMenuClosedState();
+const closeCardContextMenu = () => {
+  cardContextMenu.value = buildContextMenuClosedState({ kind: '', blocked: false });
 };
+
+const getHomeAggregateRules = () => {
+  const settings = props.bootstrap && props.bootstrap.settings && typeof props.bootstrap.settings === 'object'
+    ? props.bootstrap.settings
+    : {};
+  return Array.isArray(settings.magicAggregateRegexRules) ? settings.magicAggregateRegexRules : [];
+};
+
+const {
+  resetIndex: resetHomeMatchBlockedIndex,
+  loadIndex: loadHomeMatchBlockedIndexByKeyword,
+  applyIndexMutation: applyHomeMatchBlockedIndexMutation,
+  isBlocked: isHomeMatchBlockedBySiteDetail,
+} = useMatchBlockedIndex(getHomeAggregateRules);
+
+const buildHomeCardMenuItem = (section, item) => {
+  const currentSection = section && typeof section === 'object' ? section : null;
+  const currentItem = item && typeof item === 'object' ? item : null;
+  if (!currentSection || !currentItem) return null;
+  if (currentSection.key === 'history') return null;
+  if (sourceResolved.value.kind !== 'site') return null;
+  const title = normalizeString(currentItem.title) || normalizeString(currentItem.rawContentKey);
+  const siteKey = normalizeString(currentItem.rawSiteKey) || normalizeString(sourceResolved.value.siteKey);
+  const siteDetail = normalizeString(currentItem.rawSiteDetail);
+  const spiderApi = normalizeString(currentItem.rawSpiderApi) || normalizeString(sourceResolved.value.siteApi);
+  return {
+    title,
+    poster: normalizeString(currentItem.poster),
+    siteKey,
+    siteDetail,
+    spiderApi,
+    matchKeyword: title,
+  };
+};
+
+const applyHomeMatchBlockedIndex = (payload, blocked) => {
+  return applyHomeMatchBlockedIndexMutation(payload, blocked);
+};
+
+const {
+  matchBlockMenuLabel: cardMatchBlockMenuLabel,
+  matchBlockMenuDisabled: cardMatchBlockMenuDisabled,
+  openRecognizeDialogFromMenu: openHomeRecognizeDialogFromMenu,
+  toggleMatchBlockMenuItem: toggleHomeMatchBlockMenuItem,
+} = useSiteActionContextMenu({
+  menu: cardContextMenu,
+  openManualRecognizeDialog,
+  closeMenu: closeCardContextMenu,
+  applyMatchBlockedIndex: applyHomeMatchBlockedIndex,
+});
+
+const isHomeItemMatchBlocked = (item) => {
+  const current = item && typeof item === 'object' ? item : null;
+  if (!current) return false;
+  return isHomeMatchBlockedBySiteDetail(
+    normalizeString(current.siteKey),
+    normalizeString(current.siteDetail),
+  );
+};
+
+const loadHomeMatchBlockedIndex = async (keyword) => loadHomeMatchBlockedIndexByKeyword(keyword);
 
 const openHistoryContextMenu = (event, item) => {
   const currentItem = item && typeof item === 'object' ? item : null;
   if (!currentItem) {
-    closeHistoryContextMenu();
+    closeCardContextMenu();
     return;
   }
   const contentKey = currentItem.rawContentKey ? String(currentItem.rawContentKey).trim() : '';
   const siteKey = currentItem.rawSiteKey ? String(currentItem.rawSiteKey).trim() : '';
   const siteDetail = currentItem.rawSiteDetail ? String(currentItem.rawSiteDetail).trim() : '';
   if (!contentKey && (!siteKey || !siteDetail)) {
-    closeHistoryContextMenu();
+    closeCardContextMenu();
     return;
   }
-  historyContextMenu.value = buildContextMenuOpenState({
+  cardContextMenu.value = buildContextMenuOpenState({
     event,
     item: currentItem,
+    extra: { kind: 'history', blocked: false },
   });
 };
 
-const deleteHistoryContextMenuItem = async () => {
-  const currentItem = historyContextMenu.value.item && typeof historyContextMenu.value.item === 'object'
-    ? historyContextMenu.value.item
+const openHomeContextMenu = async (event, section, item) => {
+  const currentSection = section && typeof section === 'object' ? section : null;
+  if (!currentSection) {
+    closeCardContextMenu();
+    return;
+  }
+  if (currentSection.key === 'history') {
+    openHistoryContextMenu(event, item);
+    return;
+  }
+  const currentItem = buildHomeCardMenuItem(currentSection, item);
+  if (!currentItem) {
+    closeCardContextMenu();
+    return;
+  }
+  const keyword = normalizeString(currentItem.matchKeyword || currentItem.title);
+  if (keyword) {
+    await loadHomeMatchBlockedIndex(keyword);
+  } else {
+    resetHomeMatchBlockedIndex();
+  }
+  cardContextMenu.value = buildContextMenuOpenState({
+    event,
+    item: currentItem,
+    extra: { kind: 'site', blocked: isHomeItemMatchBlocked(currentItem) },
+  });
+};
+
+const deleteCardContextMenuItem = async () => {
+  const currentItem = cardContextMenu.value.item && typeof cardContextMenu.value.item === 'object'
+    ? cardContextMenu.value.item
     : null;
-  if (!currentItem || historyContextMenu.value.busy) return;
-  historyContextMenu.value = {
-    ...historyContextMenu.value,
+  if (!currentItem || cardContextMenu.value.kind !== 'history' || cardContextMenu.value.busy) return;
+  cardContextMenu.value = {
+    ...cardContextMenu.value,
     busy: true,
   };
   try {
@@ -297,18 +396,18 @@ const deleteHistoryContextMenuItem = async () => {
   } catch (_error) {
     // ignore
   } finally {
-    closeHistoryContextMenu();
+    closeCardContextMenu();
   }
 };
 
 const handleHistoryContextPointer = (event) => {
   const target = event && event.target ? event.target : null;
   if (target && target.closest && target.closest('.search-matchblock-menu')) return;
-  closeHistoryContextMenu();
+  closeCardContextMenu();
 };
 
 const handleHistoryContextEscape = (event) => {
-  if (event && event.key === 'Escape') closeHistoryContextMenu();
+  if (event && event.key === 'Escape') closeCardContextMenu();
 };
 
 const emitSectionMore = (section) => {
@@ -346,7 +445,7 @@ const emitSectionMore = (section) => {
 };
 
 const openHomeCard = (section, item, event = null) => {
-  closeHistoryContextMenu();
+  closeCardContextMenu();
   const currentSection = section && typeof section === 'object' ? section : null;
   const currentItem = item && typeof item === 'object' ? item : null;
   if (!currentSection || !currentItem) return;
@@ -862,6 +961,7 @@ const handleWindowResize = () => {
 };
 
 watch(modeResolved, async (mode) => {
+  closeCardContextMenu();
   if (mode !== 'home') return;
   await loadActiveHomeSourceWithCache();
   await bindAndSyncVisibleRows();
@@ -869,13 +969,15 @@ watch(modeResolved, async (mode) => {
 
 watch(sourceResolved, async () => {
   if (modeResolved.value !== 'home') return;
+  closeCardContextMenu();
+  resetHomeMatchBlockedIndex();
   await loadActiveHomeSourceWithCache();
   await bindAndSyncVisibleRows();
 }, { deep: true });
 
 watch(homeSections, async () => {
   if (modeResolved.value !== 'home') return;
-  closeHistoryContextMenu();
+  closeCardContextMenu();
   await bindAndSyncVisibleRows();
 }, { flush: 'post' });
 

@@ -492,9 +492,10 @@ const compareNumbersDesc = (left, right) => {
   return left > right ? -1 : 1;
 };
 
-export const isPlaybackCandidateAllowedByAction = (wrapper, actionConstraint, runtimeSettings) => {
+export const isPlaybackCandidateAllowedByAction = (wrapper, actionConstraint, runtimeSettings, currentContext = null) => {
   const target = wrapper && typeof wrapper === 'object' ? wrapper : null;
   const constraint = actionConstraint && typeof actionConstraint === 'object' ? actionConstraint : null;
+  const current = currentContext && typeof currentContext === 'object' ? currentContext : null;
   if (!target || !constraint) return true;
   const candidate = target && target.candidate && typeof target.candidate === 'object' ? target.candidate : null;
   if (!candidate) return false;
@@ -503,6 +504,35 @@ export const isPlaybackCandidateAllowedByAction = (wrapper, actionConstraint, ru
   }
   if (constraint.mode === 'pan') {
     return resolveCandidatePanFamilyForPlayback(candidate, runtimeSettings) === normalizeString(constraint.fixedPanFamily);
+  }
+  if (constraint.mode === 'switch' && constraint.excludeCurrentSource && current) {
+    const siteKey = normalizeString(candidate && candidate.source && candidate.source.siteKey)
+      || normalizeString(target && target.siteItem && target.siteItem.siteKey)
+      || normalizeString(target && target.siteKey);
+    const siteDetail = normalizeString(candidate && candidate.source && candidate.source.siteDetail)
+      || normalizeString(target && target.siteItem && target.siteItem.siteDetail)
+      || normalizeString(target && target.siteDetail);
+    if (!siteKey || !siteDetail) return true;
+    const currentSiteKey = normalizeString(current.siteKey);
+    const currentSiteDetail = normalizeString(current.siteDetail);
+    if (siteKey !== currentSiteKey || siteDetail !== currentSiteDetail) return true;
+    const panKey = normalizeString(target && target.panKey);
+    const itemIndex = normalizeInt(target && target.itemIndex);
+    const currentPanKey = normalizeString(current.panKey);
+    const currentItemIndex = normalizeInt(current.itemIndex);
+    if (panKey && currentPanKey && itemIndex >= 0 && currentItemIndex >= 0) {
+      if (panKey === currentPanKey && itemIndex === currentItemIndex) return false;
+    }
+    const segmentIdentity = normalizeString(candidate && candidate.segmentIdentity)
+      || normalizeString(target && target.fileIdentity);
+    const currentFileIdentity = normalizeString(current.fileIdentity);
+    if (!segmentIdentity || !currentFileIdentity || segmentIdentity !== currentFileIdentity) return true;
+    const panFlag = normalizeString(candidate && candidate.panFlag)
+      || normalizeString(candidate && candidate.source && candidate.source.panFlag)
+      || normalizeString(target && target.panFlag);
+    const currentPanFlag = normalizeString(current.panFlag);
+    if (panFlag && currentPanFlag) return panFlag !== currentPanFlag;
+    return false;
   }
   return true;
 };

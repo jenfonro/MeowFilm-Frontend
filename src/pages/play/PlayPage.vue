@@ -551,10 +551,12 @@ import {
   ensureSiteResultDetailCached as ensureSiteResultDetailCachedRuntime,
   getRecognitionCandidatesForSiteResult as getRecognitionCandidatesForSiteResultRuntime,
   getSiteResultDetail as getSiteResultDetailRuntime,
+  getSiteResultRecognitionBySignature as getSiteResultRecognitionBySignatureRuntime,
   resolveHistoryBootstrapPlaybackTarget as resolveHistoryBootstrapPlaybackTargetRuntime,
   resolveCachedPlaybackTarget as resolveCachedPlaybackTargetRuntime,
   setSiteResultDetailCacheEntry as setSiteResultDetailCacheEntryRuntime,
 } from '../../shared/smartPlaybackRuntime';
+import { tryManualSmartBootstrapRuntime } from '../../shared/smartManualBootstrapRuntime';
 import { fetchTMDBDetailCached } from '../../shared/tmdbRuntime';
 import { fetchTVMetaCached, normalizeTVMetaPayload } from '../../shared/tvMetaRuntime';
 import {
@@ -1047,10 +1049,7 @@ const buildTmdbMovieCandidateItems = ({
     if (!item || !itemId || !signatureKey) return;
     const detailEntry = store[itemId] && typeof store[itemId] === 'object' ? store[itemId] : null;
     const detail = detailEntry && detailEntry.detail && typeof detailEntry.detail === 'object' ? detailEntry.detail : null;
-    const recognitionEntry = recognitionRoot[itemId] && typeof recognitionRoot[itemId] === 'object' ? recognitionRoot[itemId] : null;
-    const bySignature = recognitionEntry && recognitionEntry[signatureKey] && typeof recognitionEntry[signatureKey] === 'object'
-      ? recognitionEntry[signatureKey]
-      : null;
+    const bySignature = getSiteResultRecognitionBySignatureRuntime(recognitionRoot, item, signatureKey);
     if (!detail || !bySignature) return;
     const panSources = buildPanSourcesFromDetailRuntime(detail);
     const siteKey = normalizeString(item.siteKey);
@@ -2309,16 +2308,14 @@ export default {
       if (!item || !entry || !entry.key) {
         return { source: null, items: [] };
       }
-      const itemKey = normalizeString(item.id);
-      const signature = this.activeRecognitionSignature;
-      const group = itemKey && this.siteResultRecognitionStore[itemKey] && typeof this.siteResultRecognitionStore[itemKey] === 'object'
-        ? this.siteResultRecognitionStore[itemKey]
-        : null;
-      const bySignature = group && signature && group[signature] && typeof group[signature] === 'object'
-        ? group[signature]
-        : null;
-      return bySignature && bySignature[entry.key]
-        ? bySignature[entry.key]
+      const payload = getSiteResultRecognitionBySignatureRuntime(
+        this.siteResultRecognitionStore,
+        item,
+        this.activeRecognitionSignature,
+        entry.key,
+      );
+      return payload && typeof payload === 'object'
+        ? payload
         : { source: null, items: [] };
     },
     displayTitle() {
@@ -2462,9 +2459,11 @@ export default {
       autoplayConsumed: false,
       autoplayInFlight: false,
       historySmartBootstrapStageDone: {},
+      manualSmartBootstrapStageDone: {},
       playRequestSeq: 0,
       lastResolvedPlaybackPayload: null,
       smartPlaybackRunSeq: 0,
+      manualSmartBootstrapSeq: 0,
       smartPlaybackStage: 'idle',
       smartPlaybackActiveChannel: '',
       smartPlaybackChannelToken: 0,
@@ -2968,6 +2967,7 @@ export default {
     },
     async loadPlayRuntimeAndDetail() {
       this.historySmartBootstrapStageDone = {};
+      this.manualSmartBootstrapStageDone = {};
       this.autoplayConsumed = false;
       this.autoplayInFlight = false;
       this.smartPlaybackResolvedStage = '';
@@ -3315,8 +3315,19 @@ export default {
       const blockedPanFlags = Array.isArray(entry.panFlags) ? entry.panFlags : [];
       return blockedPanFlags.some((itemFlag) => normalizeString(itemFlag) === panFlag);
     },
+    isPlaybackCandidateBlockedBySiteSkip(wrapper) {
+      const blocked = Array.isArray(this.playBlockedSiteKeys) ? this.playBlockedSiteKeys : [];
+      if (!blocked.length) return false;
+      const item = wrapper && wrapper.siteItem && typeof wrapper.siteItem === 'object' ? wrapper.siteItem : null;
+      const candidate = wrapper && wrapper.candidate && typeof wrapper.candidate === 'object' ? wrapper.candidate : null;
+      const source = candidate && candidate.source && typeof candidate.source === 'object' ? candidate.source : null;
+      const siteKey = normalizeString(source && source.siteKey) || normalizeString(item && item.siteKey);
+      if (!siteKey) return false;
+      return blocked.includes(siteKey);
+    },
     buildUnifiedSmartCandidateAllowed(extraAllowed = null) {
       return (wrapper) => {
+        if (this.isPlaybackCandidateBlockedBySiteSkip(wrapper)) return false;
         if (this.isPlaybackCandidateBlockedByMatchBlock(wrapper)) return false;
         if (typeof extraAllowed !== 'function') return true;
         try {
@@ -3346,7 +3357,7 @@ export default {
       const unifiedAllowed = this.buildUnifiedSmartCandidateAllowed(extraAllowed);
       return (wrapper) => {
         if (!unifiedAllowed(wrapper)) return false;
-        if (!isPlaybackCandidateAllowedByAction(wrapper, actionConstraint, this.runtimeSettings)) return false;
+        if (!isPlaybackCandidateAllowedByAction(wrapper, actionConstraint, this.runtimeSettings, this.currentPlaybackContext)) return false;
         const constraint = actionConstraint && typeof actionConstraint === 'object' ? actionConstraint : null;
         const mode = normalizeString(constraint && constraint.mode);
         if (mode === 'pan' && !this.isSmartPlaybackFullDetailCompleted()) {
@@ -4282,7 +4293,10 @@ export default {
       mappingSignature = '',
       episodeSource = '',
       skipHistoryList = false,
+      onCandidatesChanged = null,
+      isRunStopped = null,
     } = {}) {
+      const stopped = () => (typeof isRunStopped === 'function' ? !!isRunStopped() : false);
       const stageKey = normalizeString(stage) || 'default';
       const rawStageState = this.historySmartBootstrapStageDone[stageKey];
       const stageState = rawStageState && typeof rawStageState === 'object'
@@ -4303,21 +4317,17 @@ export default {
       const compareCandidates = this.buildSmartPlaybackCompareCandidates(actionConstraint);
       const targetEpisodeSource = normalizeString(episodeSource) || this.selectedSiteSource;
       const targetMapping = mapping || this.smartEpisodeMapping;
-      const failedCachedKeys = new Set();
       const forceDetailOnlyByStage = stageState.done && !stageState.detailDone;
       let detailRequested = !!forceDetailOnlyByStage;
       let hasHistoryContext = false;
-
-      const buildTargetKey = (target) => {
-        const siteItem = target && target.siteItem ? target.siteItem : null;
-        const panEntry = target && target.panEntry ? target.panEntry : null;
-        const segment = target && target.segment ? target.segment : null;
-        const itemId = normalizeString(siteItem && siteItem.id);
-        const panKey = normalizeString(panEntry && panEntry.key);
-        const itemIndex = normalizeInt(segment && segment.index);
-        if (!itemId || !panKey || itemIndex < 0) return '';
-        return `${itemId}::${panKey}::${itemIndex}`;
+      let hasHistoryCandidates = false;
+      const notifyCandidatesChanged = () => {
+        if (typeof onCandidatesChanged !== 'function') return;
+        try {
+          onCandidatesChanged();
+        } catch (_error) {}
       };
+      if (stopped()) return false;
 
       const resolveHistoryTarget = async (forceDetailOnly = false) => resolveHistoryBootstrapPlaybackTargetRuntime({
         matchOptions,
@@ -4334,6 +4344,7 @@ export default {
         buildSelectionKey: (panKey, index) => buildSiteEpisodeSelectionKey(panKey, index),
         getCachedSiteResultDetail: (siteItem) => this.getCachedSiteResultDetail(siteItem),
         cacheHistoryDetail: (siteItem, payload) => {
+          if (stopped()) return;
           const target = payload && typeof payload === 'object' ? payload : {};
           const detail = target.detail && typeof target.detail === 'object' ? target.detail : null;
           const cacheMeta = target.cacheMeta && typeof target.cacheMeta === 'object' ? target.cacheMeta : null;
@@ -4348,12 +4359,15 @@ export default {
             mapping: targetMapping,
             mappingSignature: signature,
           });
+          notifyCandidatesChanged();
         },
         ensureRecognitionForSiteItem: (siteItem, detail) => {
+          if (stopped()) return;
           this.cacheRecognitionForSiteResult(siteItem, detail, {
             mapping: targetMapping,
             mappingSignature: signature,
           });
+          notifyCandidatesChanged();
         },
         collectCandidates: (siteItem, nextGlobal, nextLoose, nextMatchOptions) =>
           this.collectRecognitionCandidatesForTarget(siteItem, nextGlobal, nextLoose, {
@@ -4366,63 +4380,27 @@ export default {
           this.ensureSiteResultDetailCached(siteItem, options),
       }).catch(() => null);
 
-      const tryPlayTarget = async (target) => {
-        if (!target) return false;
-        const ok = await this.playResolvedSiteSegment({
-          ...target,
-          globalEpisode,
-        });
-        if (ok && stageKey) this.smartPlaybackResolvedStage = stageKey;
-        return !!ok;
-      };
-
       try {
+        if (stopped()) return false;
         const listTarget = forceDetailOnlyByStage ? null : await resolveHistoryTarget(false);
-        if (listTarget) hasHistoryContext = true;
-        if (listTarget && listTarget.fromHistoryPlayFlag) {
-          if (await tryPlayTarget(listTarget)) return true;
-        } else if (listTarget && listTarget.fromHistoryDetail) {
-          detailRequested = true;
-          if (await tryPlayTarget(listTarget)) return true;
-          const failedKey = buildTargetKey(listTarget);
-          if (failedKey) failedCachedKeys.add(failedKey);
+        if (stopped()) return false;
+        if (listTarget) {
+          hasHistoryContext = true;
+          hasHistoryCandidates = true;
+          if (listTarget.fromHistoryDetail) detailRequested = true;
+          notifyCandidatesChanged();
         }
 
         detailRequested = true;
+        if (stopped()) return hasHistoryCandidates;
         const detailTarget = await resolveHistoryTarget(true);
+        if (stopped()) return hasHistoryCandidates;
         if (detailTarget) {
           hasHistoryContext = true;
-          if (await tryPlayTarget(detailTarget)) return true;
-          const failedKey = buildTargetKey(detailTarget);
-          if (failedKey) failedCachedKeys.add(failedKey);
+          hasHistoryCandidates = true;
+          notifyCandidatesChanged();
         }
-
-        while (true) {
-          const cachedTarget = this.resolveCachedPlaybackTarget(globalEpisode, wantEpisodeInSeason, {
-            matchOptions,
-            actionConstraint,
-            isCandidateAllowed: (wrapper) => {
-              if (!unifiedAllowed(wrapper)) return false;
-              const key = `${normalizeString(wrapper && wrapper.siteItem && wrapper.siteItem.id)}::${normalizeString(wrapper && wrapper.panKey)}::${normalizeInt(wrapper && wrapper.itemIndex)}`;
-              if (!key) return true;
-              return !failedCachedKeys.has(key);
-            },
-            mapping: targetMapping,
-            mappingSignature: signature,
-            episodeSource: targetEpisodeSource,
-            includeSelectedContext: false,
-            includeBrowseContext: false,
-            includeStoreScan: true,
-          });
-          if (!cachedTarget) break;
-          const key = buildTargetKey(cachedTarget);
-          if (!key || failedCachedKeys.has(key)) break;
-          const ok = await tryPlayTarget(cachedTarget);
-          if (ok) return true;
-          failedCachedKeys.add(key);
-        }
-
-        return false;
+        return hasHistoryCandidates;
       } finally {
         const detailDone = !hasHistoryContext || !!detailRequested;
         this.historySmartBootstrapStageDone = {
@@ -4591,6 +4569,7 @@ export default {
     cacheRecognitionForSiteResult(item, detail, {
       mapping = null,
       mappingSignature = '',
+      recognitionOptions = null,
     } = {}) {
       const targetMapping = mapping && typeof mapping === 'object' ? mapping : this.smartEpisodeMapping;
       const signature = normalizeString(mappingSignature)
@@ -4602,6 +4581,7 @@ export default {
         signature,
         runtimeSettings: this.runtimeSettings,
         smartEpisodeMapping: targetMapping,
+        recognitionOptions,
       });
       this.siteResultRecognitionStore = result && result.store && typeof result.store === 'object'
         ? result.store
@@ -4661,7 +4641,7 @@ export default {
       if (resume) void resume();
       return true;
     },
-    resetSmartPlaybackRuntimeState({ stopStream = false, bumpRunSeq = true } = {}) {
+    resetSmartPlaybackRuntimeState({ stopStream = false, bumpRunSeq = true, bumpManualSeq = true } = {}) {
       if (stopStream && typeof this.smartPlaybackStreamCleanup === 'function') {
         try {
           this.smartPlaybackStreamCleanup();
@@ -4673,10 +4653,13 @@ export default {
       this.smartPlaybackConfirmedRunSeq = 0;
       this.smartPlaybackAttemptRunSeq = 0;
       this.smartPlaybackActiveChannel = '';
+      if (bumpManualSeq) {
+        this.manualSmartBootstrapSeq = Math.max(0, normalizeInt(this.manualSmartBootstrapSeq)) + 1;
+      }
       if (bumpRunSeq) this.smartPlaybackRunSeq += 1;
     },
-    async playCachedResolvedTarget(payload = {}, { stage = '' } = {}) {
-      this.resetSmartPlaybackRuntimeState({ stopStream: true });
+    async playCachedResolvedTarget(payload = {}, { stage = '', preserveManualBootstrap = false } = {}) {
+      this.resetSmartPlaybackRuntimeState({ stopStream: true, bumpManualSeq: !preserveManualBootstrap });
       const ok = await this.playResolvedSiteSegment(payload);
       if (ok && normalizeString(stage)) this.smartPlaybackResolvedStage = normalizeString(stage);
       return !!ok;
@@ -4988,35 +4971,193 @@ export default {
       if (matchKind !== 'movie' && targetGlobal <= 0) return;
       const unifiedAllowed = this.buildUnifiedSmartCandidateAllowed(isCandidateAllowed);
       const currentStage = normalizeString(stage) || 'full';
+      let manualStageDone = !!this.manualSmartBootstrapStageDone[currentStage];
       const targetMapping = mapping && typeof mapping === 'object' ? mapping : this.smartEpisodeMapping;
       const targetSignature = normalizeString(mappingSignature)
         || (matchKind === 'movie' ? TMDB_MOVIE_RECOGNITION_SIGNATURE : buildEpisodeMappingSignature(targetMapping));
       const targetEpisodeSource = normalizeString(episodeSource) || this.selectedSiteSource;
+      const failedCachedKeys = new Set();
+      const markManualStageDone = () => {
+        manualStageDone = true;
+        this.manualSmartBootstrapStageDone = {
+          ...this.manualSmartBootstrapStageDone,
+          [currentStage]: true,
+        };
+      };
+      const markHistoryStageDone = () => {
+        this.historySmartBootstrapStageDone = {
+          ...this.historySmartBootstrapStageDone,
+          [currentStage]: { done: true, detailDone: true },
+        };
+      };
+      let resolvedByGlobal = false;
+      let globalResolveRunning = false;
+      let globalResolveQueued = false;
+      const globalResolveIdleWaiters = [];
+      const buildCachedTargetKey = (target) => {
+        const siteItem = target && target.siteItem && typeof target.siteItem === 'object' ? target.siteItem : null;
+        const panEntry = target && target.panEntry && typeof target.panEntry === 'object' ? target.panEntry : null;
+        const segment = target && target.segment && typeof target.segment === 'object' ? target.segment : null;
+        const itemId = normalizeString(siteItem && siteItem.id);
+        const panKey = normalizeString(panEntry && panEntry.key);
+        const itemIndex = normalizeInt(segment && segment.index);
+        if (!itemId || !panKey || itemIndex < 0) return '';
+        return `${itemId}::${panKey}::${itemIndex}`;
+      };
+      const flushGlobalResolveIdleWaiters = () => {
+        if (globalResolveRunning || globalResolveQueued) return;
+        while (globalResolveIdleWaiters.length) {
+          const done = globalResolveIdleWaiters.shift();
+          if (typeof done === 'function') done();
+        }
+      };
+      const waitGlobalResolveIdle = () => new Promise((resolve) => {
+        if (!globalResolveRunning && !globalResolveQueued) {
+          resolve();
+          return;
+        }
+        globalResolveIdleWaiters.push(resolve);
+      });
+      const tryPlayCachedCandidates = async () => {
+        while (!resolvedByGlobal) {
+          const cachedTarget = this.resolveCachedPlaybackTarget(targetGlobal, targetLoose, {
+            matchOptions: normalizedMatchOptions,
+            actionConstraint,
+            isCandidateAllowed: (wrapper) => {
+              if (!unifiedAllowed(wrapper)) return false;
+              const key = `${normalizeString(wrapper && wrapper.siteItem && wrapper.siteItem.id)}::${normalizeString(wrapper && wrapper.panKey)}::${normalizeInt(wrapper && wrapper.itemIndex)}`;
+              if (!key) return true;
+              return !failedCachedKeys.has(key);
+            },
+            mapping: targetMapping,
+            mappingSignature: targetSignature,
+            episodeSource: targetEpisodeSource,
+            includeSelectedContext: true,
+            includeBrowseContext: true,
+            includeStoreScan: true,
+          });
+          if (!cachedTarget) return false;
+          const cachedKey = buildCachedTargetKey(cachedTarget);
+          if (cachedKey && failedCachedKeys.has(cachedKey)) return false;
+          const cachedOk = await this.playCachedResolvedTarget({
+            ...cachedTarget,
+            globalEpisode: targetGlobal,
+          }, {
+            stage: currentStage,
+            preserveManualBootstrap: true,
+          });
+          if (cachedOk) {
+            resolvedByGlobal = true;
+            return true;
+          }
+          if (!cachedKey) return false;
+          failedCachedKeys.add(cachedKey);
+        }
+        return true;
+      };
+      const runGlobalResolvePump = async () => {
+        if (globalResolveRunning || resolvedByGlobal) {
+          flushGlobalResolveIdleWaiters();
+          return false;
+        }
+        globalResolveRunning = true;
+        try {
+          while (!resolvedByGlobal) {
+            if (!globalResolveQueued) break;
+            globalResolveQueued = false;
+            const ok = await tryPlayCachedCandidates();
+            if (ok) return true;
+          }
+          return resolvedByGlobal;
+        } finally {
+          globalResolveRunning = false;
+          if (globalResolveQueued && !resolvedByGlobal) {
+            void runGlobalResolvePump();
+          } else {
+            flushGlobalResolveIdleWaiters();
+          }
+        }
+      };
+      const scheduleGlobalResolve = () => {
+        if (resolvedByGlobal) return;
+        globalResolveQueued = true;
+        void runGlobalResolvePump();
+      };
+      const notifyCandidatesChanged = () => {
+        scheduleGlobalResolve();
+      };
 
       // Phase 1 (frontend strict serial): reuse cached candidates first.
-      const cachedTarget = this.resolveCachedPlaybackTarget(targetGlobal, targetLoose, {
-        matchOptions: normalizedMatchOptions,
-        actionConstraint,
-        isCandidateAllowed: unifiedAllowed,
-        mapping: targetMapping,
-        mappingSignature: targetSignature,
-        episodeSource: targetEpisodeSource,
-        includeSelectedContext: true,
-        includeBrowseContext: true,
-        includeStoreScan: true,
-      });
-      if (cachedTarget) {
-        const cachedOk = await this.playCachedResolvedTarget({
-          ...cachedTarget,
-          globalEpisode: targetGlobal,
-        }, {
-          stage: currentStage,
-        });
-        if (cachedOk) return;
+      scheduleGlobalResolve();
+      await waitGlobalResolveIdle();
+      if (resolvedByGlobal) {
+        markHistoryStageDone();
+        return;
       }
 
-      // Phase 2/3: history list chain -> history detail chain.
-      const historyBootstrapped = await this.tryHistorySmartBootstrap(targetGlobal, targetLoose, {
+      // Phase 2: manual chain (only produce candidates).
+      if (!manualStageDone) {
+        const manualSeq = Math.max(0, normalizeInt(this.manualSmartBootstrapSeq)) + 1;
+        this.manualSmartBootstrapSeq = manualSeq;
+        const manualCompleted = await tryManualSmartBootstrapRuntime({
+          isTmdbMode: this.isTmdbMode,
+          tmdbType: this.tmdbType,
+          searchType: this.searchType,
+          tmdbId: this.tmdbId,
+          globalEpisode: targetGlobal,
+          wantEpisodeInSeason: targetLoose,
+          matchOptions: normalizedMatchOptions,
+          selectedSiteSource: this.selectedSiteSource,
+          episodeSource: targetEpisodeSource,
+          allowResolutionModes: this.buildAllowedResolutionModes(),
+          isRunStopped: () => (
+            normalizeInt(this.manualSmartBootstrapSeq) !== manualSeq
+            || resolvedByGlobal
+          ),
+          playSearchQuery: this.playSearchQuery,
+          displayTitle: this.displayTitle,
+          ensureSiteResultDetailCached: (siteItem) => this.ensureSiteResultDetailCached(siteItem),
+          buildSiteDetailDedupeKey: (siteItem) => this.buildSiteDetailDedupeKey(siteItem),
+          setSiteResultDetailCacheEntry: (siteItem, detail, cacheMeta) => {
+            this.siteResultDetailStore = setSiteResultDetailCacheEntryRuntime({
+              store: this.siteResultDetailStore,
+              item: siteItem,
+              detail,
+              cacheMeta: cacheMeta && typeof cacheMeta === 'object' ? cacheMeta : {},
+            });
+          },
+          cacheRecognitionForSiteResult: (siteItem, detail, recognitionOptions) => {
+            this.cacheRecognitionForSiteResult(siteItem, detail, {
+              mapping: targetMapping,
+              mappingSignature: targetSignature,
+              recognitionOptions: recognitionOptions && typeof recognitionOptions === 'object'
+                ? recognitionOptions
+                : null,
+            });
+          },
+          collectRecognitionCandidatesForTarget: (siteItem, nextGlobal, nextLoose, payload = {}) =>
+            this.collectRecognitionCandidatesForTarget(siteItem, nextGlobal, nextLoose, {
+              matchOptions: payload && payload.matchOptions ? payload.matchOptions : normalizedMatchOptions,
+              mappingSignature: targetSignature,
+              episodeSource: normalizeString(payload && payload.episodeSource) || targetEpisodeSource,
+              allowResolutionModes: payload && Array.isArray(payload.allowResolutionModes)
+                ? payload.allowResolutionModes
+                : this.buildAllowedResolutionModes(),
+            }),
+          onCandidatesChanged: notifyCandidatesChanged,
+          shouldPauseDispatch: () => globalResolveRunning || globalResolveQueued,
+          waitDispatchResume: () => waitGlobalResolveIdle(),
+        });
+        if (manualCompleted === true) markManualStageDone();
+      }
+      await waitGlobalResolveIdle();
+      if (resolvedByGlobal) {
+        markHistoryStageDone();
+        return;
+      }
+
+      // Phase 3/4: history list chain -> history detail chain (only produce candidates).
+      await this.tryHistorySmartBootstrap(targetGlobal, targetLoose, {
         matchOptions: normalizedMatchOptions,
         actionConstraint,
         isCandidateAllowed: unifiedAllowed,
@@ -5025,8 +5166,14 @@ export default {
         mappingSignature: targetSignature,
         episodeSource: targetEpisodeSource,
         skipHistoryList,
+        onCandidatesChanged: notifyCandidatesChanged,
+        isRunStopped: () => resolvedByGlobal,
       });
-      if (historyBootstrapped) return;
+      await waitGlobalResolveIdle();
+      if (resolvedByGlobal) {
+        markHistoryStageDone();
+        return;
+      }
       this.resetSmartPlaybackRuntimeState({ stopStream: true, bumpRunSeq: false });
       const runSeq = this.smartPlaybackRunSeq + 1;
       this.smartPlaybackStage = currentStage;
@@ -5123,7 +5270,7 @@ export default {
         if (suppressStatusUi) this.closePlayerActionFlow();
         return;
       }
-      const skipHistoryList = false;
+      const skipHistoryList = action === 'switch' || action === 'pan' || action === 'quality';
       const sharedCandidateAllowed = this.buildPlayerActionCandidateAllowed(action, globalEpisode);
       const cachedTarget = this.resolveCachedPlaybackTarget(
         globalEpisode,
@@ -5532,6 +5679,7 @@ export default {
       this.autoplayConsumed = false;
       this.autoplayInFlight = false;
       this.historySmartBootstrapStageDone = {};
+      this.manualSmartBootstrapStageDone = {};
       this.smartPlaybackResolvedStage = '';
       this.applyEpisodeViewModePreference();
       this.selectedViewSeasonNumber = 0;
@@ -5880,6 +6028,7 @@ export default {
       this.autoplayConsumed = false;
       this.autoplayInFlight = false;
       this.historySmartBootstrapStageDone = {};
+      this.manualSmartBootstrapStageDone = {};
       this.smartPlaybackResolvedStage = '';
       this.loadPlayRuntimeAndDetail();
     },

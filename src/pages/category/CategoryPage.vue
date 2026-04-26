@@ -50,6 +50,7 @@
           card-class="media-card"
           link-aria-label="打开详情页"
           @activate="openCard(item, $event)"
+          @contextmenu="openCardContextMenu($event, item)"
         />
 
         <div v-if="!items.length && !loading" class="category-empty">
@@ -69,11 +70,29 @@
         <div ref="loadMoreSentinel" class="category-load-sentinel" aria-hidden="true"></div>
       </div>
     </div>
+    <CardActionContextMenu
+      :menu="cardContextMenu"
+      :match-block-label="cardMatchBlockMenuLabel"
+      :match-block-danger="!cardContextMenu.blocked"
+      :match-block-disabled="cardMatchBlockMenuDisabled"
+      @recognize="openRecognizeDialogFromMenu"
+      @toggle-match-block="toggleMatchBlockMenuItem"
+    />
+    <TMDBRecognizeDialog
+      v-model="recognizeDialogOpen"
+      :keyword="recognizeDialogKeyword"
+      :bootstrap="props.bootstrap"
+      :confirm-busy="recognizeDialogSaving"
+      :disable-confirm="!canSubmitRecognizeDialog || recognizeDialogSaving"
+      :auto-close-on-select="false"
+      @select="submitManualRecognizeDialog"
+    />
   </main>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import '../../shared/contextMenu.css';
 import { buildDoubanDataUrl } from '../../shared/bootstrap';
 import {
   buildCategoryCacheKey,
@@ -81,11 +100,17 @@ import {
   primeCategoryCacheEntry,
   setCategoryCacheEntry,
 } from '../../shared/categoryRuntime';
+import CardActionContextMenu from '../../shared/CardActionContextMenu.vue';
 import { rewriteDoubanImageUrl } from '../../shared/doubanImage';
 import MediaCard from '../../shared/MediaCard.vue';
+import TMDBRecognizeDialog from '../../shared/TMDBRecognizeDialog.vue';
+import { buildContextMenuClosedState, buildContextMenuOpenState } from '../../shared/contextMenuState';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { requestCatSpider } from '../../shared/catpawrunner';
-import { normalizeInt } from '../../shared/normalize';
+import { useManualRecognizeDialog } from '../../shared/useManualRecognizeDialog';
+import { useMatchBlockedIndex } from '../../shared/useMatchBlockedIndex';
+import { useSiteActionContextMenu } from '../../shared/useSiteActionContextMenu';
+import { normalizeInt, normalizeString } from '../../shared/normalize';
 
 const PAGE_SIZE = 24;
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -239,6 +264,15 @@ const currentPage = ref(1);
 const selectedFilters = ref({});
 const siteClassOptions = ref([]);
 const loadMoreSentinel = ref(null);
+const cardContextMenu = ref(buildContextMenuClosedState({ blocked: false }));
+const {
+  dialogOpen: recognizeDialogOpen,
+  dialogKeyword: recognizeDialogKeyword,
+  dialogSaving: recognizeDialogSaving,
+  canSubmitDialog: canSubmitRecognizeDialog,
+  openManualRecognizeDialog,
+  submitManualRecognizeDialog,
+} = useManualRecognizeDialog();
 let browseSeq = 0;
 let loadMoreObserver = null;
 
@@ -697,7 +731,88 @@ const loadMore = () => {
   void loadPage({ reset: false });
 };
 
+const closeCardContextMenu = () => {
+  cardContextMenu.value = buildContextMenuClosedState({ blocked: false });
+};
+
+const getAggregateRules = () => {
+  const settings = props.bootstrap && props.bootstrap.settings && typeof props.bootstrap.settings === 'object'
+    ? props.bootstrap.settings
+    : {};
+  return Array.isArray(settings.magicAggregateRegexRules) ? settings.magicAggregateRegexRules : [];
+};
+
+const {
+  resetIndex: resetCardMatchBlockedIndex,
+  loadIndex: loadCardMatchBlockedIndexByKeyword,
+  applyIndexMutation: applyCardMatchBlockedIndex,
+  isBlocked: isCardMatchBlockedBySiteDetail,
+} = useMatchBlockedIndex(getAggregateRules);
+
+const {
+  matchBlockMenuLabel: cardMatchBlockMenuLabel,
+  matchBlockMenuDisabled: cardMatchBlockMenuDisabled,
+  openRecognizeDialogFromMenu,
+  toggleMatchBlockMenuItem,
+} = useSiteActionContextMenu({
+  menu: cardContextMenu,
+  openManualRecognizeDialog,
+  closeMenu: closeCardContextMenu,
+  applyMatchBlockedIndex: applyCardMatchBlockedIndex,
+});
+
+const buildCardMenuItem = (item) => {
+  const current = item && typeof item === 'object' ? item : null;
+  if (!current || sourceResolved.value.kind !== 'site') return null;
+  const title = normalizeString(current.contentKey || current.title);
+  return {
+    title,
+    matchKeyword: title,
+    poster: normalizeString(current.poster),
+    siteKey: normalizeString(current.siteKey) || normalizeString(sourceResolved.value.siteKey),
+    spiderApi: normalizeString(current.spiderApi) || normalizeString(sourceResolved.value.siteApi),
+    siteDetail: normalizeString(current.siteDetail || current.id),
+  };
+};
+
+const loadCardMatchBlockedIndex = async (keyword) => {
+  return loadCardMatchBlockedIndexByKeyword(keyword);
+};
+
+const isCardItemMatchBlocked = (item) => {
+  const current = item && typeof item === 'object' ? item : null;
+  if (!current) return false;
+  return isCardMatchBlockedBySiteDetail(
+    normalizeString(current.siteKey),
+    normalizeString(current.siteDetail),
+  );
+};
+
+const openCardContextMenu = async (event, item) => {
+  if (sourceResolved.value.kind !== 'site') {
+    closeCardContextMenu();
+    return;
+  }
+  const current = buildCardMenuItem(item);
+  if (!current) {
+    closeCardContextMenu();
+    return;
+  }
+  const keyword = normalizeString(current.matchKeyword || current.title);
+  if (keyword) {
+    await loadCardMatchBlockedIndex(keyword);
+  } else {
+    resetCardMatchBlockedIndex();
+  }
+  cardContextMenu.value = buildContextMenuOpenState({
+    event,
+    item: current,
+    extra: { blocked: isCardItemMatchBlocked(current) },
+  });
+};
+
 const openCard = (item, event = null) => {
+  closeCardContextMenu();
   const current = item && typeof item === 'object' ? item : null;
   if (!current) return;
   const target = event && event.target && typeof event.target.closest === 'function' ? event.target : null;
@@ -732,6 +847,16 @@ const bindLoadMoreObserver = async () => {
   loadMoreObserver.observe(el);
 };
 
+const handleCardContextPointer = (event) => {
+  const target = event && event.target ? event.target : null;
+  if (target && target.closest && target.closest('.search-matchblock-menu')) return;
+  closeCardContextMenu();
+};
+
+const handleCardContextEscape = (event) => {
+  if (event && event.key === 'Escape') closeCardContextMenu();
+};
+
 const initSiteFilters = async () => {
   siteClassOptions.value = [];
   selectedFilters.value = {};
@@ -747,6 +872,7 @@ const initSiteFilters = async () => {
 watch(
   [typeResolved, sourceResolved],
   async ([type, source]) => {
+    closeCardContextMenu();
     items.value = [];
     hasMore.value = false;
     currentPage.value = 1;
@@ -786,6 +912,10 @@ watch(
 );
 
 onMounted(() => {
+  document.addEventListener('click', handleCardContextPointer, true);
+  window.addEventListener('keydown', handleCardContextEscape);
+  window.addEventListener('scroll', handleCardContextPointer, { passive: true });
+  window.addEventListener('resize', handleCardContextPointer, { passive: true });
   if (typeof IntersectionObserver === 'undefined') return;
   loadMoreObserver = new IntersectionObserver(
     (entries) => {
@@ -803,6 +933,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener('click', handleCardContextPointer, true);
+  window.removeEventListener('keydown', handleCardContextEscape);
+  window.removeEventListener('scroll', handleCardContextPointer);
+  window.removeEventListener('resize', handleCardContextPointer);
   if (!loadMoreObserver) return;
   loadMoreObserver.disconnect();
   loadMoreObserver = null;

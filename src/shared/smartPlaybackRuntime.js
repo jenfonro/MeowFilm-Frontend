@@ -106,14 +106,9 @@ export const getSiteResultRecognitionBySignature = (store, itemOrId, signature, 
   const entry = getSiteResultCacheEntry(store, itemOrId);
   const key = normalizeString(signature);
   if (!entry || !key) return panKey ? null : {};
-  const bySignature = (() => {
-    if (entry.recognitionBySignature && typeof entry.recognitionBySignature === 'object') {
-      const nested = entry.recognitionBySignature[key];
-      if (nested && typeof nested === 'object') return nested;
-    }
-    const direct = entry[key];
-    return direct && typeof direct === 'object' ? direct : null;
-  })();
+  const bySignature = entry.recognitionBySignature && typeof entry.recognitionBySignature === 'object'
+    ? entry.recognitionBySignature[key]
+    : null;
   if (!bySignature || typeof bySignature !== 'object') return panKey ? null : {};
   const sourceKey = normalizeString(panKey);
   if (!sourceKey) return bySignature;
@@ -142,9 +137,6 @@ export const setSiteResultDetailCacheEntry = ({
       cacheMeta: cacheMeta && typeof cacheMeta === 'object'
         ? { ...(current.cacheMeta && typeof current.cacheMeta === 'object' ? current.cacheMeta : {}), ...cacheMeta }
         : (current.cacheMeta && typeof current.cacheMeta === 'object' ? current.cacheMeta : {}),
-      recognitionBySignature: current.recognitionBySignature && typeof current.recognitionBySignature === 'object'
-        ? current.recognitionBySignature
-        : {},
     },
   };
 };
@@ -156,6 +148,7 @@ export const cacheRecognitionForSiteResult = ({
   signature,
   runtimeSettings,
   smartEpisodeMapping,
+  recognitionOptions = null,
 } = {}) => {
   const target = item && typeof item === 'object' ? item : null;
   const rawDetail = detail && typeof detail === 'object' ? detail : null;
@@ -169,6 +162,10 @@ export const cacheRecognitionForSiteResult = ({
     currentStore[itemKey] && typeof currentStore[itemKey] === 'object'
       ? currentStore[itemKey]
       : {};
+  const currentRecognitionBySignature = currentGroup.recognitionBySignature
+    && typeof currentGroup.recognitionBySignature === 'object'
+    ? currentGroup.recognitionBySignature
+    : {};
   const nextByEntry = {};
   buildPanSourcesFromDetail(rawDetail).forEach((entry) => {
     if (!entry || !entry.key) return;
@@ -177,14 +174,17 @@ export const cacheRecognitionForSiteResult = ({
       siteResultItem: target,
       runtimeSettings,
       smartEpisodeMapping,
+      recognitionOptions,
     });
   });
   return {
     store: {
       ...currentStore,
       [itemKey]: {
-        ...currentGroup,
-        [key]: nextByEntry,
+        recognitionBySignature: {
+          ...currentRecognitionBySignature,
+          [key]: nextByEntry,
+        },
       },
     },
     byEntry: nextByEntry,

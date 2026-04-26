@@ -112,38 +112,38 @@
         </section>
       </div>
     </div>
-    <div
-      v-if="matchBlockMenu.open"
-      ref="matchBlockMenuRef"
-      class="search-matchblock-menu"
-      :style="matchBlockMenuStyle"
-      @click.stop
-    >
-      <button
-        type="button"
-        class="search-matchblock-menu__action"
-        :class="{ 'search-matchblock-menu__action--danger': !matchBlockMenu.blocked }"
-        :disabled="matchBlockMenu.busy"
-        @click="toggleMatchBlockMenuItem"
-      >
-        {{ matchBlockMenuLabel }}
-      </button>
-    </div>
+    <CardActionContextMenu
+      :menu="matchBlockMenu"
+      :match-block-label="matchBlockMenuLabel"
+      :match-block-danger="!matchBlockMenu.blocked"
+      :match-block-disabled="matchBlockMenuDisabled"
+      @recognize="openRecognizeDialogFromMenu"
+      @toggle-match-block="toggleMatchBlockMenuItem"
+    />
+    <TMDBRecognizeDialog
+      v-model="recognizeDialogOpen"
+      :keyword="recognizeDialogKeyword"
+      :bootstrap="props.bootstrap"
+      :confirm-busy="recognizeDialogSaving"
+      :disable-confirm="!canSubmitRecognizeDialog || recognizeDialogSaving"
+      :auto-close-on-select="false"
+      @select="submitManualRecognizeDialog"
+    />
   </main>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import '../../shared/contextMenu.css';
-import { buildContextMenuClosedState, buildContextMenuOpenState, buildContextMenuStyle } from '../../shared/contextMenuState';
+import CardActionContextMenu from '../../shared/CardActionContextMenu.vue';
 import MediaCard from '../../shared/MediaCard.vue';
+import TMDBRecognizeDialog from '../../shared/TMDBRecognizeDialog.vue';
+import { buildContextMenuClosedState, buildContextMenuOpenState } from '../../shared/contextMenuState';
+import { useManualRecognizeDialog } from '../../shared/useManualRecognizeDialog';
+import { useMatchBlockedIndex } from '../../shared/useMatchBlockedIndex';
 import { rewriteDisplayPosterUrl } from '../../shared/posterUrl';
 import { useSearchSession } from '../../shared/searchSession';
-import {
-  addSmartMatchBlockItem,
-  deleteSmartMatchBlockItem,
-  fetchBlockedMatchIndex,
-} from '../../shared/searchRuntime';
+import { useSiteActionContextMenu } from '../../shared/useSiteActionContextMenu';
 import { normalizeString } from '../../shared/normalize';
 
 const props = defineProps({
@@ -159,7 +159,14 @@ const props = defineProps({
 
 const emit = defineEmits(['open-item']);
 const externalToken = ref(0);
-const matchBlockMenuRef = ref(null);
+const {
+  dialogOpen: recognizeDialogOpen,
+  dialogKeyword: recognizeDialogKeyword,
+  dialogSaving: recognizeDialogSaving,
+  canSubmitDialog: canSubmitRecognizeDialog,
+  openManualRecognizeDialog,
+  submitManualRecognizeDialog,
+} = useManualRecognizeDialog();
 const {
   inputValue,
   activeQuery,
@@ -183,90 +190,60 @@ const {
   clearHistory: clearHistorySession,
 } = useSearchSession();
 
-const matchBlockedIndex = ref({});
 const matchBlockMenu = ref(buildContextMenuClosedState({ blocked: false }));
 
 const displayPosterFor = (item) => rewriteDisplayPosterUrl(item && item.poster, runtimeConfig.value || {});
 
-const matchBlockMenuLabel = computed(() => {
-  if (matchBlockMenu.value.busy) return '处理中...';
-  return matchBlockMenu.value.blocked ? '取消匹配禁用' : '加入匹配禁用';
-});
-
-const matchBlockMenuStyle = computed(() => buildContextMenuStyle(matchBlockMenu.value));
-
 const getAggregateRules = () =>
   runtimeConfig.value && Array.isArray(runtimeConfig.value.aggregateRules) ? runtimeConfig.value.aggregateRules : [];
+
+const {
+  resetIndex: resetMatchBlockedIndex,
+  loadIndex: loadMatchBlockedIndexByKeyword,
+  applyIndexMutation: applyMatchBlockedIndex,
+  isBlocked: isMatchBlocked,
+} = useMatchBlockedIndex(getAggregateRules);
 
 const closeMatchBlockMenu = () => {
   matchBlockMenu.value = buildContextMenuClosedState({ blocked: false });
 };
 
 const loadMatchBlockedIndex = async () => {
-  const keyword = normalizeString(activeQuery.value);
-  if (!keyword) {
-    matchBlockedIndex.value = {};
-    return matchBlockedIndex.value;
-  }
-  const next = await fetchBlockedMatchIndex(keyword, getAggregateRules()).catch(() => ({}));
-  matchBlockedIndex.value = next && typeof next === 'object' ? next : {};
-  return matchBlockedIndex.value;
+  return loadMatchBlockedIndexByKeyword(activeQuery.value);
 };
+
+const {
+  matchBlockMenuLabel,
+  matchBlockMenuDisabled,
+  openRecognizeDialogFromMenu,
+  toggleMatchBlockMenuItem,
+} = useSiteActionContextMenu({
+  menu: matchBlockMenu,
+  getKeyword: () => normalizeString(activeQuery.value),
+  openManualRecognizeDialog,
+  closeMenu: closeMatchBlockMenu,
+  applyMatchBlockedIndex,
+});
 
 const isItemMatchBlocked = (item) => {
   const current = item && typeof item === 'object' ? item : null;
-  if (!current || current.sourceKind !== 'site' || current.aggregateKind) return false;
-  const siteKey = normalizeString(current.siteKey);
-  const siteDetail = normalizeString(current.siteDetail);
-  if (!siteKey || !siteDetail) return false;
-  const entry = matchBlockedIndex.value && typeof matchBlockedIndex.value === 'object'
-    ? matchBlockedIndex.value[`${siteKey}::${siteDetail}`]
-    : null;
-  return !!(entry && entry.blockAll);
+  if (!current) return false;
+  return isMatchBlocked(
+    normalizeString(current.siteKey),
+    normalizeString(current.siteDetail),
+  );
 };
 
-const buildMatchBlockedEntryKey = (siteKey, siteDetail) => {
-  const safeSiteKey = normalizeString(siteKey);
-  const safeSiteDetail = normalizeString(siteDetail);
-  if (!safeSiteKey || !safeSiteDetail) return '';
-  return `${safeSiteKey}::${safeSiteDetail}`;
-};
-
-const applyMatchBlockedIndexMutation = (payload, blocked) => {
-  const current = matchBlockedIndex.value && typeof matchBlockedIndex.value === 'object'
-    ? { ...matchBlockedIndex.value }
-    : {};
-  const entryKey = buildMatchBlockedEntryKey(payload && payload.siteKey, payload && payload.siteDetail);
-  if (!entryKey) {
-    matchBlockedIndex.value = current;
-    return current;
-  }
-  if (blocked) {
-    current[entryKey] = {
-      ...(current[entryKey] && typeof current[entryKey] === 'object' ? current[entryKey] : {}),
-      blockAll: true,
-      siteKey: normalizeString(payload && payload.siteKey),
-      siteDetail: normalizeString(payload && payload.siteDetail),
-      spiderApi: normalizeString(payload && payload.spiderApi),
-      poster: normalizeString(payload && payload.poster),
-    };
-  } else {
-    delete current[entryKey];
-  }
-  matchBlockedIndex.value = current;
-  return current;
+const isContextMenuEnabledItem = (item) => {
+  const current = item && typeof item === 'object' ? item : null;
+  if (!current) return false;
+  if (current.sourceKind === 'site') return true;
+  return !!current.aggregateKind;
 };
 
 const openMatchBlockMenu = async (event, item) => {
   const current = item && typeof item === 'object' ? item : null;
-  if (!current || current.sourceKind !== 'site' || current.aggregateKind) {
-    closeMatchBlockMenu();
-    return;
-  }
-  const keyword = normalizeString(activeQuery.value);
-  const siteKey = normalizeString(current.siteKey);
-  const siteDetail = normalizeString(current.siteDetail);
-  if (!keyword || !siteKey || !siteDetail) {
+  if (!isContextMenuEnabledItem(current)) {
     closeMatchBlockMenu();
     return;
   }
@@ -277,41 +254,9 @@ const openMatchBlockMenu = async (event, item) => {
   });
 };
 
-const toggleMatchBlockMenuItem = async () => {
-  const current = matchBlockMenu.value.item && typeof matchBlockMenu.value.item === 'object'
-    ? matchBlockMenu.value.item
-    : null;
-  const keyword = normalizeString(activeQuery.value);
-  if (!current || !keyword || matchBlockMenu.value.busy) return;
-  const nextBlocked = !matchBlockMenu.value.blocked;
-  const payload = {
-    keyword,
-    siteKey: normalizeString(current.siteKey),
-    spiderApi: normalizeString(current.spiderApi),
-    siteDetail: normalizeString(current.siteDetail),
-    poster: normalizeString(current.poster),
-  };
-  if (!payload.siteKey || !payload.siteDetail) return;
-  matchBlockMenu.value = { ...matchBlockMenu.value, busy: true };
-  try {
-    if (matchBlockMenu.value.blocked) {
-      await deleteSmartMatchBlockItem(payload);
-    } else {
-      await addSmartMatchBlockItem(payload);
-    }
-    applyMatchBlockedIndexMutation(payload, nextBlocked);
-    try {
-      window.dispatchEvent(new CustomEvent('tv:smart-matchblock-updated', { detail: { keyword, payload, blocked: nextBlocked } }));
-    } catch (_error) {}
-  } finally {
-    closeMatchBlockMenu();
-  }
-};
-
 const handleDocumentPointer = (event) => {
-  const menuEl = matchBlockMenuRef.value;
   const target = event && event.target ? event.target : null;
-  if (menuEl && target && typeof menuEl.contains === 'function' && menuEl.contains(target)) return;
+  if (target && target.closest && target.closest('.search-matchblock-menu')) return;
   closeMatchBlockMenu();
 };
 
@@ -328,7 +273,7 @@ const handleSmartMatchBlockUpdated = async (event) => {
     : null;
   const blocked = !!(event && event.detail && event.detail.blocked);
   if (payload) {
-    applyMatchBlockedIndexMutation(payload, blocked);
+    applyMatchBlockedIndex(payload, blocked);
   }
 };
 
@@ -427,7 +372,7 @@ onBeforeUnmount(() => {
 watch(activeQuery, async () => {
   closeMatchBlockMenu();
   if (!normalizeString(activeQuery.value)) {
-    matchBlockedIndex.value = {};
+    resetMatchBlockedIndex();
   }
 });
 </script>

@@ -1717,6 +1717,234 @@
 
           <div class="dashboard-card adm-space-y-4">
             <div class="adm-flex adm-items-center adm-gap-3">
+              <div class="adm-text-sm adm-font-semibold adm-text-gray-700">Manual 匹配源管理</div>
+            </div>
+            <div class="tv-panel adm-overflow-hidden">
+              <div class="adm-flex adm-divide-x adm-divide-gray-100">
+                <div class="adm-w-64 adm-flex-shrink-0 adm-px-4 adm-py-3 adm-text-sm adm-font-medium adm-text-gray-700 adm-flex adm-items-center adm-justify-between adm-gap-2">
+                  <span>TMDB 数据</span>
+                  <button type="button" class="btn-green adm-rounded-full" @click="openManualTmdbDialog">添加</button>
+                </div>
+                <div class="adm-flex-1 adm-min-w-0 adm-overflow-auto">
+                  <table class="smart-manual-table smart-manual-head-table adm-text-sm adm-text-left adm-text-gray-700" :style="manualColumnLayoutStyle">
+                    <colgroup>
+                      <col style="width:160px;" />
+                      <col :style="{ width: manualDetailColWidth }" />
+                      <col :style="{ width: manualPanFlagColWidth }" />
+                      <col style="width:120px;" />
+                      <col style="width:96px;" />
+                      <col style="width:80px;" />
+                      <col style="width:120px;" />
+                      <col style="width:96px;" />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th class="adm-px-3 adm-py-3 adm-font-medium adm-whitespace-nowrap adm-text-left">站源</th>
+                        <th class="adm-px-3 adm-py-3 adm-font-medium adm-whitespace-nowrap adm-text-left">详情ID</th>
+                        <th class="adm-px-3 adm-py-3 adm-font-medium adm-whitespace-nowrap adm-text-left">panflag</th>
+                        <th class="adm-px-3 adm-py-3 adm-font-medium adm-whitespace-nowrap adm-text-left">季度补全</th>
+                        <th class="adm-px-3 adm-py-3 adm-font-medium adm-whitespace-nowrap adm-text-left">自动失效</th>
+                        <th class="adm-px-3 adm-py-3 adm-font-medium adm-whitespace-nowrap adm-text-left">状态</th>
+                        <th class="adm-px-3 adm-py-3 adm-font-medium adm-whitespace-nowrap adm-text-left">操作</th>
+                        <th class="adm-px-3 adm-py-3 adm-font-medium adm-whitespace-nowrap adm-text-right">
+                          <button
+                            v-if="manualTmdbSelectedReady"
+                            type="button"
+                            class="btn-green adm-rounded-full"
+                            @click="toggleManualItemEditor"
+                          >
+                            {{ manualItemEditorOpen ? '取消' : '添加' }}
+                          </button>
+                        </th>
+                      </tr>
+                    </thead>
+                  </table>
+                </div>
+              </div>
+
+              <div class="adm-flex adm-divide-x adm-divide-gray-100">
+                <div class="adm-w-64 adm-flex-shrink-0 adm-max-h-60vh adm-overflow-y-auto">
+                  <ul class="adm-p-3 adm-space-y-2">
+                    <li v-if="manualTmdbItemsLoading" class="adm-px-4 adm-py-3 adm-text-gray-500 adm-text-sm">加载中...</li>
+                    <li v-else-if="!manualTmdbItems.length" class="adm-px-4 adm-py-3 adm-text-gray-500 adm-text-sm">无数据</li>
+                    <li
+                      v-for="item in manualTmdbItems"
+                      :key="`manual-tmdb-${item.tmdbType}-${item.tmdbId}`"
+                      class="smart-match-keyword-chip adm-px-4 adm-py-2 adm-rounded-full adm-border adm-flex adm-items-center adm-gap-2 adm-transition-colors adm-max-w-full"
+                      :data-active="isManualTmdbItemSelected(item)"
+                      :style="isManualTmdbItemSelected(item)
+                        ? 'background: rgba(34,197,94,.10); border-color: rgba(34,197,94,.30);'
+                        : 'border-color: #e5e7eb; cursor: pointer;'"
+                      @click="toggleManualTmdbItem(item)"
+                    >
+                      <div class="smart-match-keyword-main">
+                        <div class="adm-text-sm adm-text-gray-700 smart-match-keyword-name">{{ item.title }}({{ item.tmdbType }}:{{ item.tmdbId }})</div>
+                        <div class="smart-match-keyword-count">{{ item.count || 0 }}</div>
+                      </div>
+                      <div class="adm-flex-shrink-0">
+                        <button
+                          type="button"
+                          class="action-btn red"
+                          :disabled="manualTmdbItemsLoading || manualTmdbDeletingKey === `${item.tmdbType}:${item.tmdbId}`"
+                          @click.stop="removeManualTmdbItem(item)"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+
+                <div class="adm-flex-1 adm-min-w-0 adm-max-h-60vh adm-overflow-auto tv-cpo-config-table">
+                  <table class="smart-manual-table adm-text-sm adm-text-left adm-text-gray-700" :style="manualColumnLayoutStyle">
+                    <colgroup>
+                      <col style="width:160px;" />
+                      <col :style="{ width: manualDetailColWidth }" />
+                      <col :style="{ width: manualPanFlagColWidth }" />
+                      <col style="width:120px;" />
+                      <col style="width:96px;" />
+                      <col style="width:80px;" />
+                      <col style="width:120px;" />
+                      <col style="width:96px;" />
+                    </colgroup>
+                    <tbody>
+                      <tr v-if="!manualTmdbSelectedReady">
+                        <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="8">请选择 TMDB 数据</td>
+                      </tr>
+                      <tr v-else-if="manualItemRowsLoading">
+                        <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="8">加载中...</td>
+                      </tr>
+                      <tr v-else-if="manualItemEditorOpen">
+                        <td class="adm-px-3 adm-py-2"></td>
+                        <td class="adm-px-3 adm-py-2"></td>
+                        <td class="adm-px-3 adm-py-2">
+                          <input v-model="manualItemDraft.panFlag" class="tv-field adm-min-w-0" />
+                        </td>
+                        <td class="adm-px-3 adm-py-2">
+                          <input v-model="manualItemDraft.seasonHint" class="tv-field adm-min-w-0" />
+                        </td>
+                        <td class="adm-px-3 adm-py-2">
+                          <label class="enable-switch" title="自动失效">
+                            <input v-model="manualItemDraft.autoDisable" type="checkbox" />
+                            <span class="enable-slider"></span>
+                          </label>
+                        </td>
+                        <td class="adm-px-3 adm-py-2 adm-text-gray-500">待保存</td>
+                        <td class="adm-px-3 adm-py-2" colspan="2">
+                          <div class="adm-flex adm-items-center adm-gap-2">
+                            <button
+                              type="button"
+                              class="action-btn green"
+                              :disabled="manualItemSaving"
+                              @click="saveManualItemDraft"
+                            >保存</button>
+                            <button
+                              type="button"
+                              class="action-btn gray"
+                              :disabled="manualItemSaving"
+                              @click="cancelManualItemEditor"
+                            >取消</button>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr v-if="manualTmdbSelectedReady && !manualItemRowsLoading && !manualItemRows.length && !manualItemEditorOpen">
+                        <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="8">无数据</td>
+                      </tr>
+                      <tr v-for="row in manualItemRows" :key="`manual-item-${row.id}`">
+                        <template v-if="manualItemEditingId === row.id">
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">
+                            <input
+                              v-if="isManualRowSourceMode(row)"
+                              v-model="manualItemEditDraft.siteKey"
+                              class="tv-field adm-min-w-0"
+                            />
+                            <span v-else>{{ row.siteKey || '-' }}</span>
+                          </td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">
+                            <input
+                              v-if="isManualRowSourceMode(row)"
+                              v-model="manualItemEditDraft.siteDetail"
+                              class="tv-field adm-min-w-0"
+                            />
+                            <span v-else style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ row.siteDetail || '-' }}</span>
+                          </td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">
+                            <input
+                              v-if="isManualRowPanMode(row)"
+                              v-model="manualItemEditDraft.panFlag"
+                              class="tv-field adm-min-w-0"
+                            />
+                            <span v-else>{{ row.panFlag || '-' }}</span>
+                          </td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">
+                            <input v-model="manualItemEditDraft.seasonHint" class="tv-field adm-min-w-0" />
+                          </td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">
+                            <label class="enable-switch" title="自动失效">
+                              <input v-model="manualItemEditDraft.autoDisable" type="checkbox" />
+                              <span class="enable-slider"></span>
+                            </label>
+                          </td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">待保存</td>
+                          <td class="adm-px-3 adm-py-2" colspan="2">
+                            <div class="adm-flex adm-items-center adm-gap-2">
+                              <button
+                                type="button"
+                                class="action-btn green"
+                                :disabled="manualItemUpdating"
+                                @click="saveManualItemRowEditor(row)"
+                              >
+                                保存
+                              </button>
+                              <button
+                                type="button"
+                                class="action-btn gray"
+                                :disabled="manualItemUpdating"
+                                @click="cancelManualItemRowEditor"
+                              >
+                                取消
+                              </button>
+                            </div>
+                          </td>
+                        </template>
+                        <template v-else>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">{{ row.siteKey || '-' }}</td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">{{ row.siteDetail || '-' }}</td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">{{ row.panFlag || '-' }}</td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">{{ row.seasonHint || '-' }}</td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">{{ row.autoDisable ? '是' : '否' }}</td>
+                          <td class="adm-px-3 adm-py-2 adm-text-xs">{{ row.enabled ? '启用' : '禁用' }}</td>
+                          <td class="adm-px-3 adm-py-2" colspan="2">
+                            <div class="adm-flex adm-items-center adm-gap-2">
+                              <button
+                                type="button"
+                                class="action-btn blue"
+                                :disabled="manualItemDeletingId === row.id"
+                                @click="openManualItemRowEditor(row)"
+                              >
+                                修改
+                              </button>
+                              <button
+                                type="button"
+                                class="action-btn red"
+                                :disabled="manualItemDeletingId === row.id"
+                                @click="removeManualItemRow(row)"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          </td>
+                        </template>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-card adm-space-y-4">
+            <div class="adm-flex adm-items-center adm-gap-3">
               <div class="adm-text-sm adm-font-semibold adm-text-gray-700">网盘映射设置</div>
             </div>
             <div class="adm-text-xs adm-text-gray-500">用于智能提取匹配别名</div>
@@ -2213,6 +2441,15 @@
         ></section>
       </div>
     </div>
+    <TMDBRecognizeDialog
+      v-model="manualTmdbDialogOpen"
+      :keyword="manualTmdbDialogKeyword"
+      :bootstrap="props.bootstrap"
+      :confirm-busy="manualTmdbAdding"
+      confirm-busy-text="添加中"
+      :auto-close-on-select="false"
+      @select="confirmManualTmdbSelectionByDialog"
+    />
     <div v-if="toasts.length" class="mf-toast-container">
       <div
         v-for="toast in toasts"
@@ -2252,6 +2489,8 @@ import {
   fetchCatpawrunnerWebsitePans,
   fetchSmartMatchBlockItems,
   fetchSmartMatchBlockKeywords,
+  fetchDashboardSmartManualTMDBItems,
+  fetchDashboardSmartManualItems,
   fetchSmartSettings,
   fetchThirdpartySettings,
   fetchThirdpartySiteCategories,
@@ -2283,6 +2522,11 @@ import {
   saveMagicSettings,
   saveSmartSettings,
   saveThirdpartySettings,
+  addDashboardSmartManualTMDBItem,
+  deleteDashboardSmartManualTMDBItem,
+  addDashboardSmartManualItem,
+  updateDashboardSmartManualItem,
+  deleteDashboardSmartManualItem,
   clearDoubanMetadataCache,
   clearTMDBMetadataCache,
   clearAllMetadataCache,
@@ -2311,6 +2555,8 @@ import {
   WandIcon,
 } from './dashboardIcons';
 import { normalizeSeasonEpisodeMarkers } from '../../shared/episodeMarkerNormalize';
+import MediaCard from '../../shared/MediaCard.vue';
+import TMDBRecognizeDialog from '../../shared/TMDBRecognizeDialog.vue';
 
 const props = defineProps({
   bootstrap: {
@@ -2542,6 +2788,71 @@ const smartMatchBlockSelectedKeyword = ref('');
 const smartMatchBlockItems = ref([]);
 const smartMatchBlockKeywordsLoading = ref(false);
 const smartMatchBlockItemsLoading = ref(false);
+const manualTmdbDialogOpen = ref(false);
+const manualTmdbDialogKeyword = ref('');
+const manualTmdbItemsLoading = ref(false);
+const manualTmdbAdding = ref(false);
+const manualTmdbItems = ref([]);
+const manualTmdbSelectedTmdbType = ref('');
+const manualTmdbSelectedTmdbId = ref(0);
+const manualTmdbDeletingKey = ref('');
+const manualTmdbSelectedKey = computed(() => {
+  const type = String(manualTmdbSelectedTmdbType.value || '').trim().toLowerCase();
+  const id = Number.isFinite(Number(manualTmdbSelectedTmdbId.value))
+    ? Math.trunc(Number(manualTmdbSelectedTmdbId.value))
+    : 0;
+  if ((type !== 'tv' && type !== 'movie') || id <= 0) return '';
+  return `${type}:${id}`;
+});
+const manualTmdbSelectedReady = computed(() => !!manualTmdbSelectedKey.value);
+const manualItemRowsLoading = ref(false);
+const manualItemRows = ref([]);
+const manualItemEditorOpen = ref(false);
+const manualItemSaving = ref(false);
+const manualItemUpdating = ref(false);
+const manualItemDeletingId = ref(0);
+const manualItemEditingId = ref(0);
+const manualItemDraft = ref({
+  siteKey: '',
+  siteDetail: '',
+  panFlag: '',
+  seasonHint: '',
+  autoDisable: true
+});
+const manualItemEditDraft = ref({
+  siteKey: '',
+  spiderApi: '',
+  siteDetail: '',
+  panFlag: '',
+  seasonHint: '',
+  autoDisable: true
+});
+const manualDetailColWidth = computed(() => {
+  const rows = Array.isArray(manualItemRows.value) ? manualItemRows.value : [];
+  let longest = 0;
+  rows.forEach((row) => {
+    const value = typeof row?.siteDetail === 'string' ? row.siteDetail.trim() : '';
+    if (!value) return;
+    if (value.length > longest) longest = value.length;
+  });
+  const width = Math.min(34, Math.max(8, longest + 2));
+  return `${width}ch`;
+});
+const manualPanFlagColWidth = computed(() => {
+  const rows = Array.isArray(manualItemRows.value) ? manualItemRows.value : [];
+  let longest = 0;
+  rows.forEach((row) => {
+    const value = typeof row?.panFlag === 'string' ? row.panFlag.trim() : '';
+    if (!value) return;
+    if (value.length > longest) longest = value.length;
+  });
+  const width = Math.min(22, Math.max(8, longest + 2));
+  return `${width}ch`;
+});
+const manualColumnLayoutStyle = computed(() => ({
+  '--manual-col-detail': manualDetailColWidth.value,
+  '--manual-col-panflag': manualPanFlagColWidth.value,
+}));
 const smartLoaded = ref(false);
 const thirdPartyLoaded = ref(false);
 const thirdPartyHomeSites = ref([]);
@@ -4872,6 +5183,7 @@ async function loadSmartPanel(force = false) {
     const data = await fetchSmartSettings();
     applySmartSettings(data);
     await loadSmartMatchBlockKeywords();
+    await loadManualTmdbItems();
     smartLoaded.value = true;
   } catch (err) {
     notifyError((err && err.message) || '加载失败');
@@ -4982,6 +5294,310 @@ function handleSmartMatchBlockUpdated() {
   if (smartMatchBlockSelectedKeyword.value) {
     void loadSmartMatchBlockItems(smartMatchBlockSelectedKeyword.value);
   }
+}
+
+function normalizeManualTMDBType(value) {
+  const type = String(value || '').trim().toLowerCase();
+  if (type === 'tv' || type === 'movie') return type;
+  return '';
+}
+
+function buildManualTmdbKey(tmdbType, tmdbId) {
+  const type = normalizeManualTMDBType(tmdbType);
+  const id = Number.isFinite(Number(tmdbId)) ? Math.trunc(Number(tmdbId)) : 0;
+  if (!type || id <= 0) return '';
+  return `${type}:${id}`;
+}
+
+function clearManualTmdbSelection() {
+  manualTmdbSelectedTmdbType.value = '';
+  manualTmdbSelectedTmdbId.value = 0;
+}
+
+function isManualTmdbItemSelected(item) {
+  return buildManualTmdbKey(item?.tmdbType, item?.tmdbId) === manualTmdbSelectedKey.value;
+}
+
+async function loadManualTmdbItems() {
+  if (!isAdmin.value || manualTmdbItemsLoading.value) return;
+  manualTmdbItemsLoading.value = true;
+  try {
+    const data = await fetchDashboardSmartManualTMDBItems();
+    const rows = Array.isArray(data?.items) ? data.items : [];
+    manualTmdbItems.value = rows.map((item) => ({
+      tmdbType: normalizeManualTMDBType(item?.tmdbType),
+      tmdbId: Number.isFinite(Number(item?.tmdbId)) ? Math.trunc(Number(item.tmdbId)) : 0,
+      title: typeof item?.title === 'string' ? item.title.trim() : '',
+      count: Number.isFinite(Number(item?.count)) ? Math.max(0, Math.trunc(Number(item.count))) : 0
+    })).filter((item) => item.tmdbType && item.tmdbId > 0 && item.title);
+    if (!manualTmdbItems.value.some((item) => buildManualTmdbKey(item.tmdbType, item.tmdbId) === manualTmdbSelectedKey.value)) {
+      clearManualTmdbSelection();
+    }
+  } catch (err) {
+    manualTmdbItems.value = [];
+    clearManualTmdbSelection();
+    notifyError((err && err.message) || '加载失败');
+  } finally {
+    manualTmdbItemsLoading.value = false;
+  }
+}
+
+function buildManualItemDraft() {
+  return {
+    siteKey: '',
+    siteDetail: '',
+    panFlag: '',
+    seasonHint: '',
+    autoDisable: true
+  };
+}
+
+function buildManualItemEditDraft(row = null) {
+  return {
+    siteKey: typeof row?.siteKey === 'string' ? row.siteKey : '',
+    spiderApi: typeof row?.spiderApi === 'string' ? row.spiderApi : '',
+    siteDetail: typeof row?.siteDetail === 'string' ? row.siteDetail : '',
+    panFlag: typeof row?.panFlag === 'string' ? row.panFlag : '',
+    seasonHint: typeof row?.seasonHint === 'string' ? row.seasonHint : '',
+    autoDisable: row?.autoDisable !== false
+  };
+}
+
+async function loadManualItemRows() {
+  if (!isAdmin.value || manualItemRowsLoading.value) return;
+  const tmdbType = normalizeManualTMDBType(manualTmdbSelectedTmdbType.value);
+  const tmdbId = manualTmdbSelectedTmdbId.value;
+  if (!tmdbType || !tmdbId) {
+    manualItemRows.value = [];
+    return;
+  }
+  manualItemRowsLoading.value = true;
+  try {
+    const data = await fetchDashboardSmartManualItems(tmdbType, tmdbId);
+    const rows = Array.isArray(data?.items) ? data.items : [];
+    manualItemRows.value = rows.map((item) => ({
+      id: Number.isFinite(Number(item?.id)) ? Math.trunc(Number(item.id)) : 0,
+      tmdbType: normalizeManualTMDBType(item?.tmdbType),
+      tmdbId: Number.isFinite(Number(item?.tmdbId)) ? Math.trunc(Number(item.tmdbId)) : 0,
+      siteKey: typeof item?.siteKey === 'string' ? item.siteKey.trim() : '',
+      spiderApi: typeof item?.spiderApi === 'string' ? item.spiderApi.trim() : '',
+      siteDetail: typeof item?.siteDetail === 'string' ? item.siteDetail.trim() : '',
+      panFlag: typeof item?.panFlag === 'string' ? item.panFlag.trim() : '',
+      seasonHint: typeof item?.seasonHint === 'string' ? item.seasonHint.trim() : '',
+      autoDisable: item?.autoDisable !== false,
+      enabled: item?.enabled !== false
+    })).filter((item) => item.id > 0 && item.tmdbType && item.tmdbId > 0);
+    manualTmdbItems.value = manualTmdbItems.value.map((item) => (
+      buildManualTmdbKey(item.tmdbType, item.tmdbId) === manualTmdbSelectedKey.value
+        ? { ...item, count: manualItemRows.value.length }
+        : item
+    ));
+  } catch (err) {
+    manualItemRows.value = [];
+    notifyError((err && err.message) || '加载失败');
+  } finally {
+    manualItemRowsLoading.value = false;
+  }
+}
+
+function toggleManualTmdbItem(item) {
+  const tmdbType = normalizeManualTMDBType(item?.tmdbType);
+  const tmdbId = Number.isFinite(Number(item?.tmdbId)) ? Math.trunc(Number(item.tmdbId)) : 0;
+  const key = buildManualTmdbKey(tmdbType, tmdbId);
+  if (!key) return;
+  if (manualTmdbSelectedKey.value === key) {
+    clearManualTmdbSelection();
+    return;
+  }
+  manualTmdbSelectedTmdbType.value = tmdbType;
+  manualTmdbSelectedTmdbId.value = tmdbId;
+}
+
+function isManualRowSourceMode(row) {
+  return !!String(row?.siteKey || '').trim()
+    || !!String(row?.spiderApi || '').trim()
+    || !!String(row?.siteDetail || '').trim();
+}
+
+function isManualRowPanMode(row) {
+  return !!String(row?.panFlag || '').trim();
+}
+
+function openManualItemRowEditor(row) {
+  const id = Number.isFinite(Number(row?.id)) ? Math.trunc(Number(row.id)) : 0;
+  if (id <= 0 || manualItemUpdating.value) return;
+  manualItemEditorOpen.value = false;
+  manualItemDraft.value = buildManualItemDraft();
+  manualItemEditingId.value = id;
+  manualItemEditDraft.value = buildManualItemEditDraft(row);
+}
+
+function cancelManualItemRowEditor() {
+  manualItemEditingId.value = 0;
+  manualItemEditDraft.value = buildManualItemEditDraft();
+}
+
+function toggleManualItemEditor() {
+  if (!manualTmdbSelectedReady.value) return;
+  if (manualItemEditorOpen.value) {
+    manualItemEditorOpen.value = false;
+    manualItemDraft.value = buildManualItemDraft();
+    return;
+  }
+  cancelManualItemRowEditor();
+  manualItemEditorOpen.value = true;
+  manualItemDraft.value = buildManualItemDraft();
+}
+
+function cancelManualItemEditor() {
+  manualItemEditorOpen.value = false;
+  manualItemDraft.value = buildManualItemDraft();
+}
+
+async function saveManualItemRowEditor(row) {
+  const id = Number.isFinite(Number(row?.id)) ? Math.trunc(Number(row.id)) : 0;
+  if (id <= 0 || manualItemEditingId.value !== id || manualItemUpdating.value) return;
+  const sourceMode = isManualRowSourceMode(row);
+  const panMode = isManualRowPanMode(row);
+  const nextSiteKey = sourceMode
+    ? String(manualItemEditDraft.value?.siteKey || '').trim()
+    : String(row?.siteKey || '').trim();
+  const nextSpiderApi = sourceMode
+    ? String(manualItemEditDraft.value?.spiderApi || '').trim()
+    : String(row?.spiderApi || '').trim();
+  const nextSiteDetail = sourceMode
+    ? String(manualItemEditDraft.value?.siteDetail || '').trim()
+    : String(row?.siteDetail || '').trim();
+  const nextPanFlag = panMode
+    ? String(manualItemEditDraft.value?.panFlag || '').trim()
+    : String(row?.panFlag || '').trim();
+  if (panMode && !nextPanFlag) {
+    notifyError('请先填写 panflag');
+    return;
+  }
+  manualItemUpdating.value = true;
+  try {
+    await updateDashboardSmartManualItem({
+      id,
+      siteKey: nextSiteKey,
+      spiderApi: nextSpiderApi,
+      siteDetail: nextSiteDetail,
+      panFlag: nextPanFlag,
+      seasonHint: String(manualItemEditDraft.value?.seasonHint || '').trim(),
+      autoDisable: !!manualItemEditDraft.value?.autoDisable
+    });
+    await loadManualItemRows();
+    cancelManualItemRowEditor();
+    notifySuccess('保存成功');
+  } catch (err) {
+    notifyError((err && err.message) || '保存失败');
+  } finally {
+    manualItemUpdating.value = false;
+  }
+}
+
+async function saveManualItemDraft() {
+  if (!manualTmdbSelectedReady.value || manualItemSaving.value) return;
+  const panFlag = String(manualItemDraft.value?.panFlag || '').trim();
+  if (!panFlag) {
+    notifyError('请先填写 panflag');
+    return;
+  }
+  manualItemSaving.value = true;
+  try {
+    await addDashboardSmartManualItem({
+      tmdbType: manualTmdbSelectedTmdbType.value,
+      tmdbId: manualTmdbSelectedTmdbId.value,
+      siteKey: String(manualItemDraft.value?.siteKey || '').trim(),
+      siteDetail: String(manualItemDraft.value?.siteDetail || '').trim(),
+      panFlag,
+      seasonHint: String(manualItemDraft.value?.seasonHint || '').trim(),
+      autoDisable: !!manualItemDraft.value?.autoDisable
+    });
+    await loadManualItemRows();
+    cancelManualItemEditor();
+    notifySuccess('保存成功');
+  } catch (err) {
+    notifyError((err && err.message) || '保存失败');
+  } finally {
+    manualItemSaving.value = false;
+  }
+}
+
+async function removeManualItemRow(row) {
+  const id = Number.isFinite(Number(row?.id)) ? Math.trunc(Number(row.id)) : 0;
+  if (id <= 0 || manualItemDeletingId.value === id) return;
+  if (manualItemEditingId.value === id) {
+    cancelManualItemRowEditor();
+  }
+  manualItemDeletingId.value = id;
+  try {
+    await deleteDashboardSmartManualItem({ id });
+    await loadManualItemRows();
+    notifySuccess('已删除');
+  } catch (err) {
+    notifyError((err && err.message) || '删除失败');
+  } finally {
+    manualItemDeletingId.value = 0;
+  }
+}
+
+async function removeManualTmdbItem(item) {
+  const tmdbType = normalizeManualTMDBType(item?.tmdbType);
+  const tmdbId = Number.isFinite(Number(item?.tmdbId)) ? Math.trunc(Number(item.tmdbId)) : 0;
+  const key = buildManualTmdbKey(tmdbType, tmdbId);
+  if (!key || manualTmdbItemsLoading.value) return;
+  if (manualTmdbDeletingKey.value === key) return;
+  manualTmdbDeletingKey.value = key;
+  try {
+    await deleteDashboardSmartManualTMDBItem({ tmdbType, tmdbId });
+    if (manualTmdbSelectedKey.value === key) {
+      clearManualTmdbSelection();
+      manualItemEditorOpen.value = false;
+      manualItemDraft.value = buildManualItemDraft();
+      manualItemRows.value = [];
+    }
+    await loadManualTmdbItems();
+    notifySuccess('已删除');
+  } catch (err) {
+    notifyError((err && err.message) || '删除失败');
+  } finally {
+    manualTmdbDeletingKey.value = '';
+  }
+}
+
+function openManualTmdbDialog() {
+  manualTmdbDialogKeyword.value = '';
+  manualTmdbDialogOpen.value = true;
+}
+
+function closeManualTmdbDialog() {
+  manualTmdbDialogOpen.value = false;
+}
+
+function confirmManualTmdbSelectionByDialog(selected) {
+  const current = selected && typeof selected === 'object' ? selected : null;
+  if (!current || manualTmdbAdding.value) return;
+  const tmdbType = normalizeManualTMDBType(current.tmdbType);
+  const tmdbId = Number(current.tmdbId);
+  const title = typeof current.title === 'string' ? current.title.trim() : '';
+  if (!tmdbType || !Number.isFinite(tmdbId) || tmdbId <= 0 || !title) return;
+  manualTmdbAdding.value = true;
+  addDashboardSmartManualTMDBItem({
+    tmdbType,
+    tmdbId,
+    title
+  }).then(async () => {
+    await loadManualTmdbItems();
+    manualTmdbSelectedTmdbType.value = tmdbType;
+    manualTmdbSelectedTmdbId.value = tmdbId;
+    closeManualTmdbDialog();
+    notifySuccess('添加成功');
+  }).catch((err) => {
+    notifyError((err && err.message) || '添加失败');
+  }).finally(() => {
+    manualTmdbAdding.value = false;
+  });
 }
 
 function addMagicEpisodeCleanRule() {
@@ -6229,6 +6845,17 @@ watch(activeNavKey, (key) => {
   loadDashboardPanelByKey(key);
 });
 
+watch(manualTmdbSelectedKey, (key) => {
+  manualItemEditorOpen.value = false;
+  manualItemDraft.value = buildManualItemDraft();
+  cancelManualItemRowEditor();
+  if (!key) {
+    manualItemRows.value = [];
+    return;
+  }
+  void loadManualItemRows();
+});
+
 watch([showCatSyncFromServerRow, catSyncFromServerOptions], ([visible, options]) => {
   if (!visible) {
     if (catSyncFromServerKey.value) catSyncFromServerKey.value = '';
@@ -6241,6 +6868,9 @@ watch([showCatSyncFromServerRow, catSyncFromServerOptions], ([visible, options])
 </script>
 
 <style>
+@import '../../shared/commonButtons.css';
+@import '../../shared/commonFields.css';
+
 .hidden { display: none !important; }
 
 .adm-min-h-screen { min-height: 100vh; }
@@ -6398,22 +7028,6 @@ watch([showCatSyncFromServerRow, catSyncFromServerOptions], ([visible, options])
   color: #4b5563;
 }
 
-.btn-green {
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  background: #22c55e;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.btn-green:hover { background: #16a34a; }
-
 .btn-pill-small {
   padding: 4px 8px;
   border-radius: 9999px;
@@ -6465,25 +7079,6 @@ watch([showCatSyncFromServerRow, catSyncFromServerOptions], ([visible, options])
   background: rgba(239, 68, 68, 0.12);
 }
 
-.btn-ghost-blue {
-  padding: 8px 12px;
-  border-radius: 10px;
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  border: 1px solid rgba(96, 165, 250, 0.55);
-  color: #60a5fa;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.btn-ghost-blue:hover {
-  background: rgba(96, 165, 250, 0.1);
-  border-color: rgba(96, 165, 250, 0.75);
-}
-
 .btn-ghost-red {
   padding: 8px 12px;
   border-radius: 10px;
@@ -6503,26 +7098,9 @@ watch([showCatSyncFromServerRow, catSyncFromServerOptions], ([visible, options])
   border-color: rgba(239, 68, 68, 0.75);
 }
 
-.btn-green:disabled,
-.btn-ghost-blue:disabled,
 .btn-ghost-red:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.tv-field {
-  width: 100%;
-  border-radius: 0.5rem;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: #111827;
-}
-
-.tv-field-readonly {
-  opacity: 0.6;
 }
 
 .tv-panel {
@@ -6705,6 +7283,16 @@ watch([showCatSyncFromServerRow, catSyncFromServerOptions], ([visible, options])
   table-layout: fixed;
   width: 1076px;
   min-width: 1076px;
+}
+
+.smart-manual-head-table {
+  border-collapse: collapse;
+}
+
+.smart-manual-table {
+  table-layout: fixed;
+  width: calc(672px + var(--manual-col-detail, 220px) + var(--manual-col-panflag, 120px));
+  min-width: calc(672px + var(--manual-col-detail, 220px) + var(--manual-col-panflag, 120px));
 }
 
 .smart-match-keyword-chip {

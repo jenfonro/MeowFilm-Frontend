@@ -159,7 +159,7 @@ export const runSmartPlaybackController = async ({
     candidateRegistry.forEach((candidate, candidateKey) => {
       if (!candidateKey || failedCandidateKeys.has(candidateKey)) return;
       if (!safeCandidateAllowed(candidate)) return;
-      if (!isPlaybackCandidateAllowedByAction(candidate, actionConstraint, runtimeSettings)) return;
+      if (!isPlaybackCandidateAllowedByAction(candidate, actionConstraint, runtimeSettings, currentContext)) return;
       if (!best || compareCandidates(candidate, best, orderMap) < 0) {
         best = candidate;
       }
@@ -282,6 +282,14 @@ export const runSmartPlaybackController = async ({
   const isClosedLoopStopped = () => safeStopped();
   const shouldBlockNewDetailRequests = () => isClosedLoopStopped() || flowState.pendingPlaybackLocked;
   const shouldBlockResolveRequests = () => shouldBlockNewDetailRequests() || playAttemptRunning;
+  const waitDispatchReady = async () => {
+    while (!isClosedLoopStopped()) {
+      if (flowState.pendingPlaybackLocked) return false;
+      if (!playAttemptRunning) return true;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    return false;
+  };
 
   const releasePendingPlaybackLock = ({ clearPending = true } = {}) => {
     flowState.pendingPlaybackLocked = false;
@@ -347,6 +355,8 @@ export const runSmartPlaybackController = async ({
 
           const reused = registerCandidates(siteItem);
           if (reused || shouldBlockNewDetailRequests()) continue;
+          const ready = await waitDispatchReady();
+          if (!ready || shouldBlockNewDetailRequests()) return;
 
           const detail = await Promise.resolve()
             .then(() => (typeof ensureSiteResultDetailCached === 'function'

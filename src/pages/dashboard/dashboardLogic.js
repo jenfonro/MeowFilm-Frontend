@@ -277,6 +277,36 @@ export async function deleteSmartMatchBlockKeyword(payload) {
   return postJson('/dashboard/smart/matchblock/keyword/delete', payload);
 }
 
+export async function fetchDashboardSmartManualTMDBItems() {
+  return getSuccessJson('/api/smart/manual/tmdb/get-list');
+}
+
+export async function addDashboardSmartManualTMDBItem(payload) {
+  return postJson('/api/smart/manual/tmdb/add', payload);
+}
+
+export async function deleteDashboardSmartManualTMDBItem(payload) {
+  return postJson('/api/smart/manual/tmdb/delete', payload);
+}
+
+export async function fetchDashboardSmartManualItems(tmdbType, tmdbId) {
+  const type = String(tmdbType || '').trim().toLowerCase();
+  const id = String(tmdbId || '').trim();
+  return getSuccessJson(`/api/smart/manual/item/get-data?tmdbType=${encodeURIComponent(type)}&tmdbId=${encodeURIComponent(id)}`);
+}
+
+export async function addDashboardSmartManualItem(payload) {
+  return postJson('/api/smart/manual/item/add', payload);
+}
+
+export async function updateDashboardSmartManualItem(payload) {
+  return postJson('/api/smart/manual/item/update', payload);
+}
+
+export async function deleteDashboardSmartManualItem(payload) {
+  return postJson('/api/smart/manual/item/delete', payload);
+}
+
 export async function fetchUsers() {
   return getSuccessJson('/dashboard/user/list');
 }

@@ -110,6 +110,14 @@ const extractSeasonHintFromText = (text) => {
   return /^\d+$/.test(normalized) ? normalizeInt(normalized) : parseChineseNumeralToInt(mSeason[1]);
 };
 
+const parseManualSeasonHint = (value) => {
+  const raw = normalizeString(value).toUpperCase();
+  if (!raw) return 0;
+  const matched = raw.match(/^S?\s*0*(\d{1,3})$/i);
+  if (!matched || !matched[1]) return 0;
+  return normalizeInt(matched[1]);
+};
+
 const extractNormalizedSeasonEpisode = (text, compiledRules, cleanRules) => {
   const rawText = normalizeString(text);
   const normalizedRawText = normalizeSeasonEpisodeMarkers(rawText);
@@ -693,6 +701,7 @@ export const buildPlaybackRecognitionData = ({
   siteResultItem,
   runtimeSettings,
   smartEpisodeMapping,
+  recognitionOptions = null,
 } = {}) => {
   const source = siteResultItem && typeof siteResultItem === 'object'
     ? {
@@ -738,6 +747,17 @@ export const buildPlaybackRecognitionData = ({
     : null;
   const tmdbMultiSeason = !!(smartEpisodeMapping && Array.isArray(smartEpisodeMapping.tmdbSeasons) && smartEpisodeMapping.tmdbSeasons.length > 1);
   const doubanMultiSeason = !!(smartEpisodeMapping && Array.isArray(smartEpisodeMapping.doubanSeasons) && smartEpisodeMapping.doubanSeasons.length > 1);
+  const manualHintSeason = (() => {
+    if (!(tmdbMultiSeason || doubanMultiSeason)) return 0;
+    const candidate = parseManualSeasonHint(recognitionOptions && recognitionOptions.manualSeasonHint);
+    if (candidate <= 0) return 0;
+    const tmdbRows = getTMDBSeasonRows(tmdbDetail);
+    const doubanRows = getDoubanSeasonRows(doubanMeta);
+    const hasTMDB = tmdbRows.some((row) => normalizeInt(row && (row.season != null ? row.season : row.season_number)) === candidate);
+    const hasDouban = doubanRows.some((row) => normalizeInt(row && (row.season != null ? row.season : row.season_number)) === candidate);
+    if (!hasTMDB && !hasDouban) return 0;
+    return candidate;
+  })();
   const panMatch = resolvePanMatch(entry.label, panTokens, panMappings);
   const items = [];
   const dirEpisodeMax = new Map();
@@ -785,6 +805,9 @@ export const buildPlaybackRecognitionData = ({
         else if (currentQuality) quality = currentQuality;
         else if (currentSeason > 0 && parentQuality) quality = parentQuality;
       }
+    }
+    if (episode > 0 && season <= 0 && manualHintSeason > 0) {
+      season = manualHintSeason;
     }
 
     if (!quality) {
