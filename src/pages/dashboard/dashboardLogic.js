@@ -1290,6 +1290,19 @@ export async function saveCatpawrunnerAdminSettings(apiBase, payload, tvUser = '
   });
 }
 
+export async function updateCatpawrunnerOnlineConfig(apiBase, onlineConfigId, tvUser = '') {
+  const id = String(onlineConfigId || '').trim();
+  if (!id) throw new Error('配置 ID 无效');
+  return requestCatpawrunnerAdminJson({
+    apiBase,
+    path: 'admin/online-configs/update',
+    method: 'POST',
+    body: { id },
+    timeoutMs: 12000,
+    tvUser
+  });
+}
+
 export async function fetchCatpawrunnerWebsitePans(apiBase, runtimeId, tvUser = '') {
   return requestCatpawrunnerAdminJson({
     apiBase,

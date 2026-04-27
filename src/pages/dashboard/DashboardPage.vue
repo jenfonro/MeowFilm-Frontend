@@ -633,28 +633,48 @@
                           <tr>
                             <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">名称</th>
                             <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">配置地址</th>
-                            <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">配置检测</th>
+                            <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">配置状态</th>
+                            <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">最后更新时间</th>
+                            <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">更新状态</th>
                             <th class="adm-px-3 adm-py-2 adm-whitespace-nowrap">操作</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr v-if="!catOnlineConfigs.length">
-                            <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="4">无数据</td>
+                            <td class="adm-px-3 adm-py-2 adm-text-gray-500" colspan="6">无数据</td>
                           </tr>
-                          <tr v-for="(item, index) in catOnlineConfigs" :key="`${item.name}-${index}`">
+                          <tr v-for="(item, index) in catOnlineConfigs" :key="item.id || `${item.name}-${index}`">
                             <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ item.name || '-' }}</td>
                             <td class="adm-px-3 adm-py-2">{{ item.url || '-' }}</td>
                             <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">
-                              <span class="availability-tag" :class="configCheckTagClass(item.check)">
+                              <span class="availability-tag" :class="catConfigStatusTagClass(item.status)">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                   <circle cx="12" cy="12" r="8"></circle>
                                   <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"></circle>
                                 </svg>
-                                {{ formatConfigCheckText(item.check, item.checkPhase) }}
+                                {{ formatCatConfigStatusText(item.status) }}
+                              </span>
+                            </td>
+                            <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">{{ formatCatConfigTimestamp(item.updateAt) }}</td>
+                            <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">
+                              <span class="availability-tag" :class="catConfigUpdateResultTagClass(item.updateResult)">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                  <circle cx="12" cy="12" r="8"></circle>
+                                  <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"></circle>
+                                </svg>
+                                {{ formatCatConfigUpdateResultText(item.updateResult) }}
                               </span>
                             </td>
                             <td class="adm-px-3 adm-py-2 adm-whitespace-nowrap">
                               <div class="action-group">
+                                <button
+                                  type="button"
+                                  class="action-btn green"
+                                  :disabled="catConfigUpdateBusyKey === buildCatConfigActionKey(item, index) || !item.id || catRemoteLoading || catSaving"
+                                  @click="triggerCatConfigUpdate(item, index)"
+                                >
+                                  {{ catConfigUpdateBusyKey === buildCatConfigActionKey(item, index) ? '更新中' : '更新' }}
+                                </button>
                                 <button type="button" class="action-btn blue" @click="openCatConfigEditorForEdit(index)">修改</button>
                                 <button type="button" class="action-btn red" @click="removeCatConfig(index)">删除</button>
                               </div>
@@ -2512,6 +2532,7 @@ import {
   resolveDashboardCatpawrunnerApiBase,
   restoreDashboardBackup,
   saveCatpawrunnerAdminSettings,
+  updateCatpawrunnerOnlineConfig,
   saveCatpawrunnerWebsitePans,
   saveDashboardCatpawrunnerServer,
   saveDashboardRelaySettings,
@@ -2691,6 +2712,7 @@ const catRemoteLoading = ref(false);
 const catConfigEditorOpen = ref(false);
 const catConfigEditorMode = ref('create');
 const catConfigEditorIndex = ref(-1);
+const catConfigUpdateBusyKey = ref('');
 const catConfigEditorForm = ref({
   name: '',
   url: ''
@@ -4123,12 +4145,24 @@ function normalizeGoProxyPanMap(pans) {
 
 function normalizeCatConfigRow(item) {
   const row = item && typeof item === 'object' ? item : {};
+  const statusRaw = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+  const updateResultRaw = typeof row.updateResult === 'string' ? row.updateResult.trim().toLowerCase() : '';
+  const checkedAtRaw = Number.isFinite(Number(row.checkedAt)) ? Math.trunc(Number(row.checkedAt)) : 0;
+  const updateAtRaw = Number.isFinite(Number(row.updateAt)) ? Math.trunc(Number(row.updateAt)) : 0;
   return {
     name: typeof row.name === 'string' ? row.name.trim() : '',
     url: typeof row.url === 'string' ? row.url.trim() : '',
     id: typeof row.id === 'string' ? row.id : '',
-    check: typeof row.check === 'string' ? row.check : (typeof row.status === 'string' ? row.status : ''),
-    checkPhase: typeof row.checkPhase === 'string' ? row.checkPhase : (typeof row.phase === 'string' ? row.phase : '')
+    status:
+      statusRaw === 'pass' || statusRaw === 'error' || statusRaw === 'unchecked' || statusRaw === 'checking'
+        ? statusRaw
+        : 'unchecked',
+    checkedAt: checkedAtRaw > 0 ? checkedAtRaw : 0,
+    updateAt: updateAtRaw > 0 ? updateAtRaw : 0,
+    updateResult:
+      updateResultRaw === 'pass' || updateResultRaw === 'error' || updateResultRaw === 'updating'
+        ? updateResultRaw
+        : ''
   };
 }
 
@@ -4142,36 +4176,56 @@ function normalizeCatPanRow(item, index = 0) {
   };
 }
 
-function normalizeConfigCheckStatus(value) {
+function normalizeCatConfigStatus(value) {
   const raw = typeof value === 'string' ? value.trim() : '';
   if (raw === 'pass' || raw === 'error' || raw === 'unchecked' || raw === 'checking') return raw;
   return 'unchecked';
 }
 
-function normalizeConfigCheckPhase(value) {
+function normalizeCatConfigUpdateResult(value) {
   const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  if (raw === 'download' || raw === 'runtime') return raw;
+  if (raw === 'pass' || raw === 'error' || raw === 'updating') return raw;
   return '';
 }
 
-function formatConfigCheckText(status, phase) {
-  const normalizedStatus = normalizeConfigCheckStatus(status);
+function formatCatConfigStatusText(status) {
+  const normalizedStatus = normalizeCatConfigStatus(status);
   if (normalizedStatus === 'pass') return '通过';
   if (normalizedStatus === 'checking') return '检测中';
-  if (normalizedStatus === 'error') {
-    const normalizedPhase = normalizeConfigCheckPhase(phase);
-    if (normalizedPhase === 'download') return '下载失败';
-    if (normalizedPhase === 'runtime') return '运行失败';
-    return '异常';
-  }
+  if (normalizedStatus === 'error') return '异常';
   return '未检测';
 }
 
-function configCheckTagClass(status) {
-  const normalizedStatus = normalizeConfigCheckStatus(status);
+function catConfigStatusTagClass(status) {
+  const normalizedStatus = normalizeCatConfigStatus(status);
   if (normalizedStatus === 'pass') return 'tag-green';
   if (normalizedStatus === 'error') return 'tag-yellow';
+  if (normalizedStatus === 'checking') return 'tag-gray';
   return 'tag-gray';
+}
+
+function formatCatConfigUpdateResultText(updateResult) {
+  const normalized = normalizeCatConfigUpdateResult(updateResult);
+  if (normalized === 'pass') return '成功';
+  if (normalized === 'error') return '失败';
+  if (normalized === 'updating') return '更新中';
+  return '-';
+}
+
+function catConfigUpdateResultTagClass(updateResult) {
+  const normalized = normalizeCatConfigUpdateResult(updateResult);
+  if (normalized === 'pass') return 'tag-green';
+  if (normalized === 'error') return 'tag-red';
+  return 'tag-gray';
+}
+
+function formatCatConfigTimestamp(ts) {
+  const value = Number.isFinite(Number(ts)) ? Math.trunc(Number(ts)) : 0;
+  if (value <= 0) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  const pad2 = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
 }
 
 const catPanNameCellStyle = computed(() => ({
@@ -4532,18 +4586,38 @@ function removeCatConfig(index) {
   }
 }
 
+function buildCatConfigActionKey(item, index) {
+  const id = item && typeof item.id === 'string' ? item.id.trim() : '';
+  if (id) return `id:${id}`;
+  return `index:${Number.isFinite(Number(index)) ? Math.trunc(Number(index)) : -1}`;
+}
+
+async function triggerCatConfigUpdate(item, index) {
+  if (catRemoteLoading.value || catSaving.value) return;
+  const id = item && typeof item.id === 'string' ? item.id.trim() : '';
+  if (!id) return;
+  const actionKey = buildCatConfigActionKey(item, index);
+  if (catConfigUpdateBusyKey.value === actionKey) return;
+  catConfigUpdateBusyKey.value = actionKey;
+  try {
+    const data = await updateCatpawrunnerOnlineConfig(normalizedCatApiBase.value, id);
+    applyCatRemoteSettings(data);
+    notifySuccess('更新任务已提交');
+  } catch (err) {
+    notifyError((err && err.message) || '更新失败');
+  } finally {
+    catConfigUpdateBusyKey.value = '';
+  }
+}
+
 function buildCatRemoteSettingsSnapshot(data) {
   const root = data && typeof data === 'object' ? data : {};
-  const settings = root.settings && typeof root.settings === 'object' ? root.settings : root;
-  const onlineConfigs = Array.isArray(root.onlineConfigs)
-    ? root.onlineConfigs
-    : Array.isArray(settings.onlineConfigs)
-      ? settings.onlineConfigs
-      : [];
+  const settings = root.settings && typeof root.settings === 'object' ? root.settings : {};
+  const onlineConfigs = Array.isArray(root.onlineConfigs) ? root.onlineConfigs : [];
   return {
     proxy: typeof settings.proxy === 'string' ? settings.proxy : '',
     panBuiltinResolverEnabled: settings.panBuiltinResolverEnabled !== false,
-    pan_mock: !!(settings.pan_mock === true || settings.panMockEnabled === true),
+    pan_mock: !!settings.pan_mock,
     disable_proxy: !!settings.disable_proxy,
     goProxyApi: typeof settings.goProxyApi === 'string' ? settings.goProxyApi : '',
     onlineConfigs: onlineConfigs.map(normalizeCatConfigRow).filter((item) => item.name || item.url)
@@ -4573,7 +4647,11 @@ function buildCatRemoteSettingsPayload() {
     pan_mock: !!catForm.value.panMockEnabled,
     disable_proxy: !!catForm.value.disableProxy,
     goProxyApi: catForm.value.goProxyApi.trim(),
-    onlineConfigs: catOnlineConfigs.value.map((item) => ({ name: item.name, url: item.url }))
+    onlineConfigs: catOnlineConfigs.value.map((item) => ({
+      id: typeof item.id === 'string' ? item.id : '',
+      name: item.name,
+      url: item.url
+    }))
   };
 }
 
