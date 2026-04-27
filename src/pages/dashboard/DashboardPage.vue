@@ -612,7 +612,7 @@
                     </button>
                   </div>
                   <div class="tv-panel tv-cpo-config-shell">
-                    <div v-if="catConfigEditorOpen" class="tv-panel tv-cpo-config-editor adm-mb-3">
+                    <div v-if="catConfigEditorOpen" class="tv-panel tv-cpo-config-editor tv-cpo-online-config-editor adm-mb-3">
                       <div class="user-form-grid">
                         <span class="adm-text-sm adm-font-medium adm-text-gray-700 user-form-grid__label">名称：</span>
                         <input v-model="catConfigEditorForm.name" class="tv-field" placeholder="名称" autocomplete="off" />
@@ -620,7 +620,7 @@
                         <span class="adm-text-sm adm-font-medium adm-text-gray-700 user-form-grid__label">配置地址：</span>
                         <input v-model="catConfigEditorForm.url" class="tv-field" placeholder="https://example.com/xx.js" autocomplete="off" />
                       </div>
-                      <div class="adm-flex adm-justify-start adm-items-center adm-gap-3 adm-mt-3">
+                      <div class="tv-cpo-online-config-editor__actions adm-flex adm-justify-start adm-items-center adm-gap-3">
                         <button type="button" class="btn-add" :class="{ active: canSaveCatConfigEditor }" :disabled="!canSaveCatConfigEditor" @click="confirmCatConfigEditor">
                           确定
                         </button>
@@ -7411,6 +7411,20 @@ watch([showCatSyncFromServerRow, catSyncFromServerOptions], ([visible, options])
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+}
+
+.tv-cpo-online-config-editor .user-form-grid {
+  align-items: center;
+}
+
+.tv-cpo-online-config-editor .user-form-grid__label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+}
+
+.tv-cpo-online-config-editor__actions {
+  margin-top: 16px;
 }
 
 .magic-rule-list {
