@@ -284,6 +284,7 @@ const backendCommit =
 const frontendCommit =
   (typeof window !== 'undefined' && window.__MEOWFILM_FRONTEND_COMMIT__) || appVersion;
 const THEME_STORAGE_KEY = 'meowfilm_theme';
+const HOME_SITE_SOURCE_STORAGE_KEY = 'meowfilm_home_site_source';
 
 const isPlayView = ref(false);
 const mobileHeaderEl = ref(null);
@@ -390,6 +391,76 @@ const applyThemeState = (dark) => {
 };
 const toggleTheme = () => {
   applyThemeState(!isDarkTheme.value);
+};
+const resolveBootstrapHomeSiteByKey = (siteKey = '') => {
+  const key = normalizeString(siteKey);
+  if (!key) return null;
+  const settings = bootstrap && typeof bootstrap === 'object' && bootstrap.settings && typeof bootstrap.settings === 'object'
+    ? bootstrap.settings
+    : {};
+  const list = Array.isArray(settings.homeSites) ? settings.homeSites : [];
+  return list
+    .map((site) => ({
+      key: normalizeString(site && site.key),
+      name: normalizeString(site && site.name),
+      api: normalizeString(site && site.api),
+    }))
+    .find((site) => site.key === key && site.name && site.api) || null;
+};
+const clearLastHomeSiteSource = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(HOME_SITE_SOURCE_STORAGE_KEY);
+  } catch (_error) {}
+};
+const saveLastHomeSiteSource = (source = {}) => {
+  if (typeof window === 'undefined') return;
+  const input = source && typeof source === 'object' ? source : {};
+  if (normalizeString(input.kind) !== 'site') return;
+  const resolved = resolveBootstrapHomeSiteByKey(input.siteKey);
+  if (!resolved) return;
+  try {
+    window.localStorage.setItem(HOME_SITE_SOURCE_STORAGE_KEY, JSON.stringify({
+      siteKey: resolved.key,
+      siteName: resolved.name,
+      siteApi: resolved.api,
+    }));
+  } catch (_error) {}
+};
+const restoreLastHomeSiteSource = () => {
+  if (typeof window === 'undefined') return;
+  let parsed = null;
+  try {
+    const raw = window.localStorage.getItem(HOME_SITE_SOURCE_STORAGE_KEY);
+    parsed = raw && raw.trim() ? JSON.parse(raw) : null;
+  } catch (_error) {
+    clearLastHomeSiteSource();
+    return;
+  }
+  const key = parsed && typeof parsed === 'object' ? normalizeString(parsed.siteKey) : '';
+  if (!key) {
+    clearLastHomeSiteSource();
+    return;
+  }
+  const resolved = resolveBootstrapHomeSiteByKey(key);
+  if (!resolved) {
+    clearLastHomeSiteSource();
+    return;
+  }
+  isPlayView.value = false;
+  currentView.value = 'home';
+  homeSection.value = 'home';
+  homeSource.value = {
+    kind: 'site',
+    siteKey: resolved.key,
+    siteName: resolved.name,
+    siteApi: resolved.api,
+  };
+  mobileActiveTab.value = 'home';
+  mobileContext.value = {
+    kind: 'site',
+    siteName: resolved.name,
+  };
 };
 const buildHomeIdentity = (source = {}) => {
   const resolved = source && typeof source === 'object' ? source : {};
@@ -634,6 +705,7 @@ const handleCategoryBack = () => {
       siteName: typeof categorySource.value.siteName === 'string' ? categorySource.value.siteName : '',
       siteApi: typeof categorySource.value.siteApi === 'string' ? categorySource.value.siteApi : '',
     };
+    saveLastHomeSiteSource(homeSource.value);
     mobileContext.value = {
       kind: 'site',
       siteName: typeof categorySource.value.siteName === 'string' ? categorySource.value.siteName : '',
@@ -705,6 +777,7 @@ const handleSidebarNavigate = (payload = {}) => {
       siteName: typeof payload.siteName === 'string' ? payload.siteName : '',
       siteApi: typeof payload.siteApi === 'string' ? payload.siteApi : '',
     };
+    saveLastHomeSiteSource(homeSource.value);
     mobileActiveTab.value = 'home';
     mobileContext.value = {
       kind: 'site',
@@ -763,6 +836,7 @@ onMounted(() => {
     initialDark = window.localStorage.getItem(THEME_STORAGE_KEY) === 'dark';
   } catch (_error) {}
   applyThemeState(initialDark);
+  restoreLastHomeSiteSource();
   document.addEventListener('pointerdown', handleDocumentPointerDown);
 });
 

@@ -183,7 +183,7 @@ const doubanSections = [
   { key: 'show', title: '热门综艺', kind: 'tv', category: 'show', type: 'show' },
 ];
 const sourceSectionStates = ref([]);
-let siteHomeLoadSeq = 0;
+let activeHomeLoadCacheKey = '';
 
 const normalizeHistoryCard = (item) => {
   const title = item && item.contentKey ? String(item.contentKey) : '未命名内容';
@@ -787,7 +787,7 @@ const loadSiteSectionCategoryRaw = async ({ apiBase, siteApi, siteKey, categoryI
   }
 };
 
-const loadSiteHomeSectionsRaw = async () => {
+const loadSiteHomeSectionsRaw = async ({ onUpdate } = {}) => {
   const source = sourceResolved.value;
   const settings = readHomeSettings();
   const apiBase = settings.catpawrunnerApiBase;
@@ -819,25 +819,40 @@ const loadSiteHomeSectionsRaw = async () => {
         }],
       };
     }
-    const tasks = classes.map(async (category) => {
+    const sections = classes.map((category) => ({
+      key: `site:${source.siteKey}:${category.id}`,
+      title: category.name,
+      categoryId: category.id,
+      loading: true,
+      loadingText: '加载中...',
+      items: [],
+      emptyText: '',
+      showMore: true,
+    }));
+    if (typeof onUpdate === 'function') {
+      onUpdate(cloneSectionStates(sections));
+    }
+    await Promise.all(classes.map(async (category, index) => {
       const current = await loadSiteSectionCategoryRaw({
         apiBase,
         siteApi: source.siteApi,
         siteKey: source.siteKey,
         categoryId: category.id,
       });
-      return {
+      sections[index] = {
         key: `site:${source.siteKey}:${category.id}`,
         title: category.name,
         categoryId: category.id,
         loading: false,
-        loadingText: '加载中...',
+        loadingText: '',
         items: current.items,
         emptyText: current.emptyText,
         showMore: true,
       };
-    });
-    const sections = await Promise.all(tasks);
+      if (typeof onUpdate === 'function') {
+        onUpdate(cloneSectionStates(sections));
+      }
+    }));
     return { sections };
   } catch (_err) {
     return { sections: buildErrorHomeSections('站点首页加载失败') };
@@ -914,13 +929,13 @@ const loadDoubanSectionsRaw = async () => {
 };
 
 const loadActiveHomeSourceWithCache = async () => {
-  siteHomeLoadSeq += 1;
-  const loadSeq = siteHomeLoadSeq;
   const cacheKey = buildCurrentHomeCacheKey();
   if (!cacheKey) {
+    activeHomeLoadCacheKey = '';
     applyHomeSections([]);
     return;
   }
+  activeHomeLoadCacheKey = cacheKey;
   const cached = ensureHomeCacheEntry(cacheKey);
   if (cached && Array.isArray(cached.sections) && cached.sections.length) {
     applyHomeSections(cached.sections);
@@ -933,11 +948,18 @@ const loadActiveHomeSourceWithCache = async () => {
       sections: pendingSections,
     });
   }
+  const applyProgressSections = (sections) => {
+    if (cacheKey !== activeHomeLoadCacheKey) return;
+    setHomeCacheEntry(cacheKey, { sections });
+    applyHomeSections(sections);
+  };
   const result = await resolveCachedHomeSections({
     key: cacheKey,
-    loader: () => (sourceResolved.value.kind === 'site' ? loadSiteHomeSectionsRaw() : loadDoubanSectionsRaw()),
+    loader: () => (sourceResolved.value.kind === 'site'
+      ? loadSiteHomeSectionsRaw({ onUpdate: applyProgressSections })
+      : loadDoubanSectionsRaw()),
   });
-  if (loadSeq !== siteHomeLoadSeq) return;
+  if (cacheKey !== activeHomeLoadCacheKey) return;
   const latest = getHomeCacheEntry(cacheKey) || result;
   applyHomeSections(latest && Array.isArray(latest.sections) ? latest.sections : []);
 };
