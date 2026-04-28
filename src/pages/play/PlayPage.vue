@@ -5095,7 +5095,26 @@ export default {
         return;
       }
 
-      // Phase 2: manual chain (only produce candidates).
+      // Phase 2/3: history list chain -> history detail chain (only produce candidates).
+      await this.tryHistorySmartBootstrap(targetGlobal, targetLoose, {
+        matchOptions: normalizedMatchOptions,
+        actionConstraint,
+        isCandidateAllowed: unifiedAllowed,
+        stage: currentStage,
+        mapping: targetMapping,
+        mappingSignature: targetSignature,
+        episodeSource: targetEpisodeSource,
+        skipHistoryList,
+        onCandidatesChanged: notifyCandidatesChanged,
+        isRunStopped: () => resolvedByGlobal,
+      });
+      await waitGlobalResolveIdle();
+      if (resolvedByGlobal) {
+        markHistoryStageDone();
+        return;
+      }
+
+      // Phase 4: manual chain (only produce candidates).
       if (!manualStageDone) {
         const manualSeq = Math.max(0, normalizeInt(this.manualSmartBootstrapSeq)) + 1;
         this.manualSmartBootstrapSeq = manualSeq;
@@ -5150,25 +5169,6 @@ export default {
         });
         if (manualCompleted === true) markManualStageDone();
       }
-      await waitGlobalResolveIdle();
-      if (resolvedByGlobal) {
-        markHistoryStageDone();
-        return;
-      }
-
-      // Phase 3/4: history list chain -> history detail chain (only produce candidates).
-      await this.tryHistorySmartBootstrap(targetGlobal, targetLoose, {
-        matchOptions: normalizedMatchOptions,
-        actionConstraint,
-        isCandidateAllowed: unifiedAllowed,
-        stage: currentStage,
-        mapping: targetMapping,
-        mappingSignature: targetSignature,
-        episodeSource: targetEpisodeSource,
-        skipHistoryList,
-        onCandidatesChanged: notifyCandidatesChanged,
-        isRunStopped: () => resolvedByGlobal,
-      });
       await waitGlobalResolveIdle();
       if (resolvedByGlobal) {
         markHistoryStageDone();
