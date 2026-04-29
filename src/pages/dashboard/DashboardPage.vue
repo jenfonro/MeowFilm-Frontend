@@ -2952,15 +2952,14 @@ function runMagicAggregateNormalization({ query = '', title = '', rules = [] } =
 }
 
 const magicEpisodeCleanRulePreviews = computed(() => {
-  const raw = String(magicEpisodeRuleTestInput.value || '').trim();
-  let output = raw;
+  let output = normalizeSeasonEpisodeMarkers(String(magicEpisodeRuleTestInput.value || '').trim());
   return magicEpisodeCleanRegexRules.value.map((rule) => {
     const regex = buildRegexFromInput(rule, { defaultFlags: 'ig', forceGlobal: true });
     if (!regex) return '正则无效';
     try {
-      output = output.replace(regex, ' ');
+      output = output.replace(regex, '');
     } catch (_error) {}
-    return output.replace(/\s+/g, ' ').trim();
+    return String(output || '').replace(/\s+/g, ' ').trim();
   });
 });
 const magicAggregateRulePreviews = computed(() => {
@@ -5781,7 +5780,7 @@ function runMagicEpisodeRuleTest() {
   let cleaned = normalizeSeasonEpisodeMarkers(filename);
   magicEpisodeCleanRegexRules.value.forEach((rule) => {
     const regex = buildRegexFromInput(rule, { defaultFlags: 'ig', forceGlobal: true });
-    if (regex) cleaned = cleaned.replace(regex, ' ');
+    if (regex) cleaned = cleaned.replace(regex, '');
   });
   cleaned = normalizeSeasonEpisodeMarkers(cleaned.replace(/\s+/g, ' ').trim());
   const failures = [];
