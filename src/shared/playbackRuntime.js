@@ -831,6 +831,43 @@ export const maybeUseRelayForPlayback = async ({
   };
 };
 
+export const buildRelayM3U8PlaybackUrl = ({ base, playUrl, secret }) => {
+  const relayBase = normalizeHttpBase(base);
+  const targetUrl = normalizeString(playUrl);
+  const accessSecret = normalizeString(secret);
+  if (!relayBase || !isHttpPlayableUrl(targetUrl) || !accessSecret) return '';
+  try {
+    const baseWithSlash = relayBase.endsWith('/') ? relayBase : `${relayBase}/`;
+    const next = new URL(`m3u8/${encodeURIComponent(targetUrl)}`, baseWithSlash);
+    next.searchParams.set('secret', accessSecret);
+    next.searchParams.set('__tv_fmt', 'm3u8');
+    return next.toString();
+  } catch (_error) {
+    return '';
+  }
+};
+
+export const maybeUseRelayM3U8ForPlayback = ({ playUrl, runtimeSettings } = {}) => {
+  const targetUrl = normalizeString(playUrl);
+  const settings = runtimeSettings && typeof runtimeSettings === 'object' ? runtimeSettings : null;
+  if (!targetUrl || !isProbablyM3U8Url(targetUrl) || !settings || !settings.relayEnabled) {
+    return { url: '', headers: {}, relayBase: '' };
+  }
+  const picked = pickEligibleRelayServers({ relayServers: settings.relayServers })[0] || null;
+  if (!picked || !picked.base || !picked.secret) return { url: '', headers: {}, relayBase: '' };
+  const url = buildRelayM3U8PlaybackUrl({
+    base: picked.base,
+    playUrl: targetUrl,
+    secret: picked.secret,
+  });
+  if (!url) return { url: '', headers: {}, relayBase: '' };
+  return {
+    url,
+    headers: {},
+    relayBase: picked.base,
+  };
+};
+
 export const registerGoProxyToken = async ({ base, url, headers }) => {
   const normalizedBase = normalizeHttpBase(base);
   const targetUrl = normalizeString(url);
@@ -1210,12 +1247,23 @@ export const executeResolvedSitePlayback = async ({
     preferredPan,
     enabled: !!proxyRetryCandidate || hasNonEmptyHeaders(finalHeaders),
   };
+  const m3u8RelayEligible =
+    !!(settings && settings.relayEnabled)
+    && pickEligibleRelayServers({ relayServers: settings && settings.relayServers }).length > 0;
+  const lastM3U8RelayCandidate = m3u8RelayEligible && isProbablyM3U8Url(finalUrl)
+    ? {
+      selectionKey: normalizeString(selectionKey),
+      url: finalUrl,
+      enabled: true,
+    }
+    : null;
   return {
     playerUrl: finalUrl,
     playerHeaders: finalHeaders,
     goProxyBase: '',
     relayBase: '',
     lastGoProxyCandidate,
+    lastM3U8RelayCandidate,
   };
 };
 
@@ -1248,6 +1296,27 @@ export const executeProxyRetryPlayback = async ({
     playerUrl: nextUrl,
     playerHeaders: out && out.headers && typeof out.headers === 'object' ? out.headers : {},
     goProxyBase: normalizeString(out && out.goProxyBase),
+    relayBase: normalizeString(out && out.relayBase),
+  };
+};
+
+export const executeM3U8RelayRetryPlayback = ({ candidate, runtimeSettings } = {}) => {
+  const target = candidate && typeof candidate === 'object' ? candidate : null;
+  if (!target || !normalizeString(target.url)) {
+    return { ok: false, playerUrl: '', playerHeaders: {}, relayBase: '' };
+  }
+  const out = maybeUseRelayM3U8ForPlayback({
+    playUrl: target.url,
+    runtimeSettings,
+  });
+  const nextUrl = normalizeString(out && out.url);
+  if (!nextUrl) {
+    return { ok: false, playerUrl: '', playerHeaders: {}, relayBase: '' };
+  }
+  return {
+    ok: true,
+    playerUrl: nextUrl,
+    playerHeaders: out && out.headers && typeof out.headers === 'object' ? out.headers : {},
     relayBase: normalizeString(out && out.relayBase),
   };
 };

@@ -1198,6 +1198,17 @@ const destroyNow = () => {
         });
       },
     });
+    if (Hls.Events && Hls.Events.ERROR && typeof hls.on === 'function') {
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data || !data.fatal) return;
+        const detail = data.details ? String(data.details) : '';
+        const type = data.type ? String(data.type) : '';
+        const message = detail || type || 'HLS 播放失败';
+        try {
+          emit('error', { code: 2, message });
+        } catch (_e) {}
+      });
+    }
 	    hls.loadSource(url);
 	    hls.attachMedia(videoEl);
 	    return { hls };

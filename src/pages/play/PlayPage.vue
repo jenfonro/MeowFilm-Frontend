@@ -491,6 +491,7 @@ import {
   clearCurrentPlaybackContext,
   executeResolvedSitePlayback,
   executeProxyRetryPlayback,
+  executeM3U8RelayRetryPlayback,
   hasNonEmptyHeaders,
   doesQualityMatchResolution,
   inferQualityFromResolution,
@@ -2489,8 +2490,11 @@ export default {
       goProxyManualBase: '',
       goProxyInUseBase: '',
       lastGoProxyCandidate: null,
+      lastM3U8RelayCandidate: null,
       autoProxyRetriedSeq: 0,
+      autoM3U8RelayRetriedSeq: 0,
       proxyRetryInFlight: false,
+      m3u8RelayRetryInFlight: false,
       episodePanelResizeState: {
         dragging: false,
         startX: 0,
@@ -2547,9 +2551,11 @@ export default {
       this.playerRuntimeError = '';
       this.playRequestStage = '';
       this.proxyRetryInFlight = false;
+      this.m3u8RelayRetryInFlight = false;
       this.activePlayerControlAction = '';
       this.playerUiTransitionMode = '';
       this.lastGoProxyCandidate = null;
+      this.lastM3U8RelayCandidate = null;
       if (clearPlayerState) {
         this.playerUrl = '';
         this.playerHeaders = {};
@@ -2876,6 +2882,7 @@ export default {
       this.playerRuntimeError = '';
       this.playRequestStage = normalizeString(stage) || 'play_url';
       this.lastGoProxyCandidate = null;
+      this.lastM3U8RelayCandidate = null;
       this.resetPlayerReadyState();
     },
     closePlayerActionFlow({ toast = '', sticky = false, durationMs = 1800, clearErrors = false } = {}) {
@@ -4727,12 +4734,15 @@ export default {
       this.playError = '';
       this.playerRuntimeError = '';
       this.autoProxyRetriedSeq = 0;
+      this.autoM3U8RelayRetriedSeq = 0;
       this.playerMetaReady = false;
       this.playerFirstFrameReady = false;
       this.playerPlaybackStarted = false;
       this.playerBuffering = false;
+      this.m3u8RelayRetryInFlight = false;
       this.goProxyInUseBase = '';
       this.lastGoProxyCandidate = null;
+      this.lastM3U8RelayCandidate = null;
       this.syncPlayerStatsForResolvedSegment({ siteResultItem: siteItem, pan: panEntry, segment, candidate });
       try {
         const settings = await this.ensurePlayRuntimeSettings();
@@ -4755,6 +4765,7 @@ export default {
         });
         if (seq !== this.playRequestSeq) return false;
         this.lastGoProxyCandidate = result && result.lastGoProxyCandidate ? result.lastGoProxyCandidate : null;
+        this.lastM3U8RelayCandidate = result && result.lastM3U8RelayCandidate ? result.lastM3U8RelayCandidate : null;
         this.goProxyInUseBase = normalizeString(result && result.goProxyBase);
         this.playerUrl = normalizeString(result && result.playerUrl);
         this.playerHeaders = result && result.playerHeaders && typeof result.playerHeaders === 'object'
@@ -4788,6 +4799,7 @@ export default {
         this.playRequestStage = '';
         this.clearPlayerStats();
         this.lastGoProxyCandidate = null;
+        this.lastM3U8RelayCandidate = null;
         this.playError = error && error.message ? String(error.message) : '播放失败';
         return false;
       } finally {
@@ -5490,6 +5502,47 @@ export default {
             this.playLoading = false;
             this.playRequestStage = '';
             this.proxyRetryInFlight = false;
+          }
+        });
+        return;
+      }
+      const m3u8Candidate = this.lastM3U8RelayCandidate && typeof this.lastM3U8RelayCandidate === 'object'
+        ? this.lastM3U8RelayCandidate
+        : null;
+      const canRetryWithM3U8Relay =
+        !this.m3u8RelayRetryInFlight
+        && normalizeInt(this.autoM3U8RelayRetriedSeq) !== normalizeInt(this.playRequestSeq)
+        && m3u8Candidate
+        && m3u8Candidate.enabled
+        && normalizeString(m3u8Candidate.url);
+      if (canRetryWithM3U8Relay) {
+        const retrySeq = normalizeInt(this.playRequestSeq);
+        this.autoM3U8RelayRetriedSeq = retrySeq;
+        this.m3u8RelayRetryInFlight = true;
+        this.playerUrl = '';
+        this.playerHeaders = {};
+        this.playLoading = true;
+        this.playRequestStage = 'play_info';
+        this.$nextTick().then(() => {
+          try {
+            const out = executeM3U8RelayRetryPlayback({
+              candidate: m3u8Candidate,
+              runtimeSettings: this.runtimeSettings,
+            });
+            if (retrySeq !== normalizeInt(this.playRequestSeq)) return;
+            if (!out || !out.ok || !normalizeString(out.playerUrl)) return;
+            this.playerUrl = normalizeString(out.playerUrl);
+            this.playerHeaders = out.playerHeaders && typeof out.playerHeaders === 'object'
+              ? out.playerHeaders
+              : {};
+            this.playError = '';
+            this.playerRuntimeError = '';
+          } finally {
+            if (retrySeq === normalizeInt(this.playRequestSeq)) {
+              this.playLoading = false;
+              this.playRequestStage = '';
+              this.m3u8RelayRetryInFlight = false;
+            }
           }
         });
         return;
