@@ -1,9 +1,8 @@
 import { buildSiteSourceItemsForTitle } from './searchRuntime';
 import { ensurePlayHistoryRowForContext } from './playHistoryRuntime';
-import { buildPlaybackRecognitionData } from './smartSourceRecognition';
+import { buildPlaybackRecognitionData, buildSourceSegmentItems } from './smartSourceRecognition';
 import {
   extractPanListVodPlayUrl,
-  extractRawNamesFromEpisodeUrl,
   fetchCatResolvedDetailCached,
   normalizeSourceEntry,
   setPanListCachedByProviderFlag,
@@ -11,7 +10,6 @@ import {
 } from './catpawrunner';
 import { panMockProviderFromFlag } from '../utils/matchCore';
 import { normalizeInt, normalizeString } from './normalize';
-import { getRawDirPath, getRawFileName, splitRawPathSegments } from './pathText';
 
 export const buildHistorySitePlaybackItem = (row) => {
   const item = row && typeof row === 'object' ? row : null;
@@ -65,22 +63,17 @@ export const buildPanSegment = (entry, index) => {
   if (!entry) return null;
   const itemIndex = normalizeInt(index);
   if (itemIndex < 0) return null;
-  const segments = normalizeSourceSegments(entry);
-  const segment = segments[itemIndex] || '';
-  if (!segment) return null;
-  const dollarIdx = segment.indexOf('$');
-  const label = dollarIdx >= 0 ? normalizeString(segment.slice(0, dollarIdx)) : segment;
-  const episodeUrl = dollarIdx >= 0 ? normalizeString(segment.slice(dollarIdx + 1)) : segment;
-  const rawName = extractRawNamesFromEpisodeUrl(episodeUrl)[0] || '';
+  const parsed = buildSourceSegmentItems(entry).find((item) => normalizeInt(item && item.index) === itemIndex) || null;
+  if (!parsed) return null;
   return {
     index: itemIndex,
-    segmentIdentity: segment,
-    label,
-    displayName: label,
-    episodeUrl,
-    rawName,
-    pathName: getRawDirPath(rawName) || getRawDirPath(label),
-    fileName: getRawFileName(rawName),
+    segmentIdentity: normalizeString(parsed.segmentIdentity),
+    label: normalizeString(parsed.displayName),
+    displayName: normalizeString(parsed.displayName),
+    episodeUrl: normalizeString(parsed.episodeUrl),
+    rawName: normalizeString(parsed.rawName),
+    pathName: parsed.currentPath ? `/${parsed.currentPath}` : '',
+    fileName: normalizeString(parsed.fileName),
   };
 };
 

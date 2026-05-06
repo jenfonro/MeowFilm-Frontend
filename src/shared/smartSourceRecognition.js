@@ -99,15 +99,27 @@ const cleanMagicEpisodeText = (text, cleanRules) => {
   return normalizeString(out);
 };
 
+const normalizeSeasonHintText = (value) =>
+  normalizeString(value)
+    .replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)))
+    .replace(/\s+/g, '')
+    .toLowerCase();
+
+const parseSeasonHintNumber = (value) => {
+  const normalized = normalizeSeasonHintText(value);
+  return /^\d+$/.test(normalized) ? normalizeInt(normalized) : parseChineseNumeralToInt(normalized);
+};
+
 const extractSeasonHintFromText = (text) => {
-  const raw = normalizeString(text);
-  if (!raw) return 0;
-  const mSe = raw.match(/S(\d{1,2})\s*E\d{1,5}/i);
+  const normalized = normalizeSeasonHintText(text);
+  if (!normalized) return 0;
+  const mSeasonWord = normalized.match(/(?:^|[^a-z0-9])season0*(\d{1,3})(?=$|[^a-z0-9])/);
+  if (mSeasonWord && mSeasonWord[1]) return normalizeInt(mSeasonWord[1]);
+  const mSe = normalized.match(/(?:^|[^a-z0-9])s0*(\d{1,3})(?:e\d{1,5})?(?=$|[^a-z0-9])/);
   if (mSe && mSe[1]) return normalizeInt(mSe[1]);
-  const mSeason = raw.match(/第\s*([0-9０-９]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})\s*季/i);
+  const mSeason = normalized.match(/第([0-9]{1,3}|[一二三四五六七八九十百千两零〇]{1,16})(?:季|部|篇)/);
   if (!mSeason || !mSeason[1]) return 0;
-  const normalized = String(mSeason[1]).replace(/[０-９]/g, (ch) => String('０１２３４５６７８９'.indexOf(ch)));
-  return /^\d+$/.test(normalized) ? normalizeInt(normalized) : parseChineseNumeralToInt(mSeason[1]);
+  return parseSeasonHintNumber(mSeason[1]);
 };
 
 const parseManualSeasonHint = (value) => {
@@ -189,6 +201,21 @@ const parseDisplayMetaQuality = (displayName) => {
   }
   return quality;
 };
+
+const stripDisplayMetaPrefix = (value) => {
+  let rest = normalizeString(value);
+  while (rest.startsWith('@')) {
+    const matched = rest.match(/^@([^@/\\]+)/);
+    if (!matched || !matched[0]) break;
+    rest = normalizeString(rest.slice(matched[0].length));
+  }
+  return rest;
+};
+
+const PAN_LIST_PROVIDER_KEYS = new Set(['baidu', 'quark', 'uc', '139', '189']);
+
+const isPanListEntry = (entry) =>
+  PAN_LIST_PROVIDER_KEYS.has(normalizeString(entry && entry.provider).toLowerCase());
 
 const matchesAnyMagicRule = (text, rules) => {
   const normalizeForMagic = (input) => {
@@ -361,8 +388,12 @@ const buildSegmentItems = (entry) => {
       const rawName = extractRawNamesFromEpisodeUrl(episodeUrl)[0] || '';
       const fileName = getRawFileName(rawName);
       const rawDirs = splitRawPathSegments(rawName).slice(0, -1);
-      const displayDirs = splitRawPathSegments(displayName).slice(0, -1);
-      const fileDirs = rawDirs.length ? rawDirs : displayDirs;
+      const useListPathSemantics = isPanListEntry(entry) && !!fileName;
+      const displayParts = splitRawPathSegments(useListPathSemantics ? stripDisplayMetaPrefix(displayName) : displayName);
+      const displayDirs = useListPathSemantics
+        ? displayParts
+        : displayParts.slice(0, -1);
+      const fileDirs = useListPathSemantics ? displayDirs : (rawDirs.length ? rawDirs : displayDirs);
       return {
         index,
         segmentIdentity: raw,
@@ -371,6 +402,7 @@ const buildSegmentItems = (entry) => {
         rawName,
         fileName,
         dirs: fileDirs,
+        allowDirectoryHints: useListPathSemantics,
         currentDir: fileDirs[fileDirs.length - 1] || '',
         currentPath: fileDirs.join('/'),
         parentDir: fileDirs.length >= 2 ? fileDirs[fileDirs.length - 2] : '',
@@ -379,6 +411,8 @@ const buildSegmentItems = (entry) => {
     })
     .filter(Boolean);
 };
+
+export const buildSourceSegmentItems = (entry) => buildSegmentItems(entry);
 
 const buildSeasonCountLookup = (rows, field) => {
   const out = new Map();
@@ -696,6 +730,162 @@ const buildCandidateMappings = ({
   });
 };
 
+const buildRecognitionMappingContext = (smartEpisodeMapping) => {
+  const tmdbDetail = smartEpisodeMapping && Array.isArray(smartEpisodeMapping.tmdbSeasons) && smartEpisodeMapping.tmdbSeasons.length
+    ? {
+        latestGlobal: normalizeInt(smartEpisodeMapping.totalEpisodes),
+        seasons: smartEpisodeMapping.tmdbSeasons.map((item) => ({
+          season: item.season,
+          episodes: item.episodeCount,
+        })),
+      }
+    : null;
+  const doubanMeta = smartEpisodeMapping && Array.isArray(smartEpisodeMapping.doubanSeasons)
+    ? {
+        doubanSeasons: smartEpisodeMapping.doubanSeasons.map((item) => ({
+          season: item.season,
+          episodeCount: item.episodeCount,
+        })),
+      }
+    : null;
+  return {
+    tmdbDetail,
+    doubanMeta,
+    tmdbMultiSeason: !!(smartEpisodeMapping && Array.isArray(smartEpisodeMapping.tmdbSeasons) && smartEpisodeMapping.tmdbSeasons.length > 1),
+    doubanMultiSeason: !!(smartEpisodeMapping && Array.isArray(smartEpisodeMapping.doubanSeasons) && smartEpisodeMapping.doubanSeasons.length > 1),
+  };
+};
+
+const resolveManualHintSeason = ({ recognitionOptions, tmdbDetail, doubanMeta, tmdbMultiSeason, doubanMultiSeason } = {}) => {
+  if (!(tmdbMultiSeason || doubanMultiSeason)) return 0;
+  const candidate = parseManualSeasonHint(recognitionOptions && recognitionOptions.manualSeasonHint);
+  if (candidate <= 0) return 0;
+  const tmdbRows = getTMDBSeasonRows(tmdbDetail);
+  const doubanRows = getDoubanSeasonRows(doubanMeta);
+  const hasTMDB = tmdbRows.some((row) => normalizeInt(row && (row.season != null ? row.season : row.season_number)) === candidate);
+  const hasDouban = doubanRows.some((row) => normalizeInt(row && (row.season != null ? row.season : row.season_number)) === candidate);
+  if (!hasTMDB && !hasDouban) return 0;
+  return candidate;
+};
+
+const buildDirEpisodeMaxLookup = ({ segments, compiledRules, cleanRules } = {}) => {
+  const dirEpisodeMax = new Map();
+  (Array.isArray(segments) ? segments : []).forEach((segment) => {
+    const fileParsed = extractNormalizedSeasonEpisode(segment && segment.fileName, compiledRules, cleanRules);
+    const displayParsed = !fileParsed.episode
+      ? extractNormalizedSeasonEpisode(segment && segment.displayName, compiledRules, cleanRules)
+      : { season: 0, episode: 0 };
+    const episodeNo = normalizeInt((fileParsed && fileParsed.episode) || (displayParsed && displayParsed.episode));
+    if (episodeNo <= 0) return;
+    const dirKey = normalizeString(segment && segment.currentPath);
+    const prev = normalizeInt(dirEpisodeMax.get(dirKey));
+    if (episodeNo > prev) dirEpisodeMax.set(dirKey, episodeNo);
+  });
+  return dirEpisodeMax;
+};
+
+const resolveSegmentEpisodeFields = ({
+  segment,
+  compiledRules,
+  cleanRules,
+  folderStats,
+  dirEpisodeMax,
+  manualHintSeason = 0,
+} = {}) => {
+  const fileParsed = extractNormalizedSeasonEpisode(segment && segment.fileName, compiledRules, cleanRules);
+  const displayParsed = !fileParsed.episode
+    ? extractNormalizedSeasonEpisode(segment && segment.displayName, compiledRules, cleanRules)
+    : { season: 0, episode: 0 };
+
+  let season = fileParsed.season;
+  let episode = fileParsed.episode;
+  let quality = extractQualityMark(segment && segment.fileName);
+
+  if (!episode && displayParsed.episode) {
+    season = displayParsed.season;
+    episode = displayParsed.episode;
+  }
+
+  if (episode > 0 && segment && segment.allowDirectoryHints && (season <= 0 || !quality)) {
+    const currentQuality = pickUniqueFolderQuality(folderStats, segment && segment.currentPath);
+    const currentSeason = pickUniqueFolderSeason(folderStats, segment && segment.currentPath);
+    const parentQuality = pickUniqueFolderQuality(folderStats, segment && segment.parentPath);
+    const parentSeason = pickUniqueFolderSeason(folderStats, segment && segment.parentPath);
+    if (season <= 0) {
+      if (currentSeason > 0) {
+        season = currentSeason;
+      } else if (currentQuality && parentSeason > 0) {
+        season = parentSeason;
+      }
+    }
+    if (!quality) {
+      const displayMetaQuality = parseDisplayMetaQuality(segment && segment.displayName);
+      if (displayMetaQuality) quality = displayMetaQuality;
+      else if (currentQuality) quality = currentQuality;
+      else if (currentSeason > 0 && parentQuality) quality = parentQuality;
+    }
+  }
+
+  if (episode > 0 && season <= 0 && manualHintSeason > 0) {
+    season = manualHintSeason;
+  }
+
+  if (!quality) {
+    quality = parseDisplayMetaQuality(segment && segment.displayName) || extractQualityMark(segment && segment.displayName);
+  }
+
+  return {
+    segment,
+    season: normalizeInt(season),
+    episode: normalizeInt(episode),
+    quality,
+    sourceDirMaxEpisode: normalizeInt(dirEpisodeMax && dirEpisodeMax.get(segment && segment.currentPath)),
+  };
+};
+
+const buildRecognizedEpisodeSegmentRows = ({
+  entry,
+  runtimeSettings,
+  smartEpisodeMapping = null,
+  recognitionOptions = null,
+} = {}) => {
+  const target = entry && typeof entry === 'object' ? entry : null;
+  if (!target || !Array.isArray(target.episodeSegments) || !target.episodeSegments.length) {
+    return {
+      segments: [],
+      rows: [],
+      folderStats: new Map(),
+      ...buildRecognitionMappingContext(null),
+    };
+  }
+  const compiledRules = compileMagicEpisodeRules(runtimeSettings && runtimeSettings.magicEpisodeRules);
+  const cleanRules = compileMagicCleanRules(runtimeSettings && runtimeSettings.magicEpisodeCleanRegexRules);
+  const segments = buildSegmentItems(target);
+  const folderStats = buildFolderStats(segments);
+  const dirEpisodeMax = buildDirEpisodeMaxLookup({ segments, compiledRules, cleanRules });
+  const mappingContext = buildRecognitionMappingContext(smartEpisodeMapping);
+  const manualHintSeason = resolveManualHintSeason({
+    recognitionOptions,
+    ...mappingContext,
+  });
+  const rows = segments
+    .map((segment) => resolveSegmentEpisodeFields({
+      segment,
+      compiledRules,
+      cleanRules,
+      folderStats,
+      dirEpisodeMax,
+      manualHintSeason,
+    }))
+    .filter((row) => normalizeInt(row && row.episode) > 0);
+  return {
+    segments,
+    rows,
+    folderStats,
+    ...mappingContext,
+  };
+};
+
 export const buildPlaybackRecognitionData = ({
   entry,
   siteResultItem,
@@ -726,94 +916,29 @@ export const buildPlaybackRecognitionData = ({
   const panMappings = Array.isArray(runtimeSettings && runtimeSettings.smartPanAliasMappings)
     ? runtimeSettings.smartPanAliasMappings
     : [];
-  const segments = buildSegmentItems(entry);
-  const folderStats = buildFolderStats(segments);
-  const tmdbDetail = smartEpisodeMapping && Array.isArray(smartEpisodeMapping.tmdbSeasons) && smartEpisodeMapping.tmdbSeasons.length
-    ? {
-        latestGlobal: normalizeInt(smartEpisodeMapping.totalEpisodes),
-        seasons: smartEpisodeMapping.tmdbSeasons.map((item) => ({
-          season: item.season,
-          episodes: item.episodeCount,
-        })),
-      }
-    : null;
-  const doubanMeta = smartEpisodeMapping && Array.isArray(smartEpisodeMapping.doubanSeasons)
-    ? {
-        doubanSeasons: smartEpisodeMapping.doubanSeasons.map((item) => ({
-          season: item.season,
-          episodeCount: item.episodeCount,
-        })),
-      }
-    : null;
-  const tmdbMultiSeason = !!(smartEpisodeMapping && Array.isArray(smartEpisodeMapping.tmdbSeasons) && smartEpisodeMapping.tmdbSeasons.length > 1);
-  const doubanMultiSeason = !!(smartEpisodeMapping && Array.isArray(smartEpisodeMapping.doubanSeasons) && smartEpisodeMapping.doubanSeasons.length > 1);
-  const manualHintSeason = (() => {
-    if (!(tmdbMultiSeason || doubanMultiSeason)) return 0;
-    const candidate = parseManualSeasonHint(recognitionOptions && recognitionOptions.manualSeasonHint);
-    if (candidate <= 0) return 0;
-    const tmdbRows = getTMDBSeasonRows(tmdbDetail);
-    const doubanRows = getDoubanSeasonRows(doubanMeta);
-    const hasTMDB = tmdbRows.some((row) => normalizeInt(row && (row.season != null ? row.season : row.season_number)) === candidate);
-    const hasDouban = doubanRows.some((row) => normalizeInt(row && (row.season != null ? row.season : row.season_number)) === candidate);
-    if (!hasTMDB && !hasDouban) return 0;
-    return candidate;
-  })();
+  const {
+    segments,
+    rows,
+    folderStats,
+    tmdbDetail,
+    doubanMeta,
+    tmdbMultiSeason,
+    doubanMultiSeason,
+  } = buildRecognizedEpisodeSegmentRows({
+    entry,
+    runtimeSettings,
+    smartEpisodeMapping,
+    recognitionOptions,
+  });
   const panMatch = resolvePanMatch(entry.label, panTokens, panMappings);
   const items = [];
-  const dirEpisodeMax = new Map();
-  segments.forEach((segment) => {
-    const fileParsed = extractNormalizedSeasonEpisode(segment && segment.fileName, compiledRules, cleanRules);
-    const displayParsed = !fileParsed.episode
-      ? extractNormalizedSeasonEpisode(segment && segment.displayName, compiledRules, cleanRules)
-      : { season: 0, episode: 0 };
-    const episodeNo = normalizeInt((fileParsed && fileParsed.episode) || (displayParsed && displayParsed.episode));
-    if (episodeNo <= 0) return;
-    const dirKey = normalizeString(segment && segment.currentPath);
-    const prev = normalizeInt(dirEpisodeMax.get(dirKey));
-    if (episodeNo > prev) dirEpisodeMax.set(dirKey, episodeNo);
-  });
 
-  segments.forEach((segment) => {
-    const fileParsed = extractNormalizedSeasonEpisode(segment.fileName, compiledRules, cleanRules);
-    const displayParsed = !fileParsed.episode
-      ? extractNormalizedSeasonEpisode(segment.displayName, compiledRules, cleanRules)
-      : { season: 0, episode: 0 };
-
-    let season = fileParsed.season;
-    let episode = fileParsed.episode;
-    let quality = extractQualityMark(segment.fileName);
-
-    if (!episode && displayParsed.episode) {
-      season = displayParsed.season;
-      episode = displayParsed.episode;
-    }
-    const sourceDirMaxEpisode = normalizeInt(dirEpisodeMax.get(segment.currentPath));
-
-    if (episode > 0 && season <= 0) {
-      const currentQuality = pickUniqueFolderQuality(folderStats, segment.currentPath);
-      const currentSeason = pickUniqueFolderSeason(folderStats, segment.currentPath);
-      const parentQuality = pickUniqueFolderQuality(folderStats, segment.parentPath);
-      const parentSeason = pickUniqueFolderSeason(folderStats, segment.parentPath);
-      if (currentSeason > 0) {
-        season = currentSeason;
-      } else if (currentQuality && parentSeason > 0) {
-        season = parentSeason;
-      }
-      if (!quality) {
-        const displayMetaQuality = parseDisplayMetaQuality(segment.displayName);
-        if (displayMetaQuality) quality = displayMetaQuality;
-        else if (currentQuality) quality = currentQuality;
-        else if (currentSeason > 0 && parentQuality) quality = parentQuality;
-      }
-    }
-    if (episode > 0 && season <= 0 && manualHintSeason > 0) {
-      season = manualHintSeason;
-    }
-
-    if (!quality) {
-      quality = parseDisplayMetaQuality(segment.displayName) || extractQualityMark(segment.displayName);
-    }
-
+  rows.forEach((row) => {
+    const segment = row.segment;
+    const season = row.season;
+    const episode = row.episode;
+    const quality = row.quality;
+    const sourceDirMaxEpisode = row.sourceDirMaxEpisode;
     const mappings = buildCandidateMappings({
       season,
       episode,
@@ -849,7 +974,18 @@ export const buildPlaybackRecognitionData = ({
       };
       items.push(candidate);
     });
+  });
 
+  segments.forEach((segment) => {
+    const matchedRow = rows.find((row) => row && row.segment === segment) || null;
+    const quality = normalizeString(matchedRow && matchedRow.quality)
+      || resolveSegmentEpisodeFields({
+        segment,
+        compiledRules,
+        cleanRules,
+        folderStats,
+        dirEpisodeMax: new Map(),
+      }).quality;
     const movieMatched = movieRules.length
       && extractEpisodeCandidateTextsFromSegment(segment, []).some((text) => matchesAnyMagicRule(text, movieRules));
     if (!movieMatched) return;
@@ -884,47 +1020,14 @@ export const buildPlaybackRecognitionData = ({
 export const buildDirectSiteEpisodeItems = (entry, runtimeSettings) => {
   const target = entry && typeof entry === 'object' ? entry : null;
   if (!target || !Array.isArray(target.episodeSegments) || !target.episodeSegments.length) return [];
-  const compiledRules = compileMagicEpisodeRules(runtimeSettings && runtimeSettings.magicEpisodeRules);
-  const cleanRules = compileMagicCleanRules(runtimeSettings && runtimeSettings.magicEpisodeCleanRegexRules);
-  const segments = buildSegmentItems(target);
-  const folderStats = buildFolderStats(segments);
   const out = [];
+  const { rows } = buildRecognizedEpisodeSegmentRows({ entry: target, runtimeSettings });
 
-  segments.forEach((segment) => {
-    const fileParsed = extractNormalizedSeasonEpisode(segment.fileName, compiledRules, cleanRules);
-    const displayParsed = !fileParsed.episode
-      ? extractNormalizedSeasonEpisode(segment.displayName, compiledRules, cleanRules)
-      : { season: 0, episode: 0 };
-
-    let season = fileParsed.season;
-    let episode = fileParsed.episode;
-    let quality = extractQualityMark(segment.fileName);
-
-    if (!episode && displayParsed.episode) {
-      season = displayParsed.season;
-      episode = displayParsed.episode;
-    }
-
-    if (episode > 0 && season <= 0) {
-      const currentQuality = pickUniqueFolderQuality(folderStats, segment.currentPath);
-      const currentSeason = pickUniqueFolderSeason(folderStats, segment.currentPath);
-      const parentQuality = pickUniqueFolderQuality(folderStats, segment.parentPath);
-      const parentSeason = pickUniqueFolderSeason(folderStats, segment.parentPath);
-      if (currentSeason > 0) {
-        season = currentSeason;
-      } else if (currentQuality && parentSeason > 0) {
-        season = parentSeason;
-      }
-      if (!quality) {
-        const displayMetaQuality = parseDisplayMetaQuality(segment.displayName);
-        if (displayMetaQuality) quality = displayMetaQuality;
-        else if (currentQuality) quality = currentQuality;
-        else if (currentSeason > 0 && parentQuality) quality = parentQuality;
-      }
-    }
-
-    if (!quality) quality = parseDisplayMetaQuality(segment.displayName) || extractQualityMark(segment.displayName);
-    if (episode <= 0) return;
+  rows.forEach((row) => {
+    const segment = row.segment;
+    const season = row.season;
+    const episode = row.episode;
+    const quality = row.quality;
 
     out.push({
       key: `${normalizeString(target.key)}:${segment.index}:${Math.max(1, normalizeInt(season) || 1)}:${episode}`,
