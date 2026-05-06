@@ -1755,7 +1755,7 @@ export default {
       return this.playSearchRuntimeConfigData;
     },
     playHistoryRowForMenu() {
-      return findPlayHistoryRowForContext(this.buildPlayHistoryWarmContext()) || null;
+      return findPlayHistoryRowForContext(this.buildPlayHistoryBaseContext()) || null;
     },
     siteSourceResultItems() {
       const items = this.buildSiteSourceResultItemsFromSnapshot(this.playSearchSnapshot);
@@ -3429,24 +3429,30 @@ export default {
       this.playerStatsPathName = namingContext.preferFile ? resolvePlayerStatsPathName({ segment, candidate }) : '';
       this.playerStatsRawFileName = pickRawFileNameForStats(segment && segment.displayName, segment && segment.rawName, namingContext);
     },
-    buildPlayHistoryWarmContext() {
-      const playback = this.currentPlaybackContext && typeof this.currentPlaybackContext === 'object'
-        ? this.currentPlaybackContext
-        : null;
+    buildPlayHistoryBaseContext() {
       const isTmdb = !!this.isTmdbMode;
       const baseContentKey = isTmdb
         ? normalizeString(this.playContentPreferenceKey)
         : (normalizeString(this.playContentPreferenceKey) || normalizeString(this.displayTitle));
       if (!baseContentKey) return {};
-      const baseContext = {
+      return {
         contentKey: baseContentKey,
         Poster: this.detailPoster,
         Remark: isTmdb ? this.detailRemarkText : this.historyRemarkText,
         tmdbId: isTmdb ? normalizeInt(this.tmdbId) : 0,
         tmdbType: isTmdb ? normalizeString(this.tmdbType || this.searchType).toLowerCase() : '',
-        tmdbSeason: isTmdb ? (this.tmdbMovieMode ? 0 : this.currentEpisodeSeasonNumber) : 0,
+        tmdbSeason: 0,
       };
+    },
+    buildPlayHistoryWarmContext() {
+      const playback = this.currentPlaybackContext && typeof this.currentPlaybackContext === 'object'
+        ? this.currentPlaybackContext
+        : null;
+      const isTmdb = !!this.isTmdbMode;
+      const baseContext = this.buildPlayHistoryBaseContext();
+      if (!normalizeString(baseContext && baseContext.contentKey)) return {};
       const existingRow = findPlayHistoryRowForContext(baseContext) || null;
+      const playbackGlobalEpisode = Math.max(0, normalizeInt(playback && playback.globalEpisode));
       const fallbackSiteEpisodeIndex = normalizeInt(playback && playback.itemIndex) >= 0
         ? normalizeInt(playback && playback.itemIndex) + 1
         : 0;
@@ -3473,17 +3479,9 @@ export default {
         tmdbType: isTmdb
           ? (normalizeString(existingRow && existingRow.tmdbType) || baseContext.tmdbType)
           : normalizeString(existingRow && existingRow.tmdbType),
-        tmdbSeason: isTmdb
-          ? (
-            normalizeInt(existingRow && existingRow.tmdbSeason)
-            || normalizeInt(playback && playback.tmdbSeason)
-            || normalizeInt(baseContext.tmdbSeason)
-          )
-          : normalizeInt(existingRow && existingRow.tmdbSeason),
-        tmdbEpisode: isTmdb
-          ? (normalizeInt(existingRow && existingRow.tmdbEpisode) || normalizeInt(playback && playback.tmdbEpisode))
-          : normalizeInt(existingRow && existingRow.tmdbEpisode),
-        globalEpisode: normalizeInt(existingRow && existingRow.globalEpisode) || normalizeInt(playback && playback.globalEpisode),
+        tmdbSeason: normalizeInt(existingRow && existingRow.tmdbSeason),
+        tmdbEpisode: normalizeInt(existingRow && existingRow.tmdbEpisode),
+        globalEpisode: normalizeInt(existingRow && existingRow.globalEpisode) || playbackGlobalEpisode,
         playFlag: normalizeString(existingRow && existingRow.playFlag) || normalizeString(playback && playback.panFlag),
         siteEpisodeIndex: normalizeInt(existingRow && existingRow.siteEpisodeIndex) || fallbackSiteEpisodeIndex,
         siteEpisodeFile: normalizeString(existingRow && existingRow.siteEpisodeFile) || normalizeString(playback && playback.rawFileName),
