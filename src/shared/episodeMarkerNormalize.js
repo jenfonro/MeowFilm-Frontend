@@ -60,7 +60,7 @@ const parseMarkerNumberToInt = (raw) => {
 };
 
 const MARKER_NUMBER_PATTERN = '([0-9０-９]{1,5}|[一二三四五六七八九十百千万两零〇]{1,20})';
-const SEASON_EPISODE_MARKER_RE = new RegExp(`第\\s*${MARKER_NUMBER_PATTERN}\\s*([季集话])`, 'g');
+const SEASON_EPISODE_MARKER_RE = new RegExp(`第\\s*${MARKER_NUMBER_PATTERN}\\s*([季集话部篇])`, 'g');
 
 export const normalizeSeasonEpisodeMarkers = (text) => {
   const raw = normalizeString(text);

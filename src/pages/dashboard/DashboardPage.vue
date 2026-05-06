@@ -2622,6 +2622,11 @@ const doubanImgProxyOptions = [
 
 const DEFAULT_EPISODE_RULES = [
   {
+    pattern: '.*?(?:(?:[Ss](?:eason)?\\s*0*(\\d{1,2}))|(?:第\\s*0*(\\d{1,2})\\s*(?:季|部|篇))).*?(?:第\\s*0*(\\d{1,4})\\s*(?:集|话)|[Ee][Pp]?\\s*0*(\\d{1,4})(?:$|\\D)).*?.*',
+    replace: 'S$1$2E$3$4',
+    flags: 'i'
+  },
+  {
     pattern: '.*?([Ss]\\d{1,2})?(?:第\\s*(\\d{1,4})\\s*(?:集|话)|[Ee][Pp]?\\s*(\\d{1,4})(?:$|\\D)).*?.*',
     replace: '$1E$2$3',
     flags: 'i'
