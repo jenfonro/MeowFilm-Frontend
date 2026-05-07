@@ -858,6 +858,8 @@ onBeforeUnmount(() => {
 
 .index-login__inner {
   width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
 .index-shell {
